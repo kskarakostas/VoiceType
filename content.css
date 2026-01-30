@@ -1,0 +1,496 @@
+/* VoiceType - Content Styles */
+/* Expandable pill toolbar injected into web pages */
+
+/* CSS Variables - Always dark theme for the pill */
+:root {
+  --vt-primary: #6366f1;
+  --vt-primary-dark: #4f46e5;
+  --vt-recording: #ef4444;
+  --vt-success: #10b981;
+  --vt-warning: #f59e0b;
+  --vt-bg: #1f1f1f;
+  --vt-bg-hover: #2a2a2a;
+  --vt-text: #ffffff;
+  --vt-text-secondary: #a0a0a0;
+  --vt-border: #3a3a3a;
+  --vt-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  --vt-radius: 20px;
+  --vt-radius-sm: 8px;
+}
+
+/* Main Container - The Pill */
+#voicetype-pill {
+  position: absolute;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  background: var(--vt-bg);
+  border-radius: var(--vt-radius);
+  box-shadow: var(--vt-shadow);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 11px;
+  color: var(--vt-text);
+  overflow: visible;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  height: 24px;
+  box-sizing: border-box;
+}
+
+/* Collapsed State - Just the dot */
+#voicetype-pill.collapsed {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+
+#voicetype-pill.collapsed:hover {
+  transform: scale(1.15);
+}
+
+#voicetype-pill.collapsed .vt-expand-content {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#voicetype-pill.collapsed .vt-collapse-dot {
+  display: flex;
+}
+
+/* Expanded State */
+#voicetype-pill.expanded {
+  width: auto;
+  padding: 0 3px;
+}
+
+#voicetype-pill.expanded .vt-collapse-dot {
+  display: none;
+}
+
+#voicetype-pill.expanded .vt-expand-content {
+  opacity: 1;
+  width: auto;
+  pointer-events: auto;
+}
+
+/* Recording State */
+#voicetype-pill.recording {
+  transition: box-shadow 0.1s ease-out;
+}
+
+/* Collapse Dot (shown when collapsed) */
+.vt-collapse-dot {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vt-collapse-dot-inner {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--vt-primary), var(--vt-primary-dark));
+  transition: all 0.2s ease;
+}
+
+#voicetype-pill.recording .vt-collapse-dot-inner {
+  background: var(--vt-recording);
+  animation: vt-pulse-dot 1s ease-in-out infinite;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+}
+
+/* Expanded Content */
+.vt-expand-content {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  transition: all 0.2s ease;
+}
+
+/* Mode Button */
+.vt-mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 2px 6px;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  color: var(--vt-text);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  font-size: 11px;
+  white-space: nowrap;
+  height: 18px;
+}
+
+.vt-mode-btn:hover {
+  background: var(--vt-bg-hover);
+}
+
+.vt-mode-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.vt-mode-name {
+  font-weight: 500;
+  font-size: 10px;
+  color: var(--vt-text-secondary);
+}
+
+/* Divider */
+.vt-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--vt-border);
+  margin: 0 1px;
+}
+
+/* Record Button */
+.vt-record-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--vt-primary);
+  border: none;
+  border-radius: 12px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 10px;
+  font-weight: 600;
+  height: 18px;
+  min-width: 40px;
+}
+
+.vt-record-btn:hover {
+  background: var(--vt-primary-dark);
+}
+
+.vt-record-btn.recording {
+  background: var(--vt-recording);
+  min-width: 60px;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+.vt-record-btn.recording:hover {
+  background: #dc2626;
+}
+
+.vt-record-icon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: white;
+  flex-shrink: 0;
+}
+
+.vt-record-btn.recording .vt-record-icon {
+  border-radius: 1px;
+  width: 6px;
+  height: 6px;
+}
+
+.vt-record-text {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.vt-record-timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+}
+
+/* Menu Button */
+.vt-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  color: var(--vt-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.vt-menu-btn:hover {
+  background: var(--vt-bg-hover);
+  color: var(--vt-text);
+}
+
+/* Mode Dropdown - Full Settings Panel */
+.vt-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: var(--vt-bg);
+  border-radius: var(--vt-radius-sm);
+  box-shadow: var(--vt-shadow);
+  min-width: 200px;
+  max-width: 240px;
+  padding: 6px;
+  display: none;
+  z-index: 2147483647;
+}
+
+.vt-dropdown.show {
+  display: block;
+  animation: vt-dropdown-in 0.15s ease;
+}
+
+/* Scrollbar for dropdown */
+.vt-dropdown ::-webkit-scrollbar {
+  width: 4px;
+}
+
+.vt-dropdown ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vt-dropdown ::-webkit-scrollbar-thumb {
+  background: var(--vt-border);
+  border-radius: 2px;
+}
+
+.vt-dropdown-section {
+  padding: 4px 0;
+}
+
+.vt-dropdown-section:first-child {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.vt-dropdown-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vt-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 8px 6px;
+}
+
+.vt-dropdown-row {
+  display: flex;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.vt-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--vt-text);
+  cursor: pointer;
+  transition: background 0.1s ease;
+  font-size: 12px;
+  width: 100%;
+  text-align: left;
+}
+
+.vt-dropdown-item:hover {
+  background: var(--vt-bg-hover);
+}
+
+.vt-dropdown-item.active {
+  background: var(--vt-primary);
+}
+
+.vt-dropdown-item-icon {
+  font-size: 13px;
+  width: 18px;
+  text-align: center;
+}
+
+.vt-dropdown-item-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.vt-dropdown-divider {
+  height: 1px;
+  background: var(--vt-border);
+  margin: 4px 0;
+}
+
+/* Model and Time buttons */
+.vt-model-btn,
+.vt-time-btn,
+.vt-provider-btn,
+.vt-lang-btn {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--vt-border);
+  background: transparent;
+  border-radius: 6px;
+  color: var(--vt-text);
+  cursor: pointer;
+  transition: all 0.1s ease;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.vt-model-btn:hover,
+.vt-time-btn:hover,
+.vt-provider-btn:hover,
+.vt-lang-btn:hover {
+  background: var(--vt-bg-hover);
+  border-color: var(--vt-primary);
+}
+
+.vt-model-btn.active,
+.vt-time-btn.active,
+.vt-provider-btn.active,
+.vt-lang-btn.active {
+  background: var(--vt-primary);
+  border-color: var(--vt-primary);
+  color: white;
+}
+
+.vt-model-row {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.vt-model-row .vt-model-btn {
+  min-width: 60px;
+}
+
+.vt-lang-row {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.vt-lang-btn {
+  min-width: 32px;
+  padding: 4px 6px;
+  font-size: 10px;
+}
+
+/* Mode language indicator */
+.vt-mode-lang {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--vt-primary);
+  opacity: 0.8;
+}
+
+/* Usage section */
+.vt-usage-btn {
+  position: relative;
+}
+
+.vt-usage-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vt-success);
+  margin-left: auto;
+}
+
+.vt-usage-details {
+  padding: 8px 10px;
+  background: var(--vt-bg-hover);
+  border-radius: 6px;
+  margin: 4px;
+}
+
+.vt-usage-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--vt-text-secondary);
+  padding: 3px 0;
+}
+
+.vt-usage-row span:last-child {
+  color: var(--vt-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Footer with shortcut */
+.vt-dropdown-footer {
+  padding: 8px;
+  border-top: 1px solid var(--vt-border);
+  margin-top: 4px;
+  text-align: center;
+}
+
+.vt-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vt-text-secondary);
+  font-size: 10px;
+}
+
+.vt-shortcut kbd {
+  background: var(--vt-bg-hover);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-family: inherit;
+  border: 1px solid var(--vt-border);
+  color: var(--vt-text);
+}
+
+/* Status Message */
+.vt-status {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--vt-bg);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--vt-text-secondary);
+  white-space: nowrap;
+  box-shadow: var(--vt-shadow);
+  display: none;
+  z-index: 2147483647;
+}
+
+.vt-status.show {
+  display: block;
+  animation: vt-status-in 0.15s ease;
+}
+
+.vt-status.success { color: var(--vt-success); }
+.vt-status.error { color: var(--vt-recording); }
+.vt-status.warning { color: var(--vt-warning); }
+.vt-status.processing { color: var(--vt-primary); }
+
+/* Animations */
+@keyframes vt-pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.8; }
+}
+
+@keyframes vt-dropdown-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes vt-status-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
