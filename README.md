@@ -110,7 +110,7 @@ Your API key stays encrypted on your device. Audio goes directly to your chosen 
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/voicetype.git
+git clone https://github.com/kskarakostas/voicetype.git
 
 # Or download ZIP and extract
 ```
