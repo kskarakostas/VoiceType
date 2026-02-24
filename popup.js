@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS = {
   minRecordingTime: 0,
   maxRecordingTime: 60,
   translateTargetLang: 'English',
+  pillGap: 8, // Distance in pixels between pill and text field
   modes: {
     default: {
       name: 'Default',
@@ -89,7 +90,9 @@ const elements = {
   geminiCost: document.getElementById('gemini-cost'),
   refreshStats: document.getElementById('refresh-stats'),
   clearStats: document.getElementById('clear-stats'),
-  startRecording: document.getElementById('start-recording')
+  startRecording: document.getElementById('start-recording'),
+  pillGap: document.getElementById('pill-gap'),
+  pillGapValue: document.getElementById('pill-gap-value')
 };
 
 // Initialize
@@ -193,6 +196,14 @@ function populateUI() {
   if (elements.maxTimeGemini) {
     elements.maxTimeGemini.value = String(settings.maxRecordingTime ?? 60);
   }
+  
+  // Pill gap
+  const pillGap = settings.pillGap ?? 8;
+  if (elements.pillGap) {
+    elements.pillGap.value = pillGap;
+    elements.pillGapValue.textContent = `${pillGap}px`;
+  }
+  
   renderModesList();
 }
 
@@ -509,6 +520,15 @@ function setupEventListeners() {
   if (elements.maxTimeGemini) {
     elements.maxTimeGemini.addEventListener('change', () => {
       syncMaxTime(elements.maxTimeGemini.value);
+    });
+  }
+  
+  // Pill gap slider
+  if (elements.pillGap) {
+    elements.pillGap.addEventListener('input', () => {
+      const value = parseInt(elements.pillGap.value);
+      settings.pillGap = value;
+      elements.pillGapValue.textContent = `${value}px`;
     });
   }
   

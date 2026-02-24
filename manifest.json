@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "VoiceType - AI Speech to Text",
   "short_name": "VoiceType",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "description": "Dictate into any text field using AI-powered speech recognition with OpenAI or Google Gemini. Features multiple modes including transcription, email composition, and translation.",
   "author": "K. S. Karakostas",
   "permissions": [

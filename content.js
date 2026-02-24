@@ -628,8 +628,8 @@
     const viewportWidth = document.documentElement.scrollWidth;
     
     // Position to the LEFT of the input with gap
-    // The pill's RIGHT edge should be 8px away from the input's left edge
-    const gap = 8; // Gap between pill and text field
+    // The pill's RIGHT edge should be [gap]px away from the input's left edge
+    const gap = settings?.pillGap ?? 8; // Gap between pill and text field (from settings)
     const collapsedSize = 16; // Size of collapsed dot
     
     let top = rect.top + scrollTop + (rect.height / 2) - (collapsedSize / 2);

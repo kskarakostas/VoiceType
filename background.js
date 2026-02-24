@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS = {
   minRecordingTime: 0, // Minimum seconds before sending to API (0 = off)
   maxRecordingTime: 60, // Maximum recording time in seconds
   translateTargetLang: 'English', // Default target language for translation mode
+  pillGap: 8, // Distance in pixels between pill and text field
   modes: {
     default: {
       name: 'Default',
