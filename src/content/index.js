@@ -945,7 +945,10 @@ import { insertText } from './insert.js';
   // Listen for settings changes (an open dropdown is not rebuilt under the cursor)
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'local' && changes.settings) {
-      settings = changes.settings.newValue;
+      const next = changes.settings.newValue;
+      settings = next;
+      // Real stored settings arrived: a pill that started on fallback defaults may save again.
+      if (next && typeof next === 'object' && next.modes && typeof next.modes === 'object') settingsLoaded = true;
       if (dropdownOpen) updateModeButton(); else updateDropdown();
     }
   });
