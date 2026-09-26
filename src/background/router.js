@@ -30,7 +30,10 @@ export function createRouter({ storage, runDictation, validateKey, applyUsage, s
       case MSG.SAVE_SETTINGS: {
         const next = request.settings;
         if (!next || typeof next !== 'object' || Array.isArray(next)) return { success: false, error: 'Invalid settings.' };
-        await storage.saveSettings(next);
+        // Content scripts never send keys; keep the stored ones. An explicit keys object (popup) wins.
+        const current = await storage.getSettings();
+        const keys = (next.keys && typeof next.keys === 'object' && !Array.isArray(next.keys)) ? next.keys : current.keys;
+        await storage.saveSettings({ ...next, keys });
         return { success: true };
       }
 

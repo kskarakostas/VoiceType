@@ -418,7 +418,9 @@ import { insertText } from './insert.js';
 
   // Save settings helper
   function saveSettings() {
-    send({ action: MSG.SAVE_SETTINGS, settings });
+    // Never send keys: a stale or fallback copy must not overwrite the stored ones.
+    const { keys, ...rest } = settings;
+    send({ action: MSG.SAVE_SETTINGS, settings: rest });
   }
 
   // Select mode
@@ -841,7 +843,7 @@ import { insertText } from './insert.js';
 
       const outcome = await insertText(currentInput, response.text);
       if (outcome === 'inserted') {
-        if (typeof response.warning === 'string' && response.warning) showStatus(response.warning, 'warning');
+        if (typeof response.warning === 'string' && response.warning) showStatus(response.warning, 'warning', { ms: 6000 });
         else showStatus(`Done ${formatCost(response.cost || 0)}`, 'success');
       } else if (outcome === 'clipboard') showStatus('Copied to clipboard (field not editable)', 'warning');
       else showStatus('Could not insert or copy the text', 'error');
@@ -869,13 +871,13 @@ import { insertText } from './insert.js';
   }
 
   // Show status message (sticky ones stay until the next message replaces them)
-  function showStatus(message, type = '', { sticky = false } = {}) {
+  function showStatus(message, type = '', { sticky = false, ms = 2500 } = {}) {
     if (!pill) return;
     const statusEl = pill.querySelector('.vt-status');
     statusEl.textContent = message;
     statusEl.className = `vt-status show ${type}`;
     clearTimeout(statusTimeout);
-    if (!sticky) statusTimeout = setTimeout(() => statusEl.classList.remove('show'), 2500);
+    if (!sticky) statusTimeout = setTimeout(() => statusEl.classList.remove('show'), ms);
   }
 
   // Keyboard shortcut from the service worker. Registered at load, before init() awaits

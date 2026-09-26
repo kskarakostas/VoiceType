@@ -37,6 +37,20 @@ describe('router', () => {
     expect(saved.provider).toBe('gemini');
   });
 
+  it('keeps the stored keys when the payload has no keys object', async () => {
+    const payload = { ...freshSettings(), provider: 'gemini' };
+    delete payload.keys;
+    expect(await handle({ action: MSG.SAVE_SETTINGS, settings: payload })).toEqual({ success: true });
+    expect(saved.provider).toBe('gemini');
+    expect(saved.keys.openai).toBe('sk-test');
+  });
+
+  it('stores explicit blank keys so the popup can clear them', async () => {
+    const payload = { ...freshSettings(), keys: { openai: '', gemini: '' } };
+    expect(await handle({ action: MSG.SAVE_SETTINGS, settings: payload })).toEqual({ success: true });
+    expect(saved.keys).toEqual({ openai: '', gemini: '' });
+  });
+
   it('rejects a missing or non-object settings payload without touching storage', async () => {
     expect(await handle({ action: MSG.SAVE_SETTINGS })).toEqual({ success: false, error: 'Invalid settings.' });
     expect(await handle({ action: MSG.SAVE_SETTINGS, settings: [] })).toEqual({ success: false, error: 'Invalid settings.' });
