@@ -226,7 +226,10 @@ import { insertText } from './insert.js';
     if (!settings || !pill) return;
     const mode = settings.modes[settings.activeMode] || settings.modes.default;
     const modeBtn = pill.querySelector('.vt-mode-btn');
-    modeBtn.innerHTML = `<span class="vt-mode-icon">${mode.icon}</span>`;
+    const icon = document.createElement('span');
+    icon.className = 'vt-mode-icon';
+    icon.textContent = mode.icon;
+    modeBtn.replaceChildren(icon);
     modeBtn.title = mode.name;
   }
 
@@ -238,22 +241,6 @@ import { insertText } from './insert.js';
     const provider = settings.provider || 'openai';
     const maxTime = settings.maxRecordingTime || 120;
     const targetLang = settings.translateTargetLang || 'English';
-    
-    // Build modes list with special handling for translate mode
-    const modesHtml = Object.entries(settings.modes)
-      .map(([key, mode]) => {
-        let extra = '';
-        if (mode.hasLanguageOption && settings.activeMode === key) {
-          extra = `<span class="vt-mode-lang">→ ${targetLang}</span>`;
-        }
-        return `
-          <button class="vt-dropdown-item ${settings.activeMode === key ? 'active' : ''}" data-mode="${key}">
-            <span class="vt-dropdown-item-icon">${mode.icon}</span>
-            <span class="vt-dropdown-item-name">${mode.name}</span>
-            ${extra}
-          </button>
-        `;
-      }).join('');
     
     // Language selector for translate mode (only show when translate is active)
     const isTranslateMode = settings.activeMode === 'translate';
@@ -271,10 +258,11 @@ import { insertText } from './insert.js';
       <div class="vt-dropdown-divider"></div>
     ` : '';
     
+    // Static markup only; mode names, icons, keys and the target language are user data
+    // and are added below with DOM APIs.
     dropdown.innerHTML = `
-      <div class="vt-dropdown-section">
+      <div class="vt-dropdown-section vt-modes-section">
         <div class="vt-dropdown-label">Mode</div>
-        ${modesHtml}
       </div>
       ${languageSelector}
       <div class="vt-dropdown-divider"></div>
@@ -320,13 +308,32 @@ import { insertText } from './insert.js';
       </div>
     `;
     
-    // Add click handlers for modes
-    dropdown.querySelectorAll('.vt-dropdown-item[data-mode]').forEach(item => {
+    // Modes list, with the target language shown on the active translate mode
+    const modesSection = dropdown.querySelector('.vt-modes-section');
+    for (const [key, mode] of Object.entries(settings.modes)) {
+      const item = document.createElement('button');
+      item.className = 'vt-dropdown-item';
+      item.classList.toggle('active', settings.activeMode === key);
+      item.dataset.mode = key;
+      const icon = document.createElement('span');
+      icon.className = 'vt-dropdown-item-icon';
+      icon.textContent = mode.icon;
+      const name = document.createElement('span');
+      name.className = 'vt-dropdown-item-name';
+      name.textContent = mode.name;
+      item.append(icon, name);
+      if (mode.hasLanguageOption && settings.activeMode === key) {
+        const lang = document.createElement('span');
+        lang.className = 'vt-mode-lang';
+        lang.textContent = `→ ${targetLang}`;
+        item.append(lang);
+      }
       item.addEventListener('click', (e) => {
         e.stopPropagation();
-        selectMode(item.dataset.mode);
+        selectMode(key);
       });
-    });
+      modesSection.append(item);
+    }
     
     // Add click handlers for language selection
     dropdown.querySelectorAll('.vt-lang-btn').forEach(btn => {
