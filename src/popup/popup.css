@@ -859,3 +859,12 @@ body::-webkit-scrollbar-thumb:hover {
 .btn-text.danger:hover {
   color: var(--danger);
 }
+
+/* v2 additions */
+.key-row { display: flex; gap: 4px; align-items: center; }
+.key-row .key-input { flex: 1; min-width: 0; font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace; }
+.btn-small { padding: 6px 8px; font-size: 10px; white-space: nowrap; }
+.btn-secondary:disabled { opacity: 0.6; cursor: wait; }
+#reset-defaults { display: block; margin: 6px auto 0; }
+.mode-item .mode-badge { font-size: 9px; color: var(--text-muted); margin-left: 4px; }
+.mode-item.active .mode-badge { color: rgba(255, 255, 255, 0.8); }

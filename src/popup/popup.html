@@ -2,229 +2,155 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VoiceType Settings</title>
+  <title>VoiceType</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="container">
-    <!-- Header -->
     <header class="header">
       <div class="logo">
-        <span class="logo-icon">🎙️</span>
+        <span class="logo-icon" aria-hidden="true">🎙️</span>
         <div class="logo-text">
           <h1>VoiceType</h1>
-          <span class="tagline">AI Speech to Text</span>
+          <span class="tagline">BYOK speech to text</span>
         </div>
       </div>
-      <div class="status-indicator" id="status-indicator">
+      <div class="status-indicator" id="status-indicator" role="status">
         <span class="status-dot"></span>
-        <span class="status-text">Not configured</span>
+        <span class="status-text">Add API key</span>
       </div>
     </header>
 
-    <!-- Tabs -->
-    <div class="tabs">
-      <button class="tab active" data-tab="settings">⚙️ Settings</button>
-      <button class="tab" data-tab="modes">🎯 Modes</button>
-      <button class="tab" data-tab="usage">📊 Usage</button>
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="settings" role="tab">Settings</button>
+      <button class="tab" data-tab="modes" role="tab">Modes</button>
+      <button class="tab" data-tab="usage" role="tab">Usage</button>
     </div>
 
-    <!-- Tab: Settings -->
     <div class="tab-content active" id="tab-settings">
       <section class="section">
         <div class="form-group">
           <label>Provider</label>
           <div class="provider-tabs">
-            <button class="provider-tab active" data-provider="openai">OpenAI</button>
+            <button class="provider-tab" data-provider="openai">OpenAI</button>
             <button class="provider-tab" data-provider="gemini">Gemini</button>
           </div>
         </div>
-        
-        <!-- OpenAI Settings -->
+
         <div class="provider-settings" id="openai-settings">
           <div class="form-group">
-            <label for="api-key">API Key</label>
-            <div class="input-wrapper">
-              <input type="password" id="api-key" placeholder="sk-..." autocomplete="off">
-              <button type="button" class="btn-clear" id="clear-key" title="Clear">✕</button>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group compact">
-              <label for="model">Model</label>
-              <select id="model">
-                <option value="gpt-4o-transcribe">gpt-4o</option>
-                <option value="gpt-4o-mini-transcribe">gpt-4o-mini</option>
-              </select>
-            </div>
-            <div class="form-group compact">
-              <label for="max-time">Max Rec</label>
-              <select id="max-time">
-                <option value="30">30s</option>
-                <option value="60" selected>1m</option>
-                <option value="120">2m</option>
-                <option value="180">3m</option>
-                <option value="300">5m</option>
-              </select>
+            <label for="api-key">OpenAI API key</label>
+            <div class="key-row">
+              <input type="text" id="api-key" class="key-input" autocomplete="off" spellcheck="false" placeholder="sk-...">
+              <button type="button" class="btn btn-secondary btn-small" id="test-key">Test</button>
+              <button type="button" class="btn btn-secondary btn-small" id="clear-key" title="Clear key">Clear</button>
             </div>
           </div>
         </div>
-        
-        <!-- Gemini Settings -->
+
         <div class="provider-settings" id="gemini-settings" style="display: none;">
           <div class="form-group">
-            <label for="gemini-key">API Key</label>
-            <div class="input-wrapper">
-              <input type="password" id="gemini-key" placeholder="AIza..." autocomplete="off">
-              <button type="button" class="btn-clear" id="clear-gemini-key" title="Clear">✕</button>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group compact">
-              <label for="gemini-model">Model</label>
-              <select id="gemini-model">
-                <option value="gemini-3-flash-preview">3 Flash</option>
-                <option value="gemini-2.5-flash">2.5 Flash</option>
-              </select>
-            </div>
-            <div class="form-group compact">
-              <label for="max-time-gemini">Max Rec</label>
-              <select id="max-time-gemini" class="max-time-select">
-                <option value="30">30s</option>
-                <option value="60" selected>1m</option>
-                <option value="120">2m</option>
-                <option value="180">3m</option>
-                <option value="300">5m</option>
-              </select>
+            <label for="gemini-key">Gemini API key</label>
+            <div class="key-row">
+              <input type="text" id="gemini-key" class="key-input" autocomplete="off" spellcheck="false" placeholder="AQ.... or AIza...">
+              <button type="button" class="btn btn-secondary btn-small" id="test-gemini-key">Test</button>
+              <button type="button" class="btn btn-secondary btn-small" id="clear-gemini-key" title="Clear key">Clear</button>
             </div>
           </div>
         </div>
-        
-        <p class="help-text warning" id="api-key-warning" style="display: none;">
-          ⚠️ Set spending limits on your account
-        </p>
+
+        <p class="help-text warning" id="api-key-warning" style="display: none;">Set a spending limit on your provider account.</p>
+
+        <div class="form-row">
+          <div class="form-group compact">
+            <label for="min-time">Min recording</label>
+            <select id="min-time">
+              <option value="0.5">0.5 s</option>
+              <option value="1">1 s</option>
+              <option value="2">2 s</option>
+              <option value="3">3 s</option>
+            </select>
+          </div>
+          <div class="form-group compact">
+            <label for="max-time">Max recording</label>
+            <select id="max-time">
+              <option value="30">30 s</option>
+              <option value="60">1 min</option>
+              <option value="120">2 min</option>
+              <option value="180">3 min</option>
+              <option value="300">5 min</option>
+            </select>
+          </div>
+        </div>
       </section>
 
       <div class="shortcut-row">
-        <span>⌨️ <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></span>
-        <a href="#" id="shortcuts-link">edit</a>
+        <span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> toggles recording</span>
+        <a href="#" id="shortcuts-link">change</a>
       </div>
 
-      <div class="form-group compact" style="margin-top: 8px;">
-        <label for="pill-gap">Pill Distance from Field</label>
-        <div class="pill-gap-control">
-          <input type="range" id="pill-gap" min="0" max="50" value="8" step="2">
-          <span id="pill-gap-value">8px</span>
-        </div>
-      </div>
-
-      <button class="btn btn-primary btn-block" id="save-settings">💾 Save</button>
-      
-      <button class="btn btn-recording btn-block" id="start-recording">🎤 Start Recording</button>
-      <p class="help-text" style="text-align: center; margin-top: 4px;">Click then focus on a text field</p>
+      <p class="help-text">Settings save automatically.</p>
+      <button class="btn-text" id="reset-defaults">Reset settings to defaults (keys are kept)</button>
     </div>
 
-    <!-- Tab: Modes -->
     <div class="tab-content" id="tab-modes">
       <section class="section">
         <h2 class="section-title">
-          <span class="section-icon">⚡</span>
-          Transcription Modes
-          <button class="btn-icon" id="add-mode" title="Add custom mode">➕</button>
+          Modes
+          <button class="btn-icon" id="add-mode" title="Add custom mode" aria-label="Add custom mode">+</button>
         </h2>
-        <div class="modes-list" id="modes-list">
-          <!-- Modes will be populated by JavaScript -->
-        </div>
+        <div class="modes-list" id="modes-list"></div>
       </section>
 
-      <!-- Current Mode Editor -->
       <section class="section" id="mode-editor" style="display: none;">
-        <h2 class="section-title">
-          <span class="section-icon">✏️</span>
-          <span id="editor-title">Edit Mode</span>
-        </h2>
+        <h2 class="section-title"><span id="editor-title">Edit mode</span></h2>
         <div class="form-group">
-          <label for="mode-name">Mode Name</label>
-          <input type="text" id="mode-name" placeholder="e.g., My Custom Mode">
+          <label for="mode-name">Name</label>
+          <input type="text" id="mode-name" placeholder="e.g. Meeting notes">
         </div>
         <div class="form-group">
           <label for="mode-icon">Icon (emoji)</label>
-          <input type="text" id="mode-icon" placeholder="e.g., 🎯" maxlength="2">
+          <input type="text" id="mode-icon" placeholder="e.g. 📝" maxlength="8">
         </div>
         <div class="form-group">
-          <label for="mode-prompt">Prompt</label>
-          <textarea id="mode-prompt" rows="4" placeholder="Instructions for how to process the transcription..."></textarea>
-          <p class="help-text">This prompt guides how OpenAI processes your speech.</p>
+          <label for="mode-prompt">Instructions for the text model</label>
+          <textarea id="mode-prompt" rows="5" placeholder="Leave empty for raw transcription."></textarea>
+          <p class="help-text">Applied to the transcript after speech recognition. Empty means insert the transcript as is.</p>
         </div>
         <div class="button-group">
           <button class="btn btn-secondary" id="cancel-edit">Cancel</button>
           <button class="btn btn-danger" id="delete-mode" style="display: none;">Delete</button>
-          <button class="btn btn-primary" id="save-mode">Save Mode</button>
+          <button class="btn btn-primary" id="save-mode">Save mode</button>
         </div>
       </section>
     </div>
 
-    <!-- Tab: Usage -->
     <div class="tab-content" id="tab-usage">
       <section class="section">
         <div class="stats-compact">
-          <div class="stats-row-header">
-            <span></span>
-            <span>Sessions</span>
-            <span>Audio</span>
-            <span>Cost</span>
-          </div>
-          <div class="stats-row-data">
-            <span class="stats-period">Today</span>
-            <span id="today-sessions">0</span>
-            <span id="today-time">0:00</span>
-            <span id="today-cost">$0.00</span>
-          </div>
-          <div class="stats-row-data">
-            <span class="stats-period">7 Days</span>
-            <span id="week-sessions">0</span>
-            <span id="week-time">0:00</span>
-            <span id="week-cost">$0.00</span>
-          </div>
-          <div class="stats-row-data highlight">
-            <span class="stats-period">All Time</span>
-            <span id="total-sessions">0</span>
-            <span id="total-time">0:00</span>
-            <span id="total-cost">$0.00</span>
-          </div>
+          <div class="stats-row-header"><span></span><span>Sessions</span><span>Audio</span><span>Cost</span></div>
+          <div class="stats-row-data"><span class="stats-period">Today</span><span id="today-sessions">0</span><span id="today-time">0:00</span><span id="today-cost">$0.00</span></div>
+          <div class="stats-row-data"><span class="stats-period">7 days</span><span id="week-sessions">0</span><span id="week-time">0:00</span><span id="week-cost">$0.00</span></div>
+          <div class="stats-row-data highlight"><span class="stats-period">All time</span><span id="total-sessions">0</span><span id="total-time">0:00</span><span id="total-cost">$0.00</span></div>
         </div>
-        
         <div class="provider-breakdown">
-          <div class="provider-stat">
-            <span class="provider-name">🤖 OpenAI</span>
-            <span class="provider-data"><span id="openai-sessions">0</span> • <span id="openai-time">0:00</span></span>
-            <span class="provider-cost" id="openai-cost">$0.00</span>
-          </div>
-          <div class="provider-stat">
-            <span class="provider-name">✨ Gemini</span>
-            <span class="provider-data"><span id="gemini-sessions">0</span> • <span id="gemini-time">0:00</span></span>
-            <span class="provider-cost" id="gemini-cost">$0.00</span>
-          </div>
+          <div class="provider-stat"><span class="provider-name">OpenAI</span><span class="provider-data"><span id="openai-sessions">0</span> sessions, <span id="openai-time">0:00</span></span><span class="provider-cost" id="openai-cost">$0.00</span></div>
+          <div class="provider-stat"><span class="provider-name">Gemini</span><span class="provider-data"><span id="gemini-sessions">0</span> sessions, <span id="gemini-time">0:00</span></span><span class="provider-cost" id="gemini-cost">$0.00</span></div>
         </div>
-        
+        <p class="help-text center">Estimates from list prices. Check your provider dashboard for billing.</p>
         <div class="usage-actions">
-          <button class="btn-text" id="refresh-stats">🔄 Refresh</button>
-          <button class="btn-text danger" id="clear-stats">🗑️ Clear</button>
+          <button class="btn-text" id="refresh-stats">Refresh</button>
+          <button class="btn-text danger" id="clear-stats">Clear history</button>
         </div>
       </section>
     </div>
 
-    <!-- Footer -->
     <footer class="footer">
-      <span class="version-text">v1.7.6</span>
+      <span class="version-text" id="version-text"></span>
       <span class="credits-text">by K. S. Karakostas</span>
     </footer>
   </div>
-
-  <!-- Toast notification -->
-  <div class="toast" id="toast"></div>
-
+  <div class="toast" id="toast" role="status"></div>
   <script src="popup.js"></script>
 </body>
 </html>
