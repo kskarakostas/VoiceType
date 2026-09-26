@@ -22,5 +22,6 @@
 - Build step: `npm install && npm run build`, load `dist/`.
 
 ### Removed
-- `web_accessible_resources` entry and the `<all_urls>` host permission.
+- `web_accessible_resources` entry.
+- The `<all_urls>` host permission, narrowed to the two API origins (`api.openai.com`, `generativelanguage.googleapis.com`). The content script still runs on all sites, so the install warning is unchanged.
 - Pill distance slider.

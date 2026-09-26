@@ -137,10 +137,10 @@ Then in Chrome:
 - Create an API key
 - Cost: ~$0.0045/minute
 
-**Option B: Google Gemini** (Free tier available)
+**Option B: Google Gemini** (may offer a free tier; check aistudio.google.com)
 - Go to [aistudio.google.com](https://aistudio.google.com)
 - Create an API key
-- Cost: Free tier, then pay-per-use
+- Cost: pay-per-use (may offer a free tier; check aistudio.google.com)
 
 ### 3. Configure & Go
 
@@ -154,7 +154,7 @@ Then in Chrome:
 
 `Ctrl+Shift+Space` (Mac `Command+Shift+Space`) starts and stops recording. Chrome assigns it automatically on install.
 
-If it conflicts with another extension or the page, set a different one:
+If it conflicts with another extension or your system, set a different one:
 
 1. Go to `chrome://extensions/shortcuts`
 2. Find **VoiceType**
@@ -168,7 +168,7 @@ If it conflicts with another extension or the page, set a different one:
 <details>
 <summary><b>Is VoiceType free?</b></summary>
 <br>
-The extension is free. You need an API key from OpenAI (pay-per-use) or Google Gemini (has free tier).
+The extension is free. You need an API key from OpenAI (pay-per-use) or Google Gemini (may offer a free tier; check aistudio.google.com).
 </details>
 
 <details>
@@ -180,7 +180,7 @@ Both are accurate for dictation. Gemini's transcribe model removes filler words 
 <details>
 <summary><b>Why doesn't the shortcut work?</b></summary>
 <br>
-The shortcut <code>Ctrl+Shift+Space</code> (Mac <code>Command+Shift+Space</code>) is assigned automatically on install. If it conflicts with another extension or the page, set a different one at <code>chrome://extensions/shortcuts</code>.
+The shortcut <code>Ctrl+Shift+Space</code> (Mac <code>Command+Shift+Space</code>) is assigned automatically on install. If it conflicts with another extension or your system, set a different one at <code>chrome://extensions/shortcuts</code>.
 </details>
 
 <details>
@@ -203,7 +203,7 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 |---------|----------|
 | **"Add API key" error** | Click the extension icon → paste your API key (it saves automatically) |
 | **Microphone not working** | Click the 🔒 in address bar → Allow microphone |
-| **Shortcut doesn't work** | `Ctrl+Shift+Space` (Mac `Command+Shift+Space`) is assigned on install; if it conflicts with another extension or the page, set a different one at `chrome://extensions/shortcuts` |
+| **Shortcut doesn't work** | `Ctrl+Shift+Space` (Mac `Command+Shift+Space`) is assigned on install; if it conflicts with another extension or your system, set a different one at `chrome://extensions/shortcuts` |
 | **Transcription fails** | Check your API key and account balance |
 | **Poor quality** | Speak clearly, reduce background noise, or try the other provider |
 

@@ -27,7 +27,7 @@ VoiceType collects and processes the following data **locally on your device**:
 ## Data Storage
 
 - All data is stored **locally** in Chrome's extension storage
-- API keys are stored in plain text in `chrome.storage.local`. They are never written to `chrome.storage.sync`, so they do not leave this browser profile. Anyone with access to your browser profile on disk can read them; this is the same protection level as a saved website password without a master password.
+- API keys are stored in plain text in `chrome.storage.local`. They are never written to `chrome.storage.sync`, so they do not leave this browser profile. They are stored unencrypted on disk inside your Chrome profile folder. Anyone, or any program, with access to that folder can read them.
 - No data is sent to our servers (we don't have any servers)
 - Usage statistics are stored locally and never transmitted
 
