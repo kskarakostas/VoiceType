@@ -1,6 +1,6 @@
 // esbuild build script. Bundles three entry points and copies static assets into dist/.
 import { build, context } from 'esbuild';
-import { cpSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, rmSync, watch as watchPath } from 'node:fs';
 
 const watch = process.argv.includes('--watch');
 const outdir = 'dist';
@@ -35,6 +35,13 @@ if (watch) {
   const ctx = await context(options);
   await ctx.watch();
   copyStatic();
+  // esbuild only watches the JS graph; re-copy statics when any of them changes.
+  for (const src of ['manifest.json', 'src/popup/popup.html', 'src/popup/popup.css', 'src/content/content.css', 'icons']) {
+    watchPath(src, (_event, filename) => {
+      console.log(`static changed: ${src === 'icons' && filename ? `icons/${filename}` : src}`);
+      copyStatic();
+    });
+  }
   console.log('watching for changes');
 } else {
   await build(options);
