@@ -18,10 +18,21 @@ export function isValidInput(el) {
     const type = (el.getAttribute('type') || 'text').toLowerCase();
     return TEXT_INPUT_TYPES.has(type) && !el.disabled && !el.readOnly;
   }
+  if (isEditableElement(el)) return true;
+  return el.getAttribute('role') === 'textbox';
+}
+
+/**
+ * True for contenteditable elements. jsdom lacks `isContentEditable`, and pages also use
+ * `contenteditable=""`, so the attribute is checked as well.
+ * @param {Element|null|undefined} el
+ * @returns {boolean}
+ */
+export function isEditableElement(el) {
+  if (!el || el.nodeType !== 1) return false;
   if (el.isContentEditable === true) return true;
   const editable = el.getAttribute('contenteditable');
-  if (editable !== null && EDITABLE_ATTR_VALUES.has(editable.toLowerCase())) return true;
-  return el.getAttribute('role') === 'textbox';
+  return editable !== null && EDITABLE_ATTR_VALUES.has(editable.toLowerCase());
 }
 
 /**

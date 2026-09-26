@@ -1,5 +1,6 @@
 // Insertion ladder. Each rung is verified by reading the field back; the return value
 // of execCommand is never trusted because it is false without a user gesture.
+import { isEditableElement } from './fields.js';
 
 /** @param {Element} el */
 export function readValue(el) {
@@ -23,14 +24,20 @@ export async function insertText(target, text, deps = {}) {
   if (!text) return 'failed';
   if (!target || !target.isConnected) return copy(text, writeClipboard);
 
-  const editable = !isFormField(target);
+  const editable = isEditableElement(target);
   const prior = editable ? rangeInside(target) : null;
   try { target.focus(); } catch { /* some hosts throw on focus */ }
   if (editable) placeCaret(target, prior);
   const before = readValue(target);
 
-  try { execCommand(text); } catch { /* fall through to the next rung */ }
-  if (readValue(target) !== before) return 'inserted';
+  // Rung 1 only when focus really reached the target, so a focus trap cannot redirect it.
+  if (target.getRootNode().activeElement === target) {
+    try { execCommand(text); } catch { /* fall through to the next rung */ }
+    // Editors that cancel beforeinput commit the change asynchronously; read back after them.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (readValue(target) !== before) return 'inserted';
+    if (!target.isConnected) return copy(text, writeClipboard);
+  }
 
   const changed = isFormField(target) ? setFormValue(target, text) : setEditableText(target, text);
   if (changed && readValue(target) !== before) return 'inserted';
@@ -38,9 +45,18 @@ export async function insertText(target, text, deps = {}) {
   return copy(text, writeClipboard);
 }
 
+/**
+ * Selection that sees into el's shadow root; Chrome retargets document.getSelection() to the host.
+ * @param {Element} el
+ */
+function selectionFor(el) {
+  const root = el.getRootNode();
+  return (typeof root.getSelection === 'function' && root.getSelection()) || el.ownerDocument.getSelection();
+}
+
 /** Clone of the selection range when it lies inside el, taken before focus() can move it. */
 function rangeInside(el) {
-  const sel = el.ownerDocument.getSelection();
+  const sel = selectionFor(el);
   if (!sel || sel.rangeCount === 0) return null;
   const range = sel.getRangeAt(0);
   return el.contains(range.commonAncestorContainer) ? range.cloneRange() : null;
@@ -50,7 +66,7 @@ function rangeInside(el) {
 function placeCaret(el, prior) {
   try {
     const doc = el.ownerDocument;
-    const sel = doc.getSelection();
+    const sel = selectionFor(el);
     if (!sel) return;
     let range = prior;
     if (!range) {
@@ -96,9 +112,10 @@ function setFormValue(el, text) {
 }
 
 function setEditableText(el, text) {
+  if (!isEditableElement(el)) return false;
   try {
     const doc = el.ownerDocument;
-    const sel = doc.getSelection();
+    const sel = selectionFor(el);
     let range;
     if (sel && sel.rangeCount > 0 && el.contains(sel.getRangeAt(0).commonAncestorContainer)) {
       range = sel.getRangeAt(0);

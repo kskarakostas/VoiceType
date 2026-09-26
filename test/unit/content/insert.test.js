@@ -49,6 +49,39 @@ describe('insertText', () => {
     expect(el.textContent).toBe('Hi there');
   });
 
+  it('restores a caret that was inside the contenteditable', async () => {
+    document.body.innerHTML = '<div id="ce" contenteditable="true">Hello</div>';
+    const el = document.getElementById('ce');
+    const range = document.createRange();
+    range.setStart(el.firstChild, 2); range.collapse(true);
+    const sel = document.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    const outcome = await insertText(el, 'X', { execCommand: noopExec, writeClipboard: vi.fn() });
+    expect(outcome).toBe('inserted');
+    expect(el.textContent).toBe('HeXllo');
+  });
+
+  it('rung one inserts at the restored caret on a contenteditable', async () => {
+    document.body.innerHTML = '<div id="ce" contenteditable="true">Hello</div>';
+    const el = document.getElementById('ce');
+    const range = document.createRange();
+    range.setStart(el.firstChild, 2); range.collapse(true);
+    const sel = document.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    const execAtSelection = (text) => { const r = document.getSelection().getRangeAt(0); r.insertNode(document.createTextNode(text)); return true; };
+    const outcome = await insertText(el, 'X', { execCommand: execAtSelection, writeClipboard: vi.fn() });
+    expect(outcome).toBe('inserted');
+    expect(el.textContent).toBe('HeXllo');
+  });
+
+  it('does not write into a role=textbox that is not editable', async () => {
+    document.body.innerHTML = '<div id="tb" role="textbox">x</div>';
+    const el = document.getElementById('tb');
+    const clipboard = vi.fn(async () => {});
+    const outcome = await insertText(el, 'Y', { execCommand: noopExec, writeClipboard: clipboard });
+    expect(outcome).toBe('clipboard');
+    expect(clipboard).toHaveBeenCalledWith('Y');
+    expect(el.textContent).toBe('x');
+  });
+
   it('disconnected target copies to clipboard', async () => {
     const el = document.createElement('textarea');
     const clipboard = vi.fn(async () => {});
