@@ -19,6 +19,11 @@ export function localDateKey(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+/** Local noon n calendar days before `now`; noon keeps DST shifts from skipping or doubling a day. */
+function daysAgo(now, n) {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - n, 12);
+}
+
 /** @returns {Bucket} */
 function emptyBucket() {
   return {
@@ -37,14 +42,18 @@ function isV2(log) {
   return Boolean(log) && log.version === 2 && typeof log.daily === 'object' && typeof log.total === 'object';
 }
 
+const finite = (v) => (Number.isFinite(v) ? v : 0);
+
 function addTo(bucket, entry) {
+  const audioSeconds = finite(entry.audioSeconds);
+  const cost = finite(entry.cost);
   bucket.sessions += 1;
-  bucket.audioSeconds += entry.audioSeconds;
-  bucket.estimatedCost += entry.cost;
+  bucket.audioSeconds += audioSeconds;
+  bucket.estimatedCost += cost;
   const p = bucket.byProvider[entry.provider] || (bucket.byProvider[entry.provider] = { sessions: 0, audioSeconds: 0, cost: 0 });
   p.sessions += 1;
-  p.audioSeconds += entry.audioSeconds;
-  p.cost += entry.cost;
+  p.audioSeconds += audioSeconds;
+  p.cost += cost;
   bucket.modes[entry.mode] = (bucket.modes[entry.mode] || 0) + 1;
 }
 
@@ -61,9 +70,7 @@ export function applyUsage(log, entry, now = new Date()) {
   addTo(day, entry);
   addTo(next.total, entry);
 
-  const cutoff = new Date(now);
-  cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
-  const cutoffKey = localDateKey(cutoff);
+  const cutoffKey = localDateKey(daysAgo(now, RETENTION_DAYS));
   for (const k of Object.keys(next.daily)) if (k < cutoffKey) delete next.daily[k];
   return next;
 }
@@ -93,6 +100,6 @@ function sumDays(log, keys) {
  */
 export function summarize(log, now = new Date()) {
   const src = isV2(log) ? log : emptyLog();
-  const keys = (n) => Array.from({ length: n }, (_, i) => { const d = new Date(now); d.setDate(d.getDate() - i); return localDateKey(d); });
+  const keys = (n) => Array.from({ length: n }, (_, i) => localDateKey(daysAgo(now, i)));
   return { today: sumDays(src, keys(1)), last7Days: sumDays(src, keys(7)), total: structuredClone(src.total) };
 }

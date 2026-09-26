@@ -5,8 +5,12 @@ const entry = (provider, audioSeconds, cost, mode = 'default') => ({ provider, a
 
 describe('localDateKey', () => {
   it('uses local calendar date, not UTC', () => {
-    const late = new Date(2026, 8, 26, 23, 30); // local 26 Sept, 23:30
-    expect(localDateKey(late)).toBe('2026-09-26');
+    const lateLocal = {
+      getFullYear: () => 2026, getMonth: () => 8, getDate: () => 26,
+      getUTCFullYear: () => 2026, getUTCMonth: () => 8, getUTCDate: () => 27,
+      toISOString: () => '2026-09-27T02:00:00.000Z',
+    };
+    expect(localDateKey(lateLocal)).toBe('2026-09-26');
     expect(localDateKey(new Date(2026, 0, 5))).toBe('2026-01-05');
   });
 });
@@ -45,6 +49,13 @@ describe('applyUsage', () => {
     expect(RETENTION_DAYS).toBe(90);
   });
 
+  it('treats a non-finite audioSeconds or cost as zero', () => {
+    const log = applyUsage(emptyLog(), { provider: 'openai', audioSeconds: NaN, cost: undefined, mode: 'default' }, new Date(2026, 8, 26));
+    expect(log.total.audioSeconds).toBe(0);
+    expect(log.total.estimatedCost).toBe(0);
+    expect(log.total.sessions).toBe(1);
+  });
+
   it('discards a v1 log shape', () => {
     const v1 = { daily: { '2026-09-01': { sessions: 5 } }, total: { sessions: 5, audioSeconds: 1, estimatedCost: 1 } };
     const log = applyUsage(v1, entry('openai', 1, 0.001), new Date(2026, 8, 26));
@@ -70,6 +81,13 @@ describe('summarize', () => {
     expect(s.last7Days.byProvider.gemini.cost).toBeCloseTo(0.02, 9);
     expect(s.total.sessions).toBe(4);
     expect(s.total.audioSeconds).toBe(150);
+  });
+
+  it('counts seven distinct days across a DST-like boundary', () => {
+    const now = new Date(2026, 2, 29, 23, 30);
+    let log = emptyLog();
+    for (let i = 0; i < 7; i++) log = applyUsage(log, entry('openai', 1, 0.001), new Date(2026, 2, 29 - i, 12));
+    expect(summarize(log, now).last7Days.sessions).toBe(7);
   });
 
   it('returns empty buckets for a missing log', () => {
