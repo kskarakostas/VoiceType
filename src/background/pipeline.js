@@ -9,9 +9,19 @@ export const ADAPTERS = { openai, gemini };
 export const REQUEST_TIMEOUT_MS = 60_000;
 
 /**
+ * `warning` is set when the mode step failed and the raw transcript was kept; null otherwise.
  * @typedef {{ raw: string, text: string, provider: 'openai'|'gemini', sttModel: string,
- *             textModel: string|null, audioSeconds: number, cost: number }} DictationResult
+ *             textModel: string|null, audioSeconds: number, cost: number,
+ *             warning: string|null }} DictationResult
  */
+
+/** @param {unknown} err */
+function refineFailureMessage(err) {
+  const e = /** @type {{ name?: string, message?: string }} */ (err);
+  if (e?.name === 'ProviderError') return e.message;
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError') return 'Request timed out.';
+  return 'Text model failed.';
+}
 
 /**
  * Transcribe, then apply the active mode's prompt with the text model when it has one.
@@ -22,7 +32,7 @@ export const REQUEST_TIMEOUT_MS = 60_000;
  * @returns {Promise<DictationResult>}
  */
 export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeKey, settings, durationSec }, adapters = ADAPTERS, timeoutMs = REQUEST_TIMEOUT_MS) {
-  const provider = settings.provider in adapters ? settings.provider : 'openai';
+  const provider = Object.hasOwn(adapters, settings.provider) ? settings.provider : 'openai';
   const key = settings.keys?.[provider] || '';
   if (!key) {
     throw new ProviderError(`${PROVIDERS[provider].label} API key not set. Click the extension icon to add it.`, { code: 'no_key' });
@@ -42,18 +52,27 @@ export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeK
 
   let text = raw;
   let textUsage = null;
+  let refined = false;
+  let warning = null;
   const instructions = (mode.prompt || '').trim();
   if (instructions) {
     const filled = fillTemplate(instructions, { targetLanguage: settings.translateTargetLang || 'English' });
-    const refined = await adapter.refine({ key, instructions: filled, text: raw, signal });
-    text = (refined.text || '').trim() || raw;
-    textUsage = refined.usage || null;
+    try {
+      const out = await adapter.refine({ key, instructions: filled, text: raw, signal });
+      text = (out.text || '').trim() || raw;
+      textUsage = out.usage || null;
+      refined = true;
+    } catch (err) {
+      text = raw;
+      textUsage = null;
+      warning = `Mode not applied (${refineFailureMessage(err)}). Inserted the raw transcript.`;
+    }
   }
 
   const sttModel = PROVIDERS[provider].stt;
-  const textModel = textUsage ? PROVIDERS[provider].text : null;
+  const textModel = refined && !warning ? PROVIDERS[provider].text : null;
   const audioSeconds = stt.usage?.kind === 'duration' ? stt.usage.seconds : durationSec;
   const cost = estimateSttCost(sttModel, stt.usage, durationSec) + (textModel ? estimateTextCost(textModel, textUsage) : 0);
 
-  return { raw, text, provider, sttModel, textModel, audioSeconds, cost };
+  return { raw, text, provider, sttModel, textModel, audioSeconds, cost, warning };
 }

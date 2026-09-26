@@ -34,7 +34,7 @@ describe('runDictation', () => {
     expect(args).toMatchObject({ audioBase64: 'QUJD', mimeType: 'audio/webm', key: 'sk-test', languages: ['el', 'en'], keywords: ['Palowise'] });
     expect(args.signal).toBeInstanceOf(AbortSignal);
     expect(adapters.openai.refine).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ raw: 'raw words', text: 'raw words', provider: 'openai', sttModel: 'gpt-transcribe', textModel: null, audioSeconds: 30 });
+    expect(result).toMatchObject({ raw: 'raw words', text: 'raw words', provider: 'openai', sttModel: 'gpt-transcribe', textModel: null, audioSeconds: 30, warning: null });
     expect(result.cost).toBeCloseTo(0.00225, 6);
   });
 
@@ -46,6 +46,7 @@ describe('runDictation', () => {
     expect(result.text).toBe('refined words');
     expect(result.raw).toBe('raw words');
     expect(result.textModel).toBe('gpt-6-luna');
+    expect(result.warning).toBeNull();
     expect(result.cost).toBeCloseTo(0.00225 + 0.0001 + 0.0001, 6);
   });
 
@@ -91,5 +92,43 @@ describe('runDictation', () => {
     const adapters = fakeAdapters({ refineText: '' });
     const result = await runDictation({ ...base, modeKey: 'instruct', settings: settingsWith() }, adapters);
     expect(result.text).toBe('raw words');
+  });
+
+  it('gemini email mode uses the gemini key on both calls and the same signal', async () => {
+    const adapters = fakeAdapters();
+    const result = await runDictation({ ...base, modeKey: 'email', settings: settingsWith({ provider: 'gemini' }) }, adapters);
+    const t = adapters.gemini.transcribe.mock.calls[0][0];
+    const r = adapters.gemini.refine.mock.calls[0][0];
+    expect(t.key).toBe('AQ.test');
+    expect(r.key).toBe('AQ.test');
+    expect(r.signal).toBe(t.signal);
+    expect(adapters.openai.transcribe).not.toHaveBeenCalled();
+    expect(adapters.openai.refine).not.toHaveBeenCalled();
+    expect(result.textModel).toBe('gemini-3.8-flash');
+    expect(result.warning).toBeNull();
+    expect(result.cost).toBeCloseTo((960 / 1e6) * 2 + (10 / 1e6) * 12 + (500 / 1e6) * 0.75 + (100 / 1e6) * 3.75, 9);
+  });
+
+  it('fills the configured target language', async () => {
+    const adapters = fakeAdapters();
+    await runDictation({ ...base, modeKey: 'translate', settings: settingsWith({ translateTargetLang: 'Greek' }) }, adapters);
+    expect(adapters.openai.refine.mock.calls[0][0].instructions).toContain('Translate it into Greek.');
+  });
+
+  it('falls back to the raw transcript with a warning when refine fails', async () => {
+    const adapters = fakeAdapters();
+    adapters.openai.refine.mockRejectedValueOnce(Object.assign(new Error('OpenAI rate limit or quota reached.'), { name: 'ProviderError' }));
+    const result = await runDictation({ ...base, modeKey: 'email', settings: settingsWith() }, adapters);
+    expect(result.text).toBe('raw words');
+    expect(result.textModel).toBeNull();
+    expect(result.warning).toBe('Mode not applied (OpenAI rate limit or quota reached.). Inserted the raw transcript.');
+    expect(result.cost).toBeCloseTo(0.00225, 6);
+  });
+
+  it('ignores inherited property names as providers', async () => {
+    const adapters = fakeAdapters();
+    const settings = settingsWith({ provider: 'toString' });
+    await runDictation({ ...base, modeKey: 'default', settings }, adapters);
+    expect(adapters.openai.transcribe).toHaveBeenCalledTimes(1);
   });
 });
