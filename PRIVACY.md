@@ -58,7 +58,7 @@ Your use of these services is subject to their terms and privacy policies.
 
 - Audio recordings are processed in memory and immediately discarded after transcription
 - Settings and API keys persist until you clear them or uninstall the extension
-- Usage statistics are retained for 90 days
+- Usage statistics: daily history is kept for 90 days; all-time totals are kept until you clear them
 
 ## Your Rights
 

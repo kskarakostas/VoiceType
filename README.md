@@ -10,7 +10,7 @@
 
 <p align="center">
   Transform your voice into text anywhere on the web.<br>
-  Just speak — let AI do the typing.
+  Just speak. Let AI do the typing.
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@ Speak naturally into any text field on any website. VoiceType uses AI to accurat
 Bring your own OpenAI or Gemini key. Speech recognition uses `gpt-transcribe` or `gemini-3.5-transcribe`; modes such as Email run the transcript through `gpt-6-luna` or `gemini-3.8-flash`.
 
 ### 📧 Smart Modes
-Not just transcription — compose emails, translate languages, or ask AI questions directly with your voice.
+Not just transcription: compose emails, translate languages, or ask AI questions directly with your voice.
 
 </td>
 <td width="50%">
@@ -109,13 +109,17 @@ Keys stay in your browser's local extension storage, never synced. Audio goes st
 ### 1. Install the Extension
 
 ```bash
-# Clone the repository
+# Clone the repository and build (requires Node.js 20+)
 git clone https://github.com/YOUR_USERNAME/voicetype.git
-
-# Or download ZIP and extract
-
-# Build (requires Node.js 20+)
 cd voicetype
+npm install
+npm run build
+```
+
+Or download the ZIP from GitHub, extract it (the folder is named `voicetype-main`) and build there:
+
+```bash
+cd voicetype-main
 npm install
 npm run build
 ```
@@ -128,7 +132,7 @@ Then in Chrome:
 
 ### 2. Get an API Key
 
-**Option A: OpenAI** (Best accuracy)
+**Option A: OpenAI**
 - Go to [platform.openai.com](https://platform.openai.com)
 - Create an API key
 - Cost: ~$0.0045/minute
@@ -148,13 +152,14 @@ Then in Chrome:
 
 ## ⌨️ Keyboard Shortcut
 
-> **Important:** You must set this up manually in Chrome.
+`Ctrl+Shift+Space` (Mac `Command+Shift+Space`) starts and stops recording. Chrome assigns it automatically on install.
+
+If it conflicts with another extension or the page, set a different one:
 
 1. Go to `chrome://extensions/shortcuts`
 2. Find **VoiceType**
 3. Click the pencil icon ✏️
-4. Press your preferred shortcut (e.g., `Ctrl+Shift+Space`)
-5. Done!
+4. Press your preferred shortcut
 
 ---
 
@@ -175,7 +180,7 @@ Both are accurate for dictation. Gemini's transcribe model removes filler words 
 <details>
 <summary><b>Why doesn't the shortcut work?</b></summary>
 <br>
-Chrome requires you to manually set keyboard shortcuts at <code>chrome://extensions/shortcuts</code>
+The shortcut <code>Ctrl+Shift+Space</code> (Mac <code>Command+Shift+Space</code>) is assigned automatically on install. If it conflicts with another extension or the page, set a different one at <code>chrome://extensions/shortcuts</code>.
 </details>
 
 <details>
@@ -198,7 +203,7 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 |---------|----------|
 | **"Add API key" error** | Click the extension icon → paste your API key (it saves automatically) |
 | **Microphone not working** | Click the 🔒 in address bar → Allow microphone |
-| **Shortcut doesn't work** | Set it manually at `chrome://extensions/shortcuts` |
+| **Shortcut doesn't work** | `Ctrl+Shift+Space` (Mac `Command+Shift+Space`) is assigned on install; if it conflicts with another extension or the page, set a different one at `chrome://extensions/shortcuts` |
 | **Transcription fails** | Check your API key and account balance |
 | **Poor quality** | Speak clearly, reduce background noise, or try the other provider |
 
@@ -210,8 +215,8 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 |----------|-------|------|
 | OpenAI | gpt-transcribe | ~$0.0045 per minute |
 | OpenAI | gpt-6-luna (modes) | $0.10 in / $0.50 out per 1M tokens |
-| Gemini | gemini-3.5-transcribe | ~$0.005 per minute |
-| Gemini | gemini-3.8-flash (modes) | $0.75 in / $3.75 out per 1M tokens |
+| Gemini | gemini-3.5-transcribe | ~$0.006 per minute |
+| Gemini | gemini-3.8-flash (modes) | $0.75 in / $3.75 out per 1M tokens (list price through 2026) |
 
 *A typical 30-second recording costs less than $0.01*
 
@@ -228,7 +233,7 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 
 ## 📄 License
 
-MIT License — use it, modify it, share it.
+MIT License: use it, modify it, share it.
 
 ---
 
