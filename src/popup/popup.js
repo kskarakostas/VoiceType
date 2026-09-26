@@ -203,9 +203,11 @@ async function deleteCurrentMode() {
 }
 
 async function resetToDefaults() {
-  if (!confirm('Reset all settings to defaults? Your API keys are kept.')) return;
+  if (!confirm('Reset modes, prompts and recording limits to defaults? Your API keys and provider are kept.')) return;
   const keys = { ...settings.keys };
-  settings = { ...freshSettings(), keys };
+  const { provider } = settings;
+  settings = { ...freshSettings(), keys, provider };
+  closeModeEditor(); // an open editor would otherwise save into a mode that may no longer exist
   populateUI();
   if (await persist()) showToast('Settings reset', 'success');
 }
