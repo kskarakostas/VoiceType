@@ -8,6 +8,9 @@ import { freshSettings } from '../shared/defaults.js';
 let settings;
 let editingMode = null;
 let isNewMode = false;
+// False when getSettings failed: the popup renders defaults but must never save them over the stored settings.
+let settingsLoaded = false;
+const LOAD_ERROR = 'Could not load settings. Close and reopen the popup.';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -45,6 +48,10 @@ function send(message) {
 
 /** Saves the full settings object, keys included. Resolves true on success; shows an error toast otherwise. */
 async function persist() {
+  if (!settingsLoaded) {
+    showToast(LOAD_ERROR, 'error', { sticky: true });
+    return false;
+  }
   const response = await send({ action: MSG.SAVE_SETTINGS, settings });
   if (response?.success === true) return true;
   showToast(response?.error || 'Could not save settings', 'error');
@@ -52,11 +59,15 @@ async function persist() {
 }
 
 async function init() {
-  settings = (await send({ action: MSG.GET_SETTINGS })) || freshSettings();
+  const stored = await send({ action: MSG.GET_SETTINGS });
+  settingsLoaded = Boolean(stored && typeof stored === 'object'
+    && stored.modes && typeof stored.modes === 'object' && !Array.isArray(stored.modes));
+  settings = settingsLoaded ? stored : freshSettings();
   el.versionText.textContent = `v${chrome.runtime.getManifest().version}`;
   populateUI();
   setupTabs();
   setupEventListeners();
+  if (!settingsLoaded) showToast(LOAD_ERROR, 'error', { sticky: true });
   await loadUsageStats();
 }
 
@@ -199,11 +210,12 @@ async function resetToDefaults() {
   if (await persist()) showToast('Settings reset', 'success');
 }
 
-function showToast(message, type = '') {
+/** @param {{ sticky?: boolean }} [options] sticky skips the auto-hide. */
+function showToast(message, type = '', { sticky = false } = {}) {
   el.toast.textContent = message;
   el.toast.className = `toast ${type} show`;
   clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => el.toast.classList.remove('show'), 2500);
+  if (!sticky) showToast.timer = setTimeout(() => el.toast.classList.remove('show'), 2500);
 }
 
 function formatTime(seconds) {
@@ -216,7 +228,7 @@ function formatTime(seconds) {
 
 async function loadUsageStats() {
   const stats = await send({ action: MSG.GET_USAGE });
-  if (!stats) return;
+  if (!(stats && stats.total && typeof stats.total === 'object')) return;
   const fill = (prefix, bucket) => {
     $(`${prefix}-sessions`).textContent = bucket.sessions || 0;
     $(`${prefix}-time`).textContent = formatTime(bucket.audioSeconds || 0);
