@@ -112,12 +112,13 @@ export function migrateSettings(stored) {
 
   // Data from this or a newer version is never pushed through the v1 migration.
   if (typeof v.settingsVersion === 'number' && v.settingsVersion >= SETTINGS_VERSION) {
-    const missing = Object.keys(BUILTIN_MODES).filter((k) => !v.modes?.[k]);
+    const modesOk = !!v.modes && typeof v.modes === 'object' && !Array.isArray(v.modes);
+    const missing = Object.keys(BUILTIN_MODES).filter((k) => !modesOk || !v.modes[k]);
     const keysOk = !!v.keys && typeof v.keys === 'object'
       && typeof v.keys.openai === 'string' && typeof v.keys.gemini === 'string';
     if (missing.length === 0 && keysOk) return v;
     const patched = structuredClone(v);
-    patched.modes = patched.modes || {};
+    if (!modesOk) patched.modes = {};
     for (const k of missing) patched.modes[k] = structuredClone(BUILTIN_MODES[k]);
     if (!keysOk) {
       const keys = patched.keys && typeof patched.keys === 'object' ? patched.keys : {};

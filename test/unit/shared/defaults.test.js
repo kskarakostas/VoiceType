@@ -121,4 +121,20 @@ describe('migrateSettings', () => {
     expect(s).not.toBe(v2);
     expect(s.keys).toEqual({ openai: '', gemini: '' });
   });
+
+  it('replaces a non-object modes value on a v2 record instead of throwing', () => {
+    for (const bad of ['x', 5, true, []]) {
+      const v2 = { ...freshSettings(), modes: bad };
+      const s = migrateSettings(v2);
+      expect(s).not.toBe(v2);
+      expect(Object.keys(s.modes)).toEqual(['default', 'email', 'translate', 'instruct']);
+    }
+  });
+
+  it('fills missing providers in a partial keys object without dropping present keys', () => {
+    const v2 = { ...freshSettings(), keys: { openai: 'sk-a' } };
+    const s = migrateSettings(v2);
+    expect(s).not.toBe(v2);
+    expect(s.keys).toEqual({ openai: 'sk-a', gemini: '' });
+  });
 });
