@@ -478,6 +478,7 @@
 .vt-status.error { color: var(--vt-recording); }
 .vt-status.warning { color: var(--vt-warning); }
 .vt-status.processing { color: var(--vt-primary); }
+.vt-status.clickable { cursor: pointer; }
 
 /* Animations */
 @keyframes vt-pulse-dot {

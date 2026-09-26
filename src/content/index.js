@@ -18,6 +18,7 @@ import { insertText } from './insert.js';
   let currentInput = null;
   let pill = null;
   let settings = null;
+  let settingsLoaded = false; // false while settings are the fallback defaults; saving them would overwrite storage
   let isInitialized = false;
   let recordingStartTime = null;
   let recordingTimer = null;
@@ -31,6 +32,8 @@ import { insertText } from './insert.js';
   let audioContext = null;
   let analyser = null;
   let animationFrameId = null;
+  let lastResult = null; // { text, raw } of the last transcription, for click-to-copy
+  let pendingCopy = false; // the status shows the click-to-copy prompt for lastResult
 
   // Every message to the service worker goes through here so a reloaded extension
   // (orphaned content script) produces one clear notice instead of console noise.
@@ -58,6 +61,7 @@ import { insertText } from './insert.js';
       showStatus('VoiceType was updated. Reload this page.', 'error', { sticky: true });
     } else {
       console.error('VoiceType: runtime error', err);
+      showStatus('VoiceType could not reach its background service. Try again.', 'error');
     }
   }
 
@@ -69,7 +73,8 @@ import { insertText } from './insert.js';
     try {
       // Load settings (v2). An error reply has no modes, so it falls back to defaults too.
       const loaded = await send({ action: MSG.GET_SETTINGS });
-      settings = loaded?.modes ? loaded : freshSettings();
+      settingsLoaded = Boolean(loaded && typeof loaded === 'object' && loaded.modes && typeof loaded.modes === 'object');
+      settings = settingsLoaded ? loaded : freshSettings();
       
       // Create UI elements
       createPill();
@@ -183,6 +188,26 @@ import { insertText } from './insert.js';
     pill.querySelector('.vt-menu-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       toggleDropdown();
+    });
+
+    // Click-to-copy after a failed insert. The click is a user gesture, so the clipboard
+    // write is allowed here even when it was refused during insertion.
+    const statusEl = pill.querySelector('.vt-status');
+    statusEl.addEventListener('mousedown', (e) => {
+      if (pendingCopy) e.preventDefault(); // keep focus in the field so focusout does not hide the pill
+    });
+    statusEl.addEventListener('click', async (e) => {
+      if (!pendingCopy || !lastResult) return;
+      e.stopPropagation();
+      pendingCopy = false;
+      statusEl.classList.remove('clickable');
+      try {
+        await navigator.clipboard.writeText(lastResult.text);
+        showStatus('Copied to clipboard', 'success');
+      } catch (err) {
+        console.error('VoiceType: Copy failed', err);
+        showStatus('Could not copy the text', 'error', { ms: 6000 });
+      }
     });
     
     document.body.appendChild(pill);
@@ -367,7 +392,6 @@ import { insertText } from './insert.js';
   // Select provider
   async function selectProvider(provider) {
     settings.provider = provider;
-    saveSettings();
     
     // Update active state without rebuilding dropdown
     const dropdown = pill.querySelector('#vt-dropdown');
@@ -375,13 +399,12 @@ import { insertText } from './insert.js';
       btn.classList.toggle('active', btn.dataset.provider === provider);
     });
     
-    showStatus(`Provider: ${PROVIDERS[provider]?.label || provider}`, '');
+    if (saveSettings()) showStatus(`Provider: ${PROVIDERS[provider]?.label || provider}`, '');
   }
 
   // Select max time
   async function selectMaxTime(time) {
     settings.maxRecordingTime = time;
-    saveSettings();
     
     // Update active state without rebuilding dropdown
     const dropdown = pill.querySelector('#vt-dropdown');
@@ -390,13 +413,12 @@ import { insertText } from './insert.js';
     });
     
     const label = time >= 60 ? `${time/60}m` : `${time}s`;
-    showStatus(`Max: ${label}`, '');
+    if (saveSettings()) showStatus(`Max: ${label}`, '');
   }
 
   // Select language for translate mode
   async function selectLanguage(lang) {
     settings.translateTargetLang = lang;
-    saveSettings();
     
     // Update active state without rebuilding dropdown
     const dropdown = pill.querySelector('#vt-dropdown');
@@ -413,20 +435,25 @@ import { insertText } from './insert.js';
       }
     }
     
-    showStatus(`Translate → ${lang}`, '');
+    if (saveSettings()) showStatus(`Translate → ${lang}`, '');
   }
 
-  // Save settings helper
+  // Save settings helper. Returns false (and says so) when settings never loaded:
+  // the in-memory copy is then the defaults and must not overwrite the stored settings.
   function saveSettings() {
+    if (!settingsLoaded) {
+      showStatus('Settings not loaded. Reload the page.', 'error');
+      return false;
+    }
     // Never send keys: a stale or fallback copy must not overwrite the stored ones.
     const { keys, ...rest } = settings;
     send({ action: MSG.SAVE_SETTINGS, settings: rest });
+    return true;
   }
 
   // Select mode
   async function selectMode(modeKey) {
     settings.activeMode = modeKey;
-    saveSettings();
     
     // Update active state without rebuilding dropdown
     const dropdown = pill.querySelector('#vt-dropdown');
@@ -444,7 +471,7 @@ import { insertText } from './insert.js';
     }
     
     const mode = settings.modes[modeKey];
-    showStatus(`${mode.icon} ${mode.name}`, '');
+    if (saveSettings()) showStatus(`${mode.icon} ${mode.name}`, '');
   }
 
   // Toggle dropdown
@@ -603,6 +630,7 @@ import { insertText } from './insert.js';
   async function startRecording() {
     if (isRecording || isStopping || isStarting) return;
     isStarting = true;
+    let stream = null;
     try {
       const apiCheck = await send({ action: MSG.CHECK_KEY });
       if (!apiCheck) return; // send() already reported the failure; keep its notice visible
@@ -610,7 +638,7 @@ import { insertText } from './insert.js';
         showStatus('Add an API key in the extension settings', 'error');
         return;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       audioChunks = [];
@@ -636,6 +664,13 @@ import { insertText } from './insert.js';
       startRecordingTimer();
       startVoiceVisualization();
     } catch (err) {
+      // The microphone may already be open: release it and the analyser before reporting.
+      stream?.getTracks().forEach((track) => track.stop());
+      if (audioContext) {
+        audioContext.close().catch(() => {});
+        audioContext = null;
+        analyser = null;
+      }
       console.error('VoiceType: Failed to start recording', err);
       showStatus(err?.name === 'NotAllowedError' ? 'Microphone access denied' : 'Could not start the microphone', 'error');
     } finally {
@@ -841,16 +876,20 @@ import { insertText } from './insert.js';
       if (!response) throw new Error('VoiceType is not responding. Reload the page.');
       if (!response.success) throw new Error(response.error || 'Transcription failed');
 
+      lastResult = { text: response.text, raw: response.raw };
       const outcome = await insertText(currentInput, response.text);
       if (outcome === 'inserted') {
         if (typeof response.warning === 'string' && response.warning) showStatus(response.warning, 'warning', { ms: 6000 });
         else showStatus(`Done ${formatCost(response.cost || 0)}`, 'success');
-      } else if (outcome === 'clipboard') showStatus('Copied to clipboard (field not editable)', 'warning');
-      else showStatus('Could not insert or copy the text', 'error');
+      } else if (outcome === 'clipboard') {
+        showStatus('Copied to clipboard. The field could not be edited or was removed.', 'warning', { ms: 6000 });
+      } else {
+        showStatus('Could not insert. Click here to copy the text.', 'error', { sticky: true, clickable: true });
+      }
       setTimeout(collapsePill, 1500);
     } catch (err) {
       console.error('VoiceType: Transcription failed', err);
-      showStatus(err.message, 'error');
+      showStatus(err.message, 'error', { ms: 6000 });
     } finally {
       isProcessing = false;
       isStopping = false;
@@ -870,19 +909,23 @@ import { insertText } from './insert.js';
     });
   }
 
-  // Show status message (sticky ones stay until the next message replaces them)
-  function showStatus(message, type = '', { sticky = false, ms = 2500 } = {}) {
+  // Show status message (sticky ones stay until the next message replaces them).
+  // clickable arms click-to-copy of lastResult; any later message disarms it.
+  function showStatus(message, type = '', { sticky = false, ms = 2500, clickable = false } = {}) {
     if (!pill) return;
     const statusEl = pill.querySelector('.vt-status');
     statusEl.textContent = message;
     statusEl.className = `vt-status show ${type}`;
+    pendingCopy = clickable;
+    statusEl.classList.toggle('clickable', clickable);
     clearTimeout(statusTimeout);
     if (!sticky) statusTimeout = setTimeout(() => statusEl.classList.remove('show'), ms);
   }
 
   // Keyboard shortcut from the service worker. Registered at load, before init() awaits
-  // settings, so an early toggle is queued instead of lost and the service worker's
-  // fallback injection never runs a second copy of this script.
+  // settings, so an early toggle is queued instead of lost. The service worker's fallback
+  // injection can still run a second copy of this script: before document_idle, when this
+  // copy is not loaded yet, or when this copy is orphaned by an extension reload.
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === MSG.TOGGLE_RECORDING) {
       if (pill) handleToggleCommand();
