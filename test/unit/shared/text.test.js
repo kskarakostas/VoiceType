@@ -24,4 +24,7 @@ describe('fillTemplate', () => {
   it('returns the template untouched when it has no variables', () => {
     expect(fillTemplate('plain', {})).toBe('plain');
   });
+  it('does not resolve inherited object properties', () => {
+    expect(fillTemplate('{{constructor}}{{toString}}', {})).toBe('');
+  });
 });

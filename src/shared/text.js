@@ -19,5 +19,7 @@ export function sanitizeHint(text, maxLen = 1000) {
  */
 export function fillTemplate(template, vars) {
   return String(template ?? '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_, name) =>
-    vars && vars[name] != null ? String(vars[name]) : '');
+    vars && typeof vars === 'object' && Object.hasOwn(vars, name) && vars[name] != null
+      ? String(vars[name])
+      : '');
 }
