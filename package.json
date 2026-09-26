@@ -1,0 +1,21 @@
+{
+  "name": "voicetype",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BYOK dictation for Chrome with cost transparency",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "jsdom": "^29.1.1",
+    "vitest": "^4.1.11"
+  }
+}

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>VoiceType fixtures</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; margin: 40px; max-width: 720px; }
+    label { display: block; margin: 18px 0 6px; font-weight: 600; }
+    input, textarea, [contenteditable] { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #999; border-radius: 4px; }
+    [contenteditable] { min-height: 64px; }
+    .left-flush { margin-left: -40px; width: 200px; }
+  </style>
+</head>
+<body>
+  <h1>VoiceType fixtures</h1>
+  <label for="text">input type=text</label>
+  <input id="text" type="text" placeholder="text">
+  <label for="email">input type=email</label>
+  <input id="email" type="email" placeholder="email">
+  <label for="password">input type=password (no pill expected)</label>
+  <input id="password" type="password" placeholder="password">
+  <label for="ta">textarea</label>
+  <textarea id="ta" rows="4"></textarea>
+  <label for="ce">contenteditable</label>
+  <div id="ce" contenteditable="true"></div>
+  <label for="role">role=textbox</label>
+  <div id="role" role="textbox" contenteditable="true"></div>
+  <label for="left">left-flush input (positioning check, Phase 1)</label>
+  <input id="left" class="left-flush" type="text">
+</body>
+</html>
