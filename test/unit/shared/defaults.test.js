@@ -105,4 +105,20 @@ describe('migrateSettings', () => {
     expect(s).not.toBe(v2);
     expect(s.modes.instruct).toEqual(BUILTIN_MODES.instruct);
   });
+
+  it('passes through data from a newer settings version without touching keys', () => {
+    const v3 = { ...freshSettings(), settingsVersion: 3 };
+    v3.keys.openai = 'sk-newer';
+    const s = migrateSettings(v3);
+    expect(s).toBe(v3);
+    expect(s.keys.openai).toBe('sk-newer');
+  });
+
+  it('restores a missing keys object on a v2 record', () => {
+    const v2 = freshSettings();
+    delete v2.keys;
+    const s = migrateSettings(v2);
+    expect(s).not.toBe(v2);
+    expect(s.keys).toEqual({ openai: '', gemini: '' });
+  });
 });

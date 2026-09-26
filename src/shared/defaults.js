@@ -110,12 +110,23 @@ export function migrateSettings(stored) {
   if (!stored || typeof stored !== 'object') return freshSettings();
   const v = /** @type {any} */ (stored);
 
-  if (v.settingsVersion === SETTINGS_VERSION) {
+  // Data from this or a newer version is never pushed through the v1 migration.
+  if (typeof v.settingsVersion === 'number' && v.settingsVersion >= SETTINGS_VERSION) {
     const missing = Object.keys(BUILTIN_MODES).filter((k) => !v.modes?.[k]);
-    if (missing.length === 0) return v;
+    const keysOk = !!v.keys && typeof v.keys === 'object'
+      && typeof v.keys.openai === 'string' && typeof v.keys.gemini === 'string';
+    if (missing.length === 0 && keysOk) return v;
     const patched = structuredClone(v);
     patched.modes = patched.modes || {};
     for (const k of missing) patched.modes[k] = structuredClone(BUILTIN_MODES[k]);
+    if (!keysOk) {
+      const keys = patched.keys && typeof patched.keys === 'object' ? patched.keys : {};
+      patched.keys = {
+        ...keys,
+        openai: typeof keys.openai === 'string' ? keys.openai : '',
+        gemini: typeof keys.gemini === 'string' ? keys.gemini : '',
+      };
+    }
     return patched;
   }
 
