@@ -66,9 +66,10 @@ describe('insertText', () => {
     const range = document.createRange();
     range.setStart(el.firstChild, 2); range.collapse(true);
     const sel = document.getSelection(); sel.removeAllRanges(); sel.addRange(range);
-    const execAtSelection = (text) => { const r = document.getSelection().getRangeAt(0); r.insertNode(document.createTextNode(text)); return true; };
+    const execAtSelection = vi.fn((text) => { const r = document.getSelection().getRangeAt(0); r.insertNode(document.createTextNode(text)); return true; });
     const outcome = await insertText(el, 'X', { execCommand: execAtSelection, writeClipboard: vi.fn() });
     expect(outcome).toBe('inserted');
+    expect(execAtSelection).toHaveBeenCalledTimes(1);
     expect(el.textContent).toBe('HeXllo');
   });
 
