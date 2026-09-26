@@ -1,4 +1,5 @@
 // Single source of truth for the settings shape, built-in modes and migration.
+import { LEGACY_PROVIDER_OF_MODEL } from './models.js';
 
 export const SETTINGS_VERSION = 2;
 
@@ -132,7 +133,8 @@ export function migrateSettings(stored) {
   }
 
   const s = freshSettings();
-  s.provider = v.provider === 'gemini' ? 'gemini' : 'openai';
+  if (v.provider === 'openai' || v.provider === 'gemini') s.provider = v.provider;
+  else s.provider = Object.hasOwn(LEGACY_PROVIDER_OF_MODEL, v.model) ? LEGACY_PROVIDER_OF_MODEL[v.model] : 'openai';
   s.keys.openai = recoverKey(v.apiKey, v.apiKeyEncrypted);
   s.keys.gemini = recoverKey(v.geminiKey, v.geminiKeyEncrypted);
   const maxTime = Number(v.maxRecordingTime);

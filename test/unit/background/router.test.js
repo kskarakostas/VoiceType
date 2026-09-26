@@ -77,9 +77,9 @@ describe('router', () => {
   });
 
   it('passes the mode warning through when the raw transcript was used', async () => {
-    deps.runDictation.mockResolvedValueOnce({ raw: 'raw', text: 'raw', provider: 'openai', sttModel: 'gpt-transcribe', textModel: null, audioSeconds: 12, cost: 0.0009, warning: 'Mode not applied (x). Inserted the raw transcript.' });
+    deps.runDictation.mockResolvedValueOnce({ raw: 'raw', text: 'raw', provider: 'openai', sttModel: 'gpt-transcribe', textModel: null, audioSeconds: 12, cost: 0.0009, warning: 'Mode not applied: x. Raw transcript inserted.' });
     const res = await handle({ action: MSG.TRANSCRIBE, audioBase64: 'QUJD', mimeType: 'audio/webm', mode: 'email', audioDuration: 12 });
-    expect(res.warning).toBe('Mode not applied (x). Inserted the raw transcript.');
+    expect(res.warning).toBe('Mode not applied: x. Raw transcript inserted.');
   });
 
   it('keeps a successful dictation when usage logging fails', async () => {
@@ -92,10 +92,39 @@ describe('router', () => {
   });
 
   it('returns a friendly error when dictation fails and logs nothing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     deps.runDictation.mockRejectedValueOnce(new ProviderError('No speech detected.', { code: 'empty' }));
     const res = await handle({ action: MSG.TRANSCRIBE, audioBase64: 'QUJD', mode: 'default', audioDuration: 1 });
     expect(res).toEqual({ success: false, error: 'No speech detected.' });
     expect(deps.storage.setUsageLog).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('warns about a failed dictation with any key redacted', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    deps.runDictation.mockRejectedValueOnce(new ProviderError('Upstream echoed sk-abc123456 back'));
+    await handle({ action: MSG.TRANSCRIBE, audioBase64: 'QUJD', mode: 'default', audioDuration: 1 });
+    expect(warn).toHaveBeenCalledWith('VoiceType: ProviderError: Upstream echoed [key] back');
+    expect(warn.mock.calls.flat().join(' ')).not.toContain('sk-abc');
+    warn.mockRestore();
+  });
+
+  it('warns about a failed key check with any key redacted', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    deps.validateKey.mockRejectedValueOnce(new ProviderError('Upstream echoed sk-abc123456 back'));
+    await handle({ action: MSG.VALIDATE_KEY, provider: 'openai', key: 'sk-abc123456' });
+    expect(warn).toHaveBeenCalledWith('VoiceType: ProviderError: Upstream echoed [key] back');
+    expect(warn.mock.calls.flat().join(' ')).not.toContain('sk-abc');
+    warn.mockRestore();
+  });
+
+  it('reports a key check timeout as a key check timeout', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    deps.validateKey.mockRejectedValueOnce(new DOMException('signal timed out', 'TimeoutError'));
+    expect(await handle({ action: MSG.VALIDATE_KEY, provider: 'gemini', key: 'AQ.x' })).toEqual({ ok: false, error: 'Key check timed out. Try again.' });
+    deps.validateKey.mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+    expect(await handle({ action: MSG.VALIDATE_KEY, provider: 'gemini', key: 'AQ.x' })).toEqual({ ok: false, error: 'Key check timed out. Try again.' });
+    warn.mockRestore();
   });
 
   it('serves and clears usage', async () => {
@@ -123,7 +152,14 @@ describe('userMessage', () => {
     expect(userMessage(new DOMException('x', 'TimeoutError'))).toBe('Request timed out. Try a shorter recording.');
     expect(userMessage(new ProviderError('Gemini rejected the API key.'))).toBe('Gemini rejected the API key.');
     expect(userMessage(new TypeError('fetch failed'))).toBe('Network error. Check your connection.');
+    expect(userMessage(new TypeError('Failed to fetch'))).toBe('Network error. Check your connection.');
+    expect(userMessage(new TypeError('x is not a function'))).toBe('Something went wrong. Try again.');
     expect(userMessage(new Error('boom'))).toBe('Something went wrong. Try again.');
     expect(userMessage('weird')).toBe('Something went wrong. Try again.');
+  });
+
+  it('words timeouts for the key check context', () => {
+    expect(userMessage(new DOMException('x', 'TimeoutError'), { context: 'validate' })).toBe('Key check timed out. Try again.');
+    expect(userMessage(new ProviderError('OpenAI rejected the API key.'), { context: 'validate' })).toBe('OpenAI rejected the API key.');
   });
 });

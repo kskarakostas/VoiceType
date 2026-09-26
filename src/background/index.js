@@ -16,10 +16,13 @@ async function validateKey(provider, key) {
 /** Send toggle to the active tab, injecting the content script if it is not there. */
 async function toggleActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !/^https?:/.test(tab.url || '')) return false;
+  if (!tab?.id) return false;
   try {
+    // Always ask first: tab.url can be missing without a host permission for the page.
     await chrome.tabs.sendMessage(tab.id, { action: MSG.TOGGLE_RECORDING });
   } catch {
+    // No content script answered. Inject only into pages content scripts can run on.
+    if (!/^(https?|file):/.test(tab.url || '')) return false;
     try {
       await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['content.css'] });
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });

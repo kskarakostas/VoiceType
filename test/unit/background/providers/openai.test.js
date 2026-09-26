@@ -40,9 +40,23 @@ describe('transcribe', () => {
   });
 
   it('401 redacts key', async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ error: { message: 'Incorrect API key provided: sk-test-abcdef' } }, 401));
+    fetchMock.mockImplementation(() => jsonResponse({ error: { message: 'Incorrect API key provided: sk-test-abcdef' } }, 401));
     await expect(transcribe({ audioBase64: AUDIO, key: 'sk-test-abcdef' })).rejects.toMatchObject({ name: 'ProviderError', code: 'auth' });
     await expect(transcribe({ audioBase64: AUDIO, key: 'sk-test-abcdef' })).rejects.not.toThrow(/sk-test/);
+  });
+
+  it('400 redacts a key echoed in the provider message', async () => {
+    fetchMock.mockImplementation(() => jsonResponse({ error: { message: 'Bad request for key sk-live-abcdef123456: invalid file' } }, 400));
+    const err = await transcribe({ audioBase64: AUDIO, key: 'sk-live-abcdef123456' }).catch((e) => e);
+    expect(err).toMatchObject({ name: 'ProviderError', code: 'bad_request' });
+    expect(err.message).toContain('[key]');
+    expect(err.message).not.toContain('sk-live');
+  });
+
+  it('skips malformed language entries', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ text: 'x', languages: [null, { code: 'en' }] }));
+    const result = await transcribe({ audioBase64: AUDIO, key: 'sk-test' });
+    expect(result.languages).toEqual(['en']);
   });
 
   it('passes the abort signal through', async () => {
@@ -89,5 +103,9 @@ describe('helpers', () => {
   it('normalizeSttUsage returns null for unknown shapes', () => {
     expect(normalizeSttUsage(undefined)).toBeNull();
     expect(normalizeSttUsage({ type: 'other' })).toBeNull();
+  });
+  it('normalizeSttUsage returns null instead of throwing on hostile input', () => {
+    const hostile = { get type() { throw new Error('boom'); } };
+    expect(normalizeSttUsage(hostile)).toBeNull();
   });
 });

@@ -1,14 +1,29 @@
 import { MSG } from '../shared/messages.js';
 import { emptyLog } from './usage.js';
+import { redact } from './providers/errors.js';
 
-/** Turn any thrown value into text safe to show on a web page. */
-export function userMessage(err) {
+/**
+ * Turn any thrown value into text safe to show on a web page.
+ * @param {unknown} err
+ * @param {{ context?: 'validate' }} [options] 'validate' words timeouts for the popup key check.
+ */
+export function userMessage(err, { context } = {}) {
   if (err && typeof err === 'object') {
-    if (err.name === 'TimeoutError' || err.name === 'AbortError') return 'Request timed out. Try a shorter recording.';
-    if (err.name === 'ProviderError') return err.message;
-    if (err instanceof TypeError) return 'Network error. Check your connection.';
+    const e = /** @type {{ name?: string, message?: string }} */ (err);
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') {
+      return context === 'validate' ? 'Key check timed out. Try again.' : 'Request timed out. Try a shorter recording.';
+    }
+    if (e.name === 'ProviderError') return String(e.message);
+    // fetch() rejects with a TypeError on network failure; other TypeErrors are bugs.
+    if (err instanceof TypeError && /fetch|network/i.test(err.message)) return 'Network error. Check your connection.';
   }
   return 'Something went wrong. Try again.';
+}
+
+/** Log a failure for debugging without ever writing a key to the console. */
+function warnFailure(err) {
+  const e = /** @type {{ name?: string, message?: string }} */ (err);
+  console.warn('VoiceType: ' + redact(e?.name + ': ' + e?.message));
 }
 
 /**
@@ -47,7 +62,8 @@ export function createRouter({ storage, runDictation, validateKey, applyUsage, s
           await validateKey(request.provider, request.key);
           return { ok: true };
         } catch (err) {
-          return { ok: false, error: userMessage(err) };
+          warnFailure(err);
+          return { ok: false, error: userMessage(err, { context: 'validate' }) };
         }
 
       case MSG.TRANSCRIBE: {
@@ -71,6 +87,7 @@ export function createRouter({ storage, runDictation, validateKey, applyUsage, s
           }
           return { success: true, text: result.text, raw: result.raw, cost: result.cost, warning: result.warning ?? null };
         } catch (err) {
+          warnFailure(err);
           return { success: false, error: userMessage(err) };
         }
       }

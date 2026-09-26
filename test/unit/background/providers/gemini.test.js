@@ -82,7 +82,17 @@ describe('helpers', () => {
   });
   it('normalizeSttUsage handles missing details', () => {
     expect(normalizeSttUsage(undefined)).toBeNull();
-    expect(normalizeSttUsage({ candidatesTokenCount: 3 })).toEqual({ kind: 'tokens', audioTokens: 0, textTokens: 0, outputTokens: 3 });
+    // No prompt count at all: null, so pricing falls back to the recording length.
+    expect(normalizeSttUsage({ candidatesTokenCount: 3 })).toBeNull();
+  });
+  it('normalizeSttUsage derives audio tokens from the prompt count when details lack AUDIO', () => {
+    expect(normalizeSttUsage({ promptTokenCount: 200, candidatesTokenCount: 3 })).toEqual({ kind: 'tokens', audioTokens: 200, textTokens: 0, outputTokens: 3 });
+    expect(normalizeSttUsage({ promptTokenCount: 200, candidatesTokenCount: 3, promptTokensDetails: [{ modality: 'TEXT', tokenCount: 8 }] }))
+      .toEqual({ kind: 'tokens', audioTokens: 192, textTokens: 8, outputTokens: 3 });
+  });
+  it('normalizeSttUsage tolerates malformed details', () => {
+    expect(normalizeSttUsage({ promptTokensDetails: 'oops' })).toBeNull();
+    expect(normalizeSttUsage({ promptTokensDetails: [null, { modality: 'AUDIO', tokenCount: 5 }] })).toEqual({ kind: 'tokens', audioTokens: 5, textTokens: 0, outputTokens: 0 });
   });
   it('toBcp47 maps known codes and passes others through', () => {
     expect(toBcp47('el')).toBe('el-GR');

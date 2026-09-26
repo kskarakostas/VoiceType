@@ -76,17 +76,31 @@ export function joinParts(data) {
   return parts.filter((p) => typeof p?.text === 'string' && !p.thought).map((p) => p.text).join('');
 }
 
-/** @returns {import('../../shared/pricing.js').SttUsage|null} */
+/**
+ * Audio tokens come from the AUDIO modality detail, else from promptTokenCount minus text.
+ * Null when neither exists, or on any unexpected shape, so pricing falls back to the
+ * recording length. Never throws.
+ * @returns {import('../../shared/pricing.js').SttUsage|null}
+ */
 export function normalizeSttUsage(meta) {
-  if (!meta || typeof meta !== 'object') return null;
-  const byModality = {};
-  for (const d of meta.promptTokensDetails || []) byModality[d.modality] = (byModality[d.modality] || 0) + (d.tokenCount || 0);
-  return {
-    kind: 'tokens',
-    audioTokens: byModality.AUDIO || 0,
-    textTokens: byModality.TEXT || 0,
-    outputTokens: meta.candidatesTokenCount || 0,
-  };
+  try {
+    if (!meta || typeof meta !== 'object') return null;
+    const byModality = {};
+    if (Array.isArray(meta.promptTokensDetails)) {
+      for (const d of meta.promptTokensDetails) {
+        if (!d || typeof d !== 'object') continue;
+        byModality[d.modality] = (byModality[d.modality] || 0) + (d.tokenCount || 0);
+      }
+    }
+    const textTokens = byModality.TEXT || 0;
+    let audioTokens;
+    if (typeof byModality.AUDIO === 'number') audioTokens = byModality.AUDIO;
+    else if (typeof meta.promptTokenCount === 'number') audioTokens = Math.max(0, meta.promptTokenCount - textTokens);
+    else return null;
+    return { kind: 'tokens', audioTokens, textTokens, outputTokens: meta.candidatesTokenCount || 0 };
+  } catch {
+    return null;
+  }
 }
 
 const INVALID_KEY = /api key not valid|API_KEY_INVALID/i;

@@ -88,6 +88,13 @@ describe('migrateSettings', () => {
     expect(s.minRecordingTime).toBe(1);
   });
 
+  it('derives the provider from the legacy model when v1 stored none', () => {
+    expect(migrateSettings({ model: 'gemini-2.5-flash', modes: {} }).provider).toBe('gemini');
+    expect(migrateSettings({ model: 'gpt-4o-transcribe', modes: {} }).provider).toBe('openai');
+    expect(migrateSettings({ model: 'toString', modes: {} }).provider).toBe('openai');
+    expect(migrateSettings({ modes: {} }).provider).toBe('openai');
+  });
+
   it('falls back to default when the active mode no longer exists', () => {
     const s = migrateSettings({ ...V1_SETTINGS, activeMode: 'gone' });
     expect(s.activeMode).toBe('default');

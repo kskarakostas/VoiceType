@@ -9,7 +9,8 @@ export const ADAPTERS = { openai, gemini };
 export const REQUEST_TIMEOUT_MS = 60_000;
 
 /**
- * `warning` is set when the mode step failed and the raw transcript was kept; null otherwise.
+ * `warning` is set when the mode step failed or returned nothing and the raw transcript
+ * was kept; null otherwise.
  * @typedef {{ raw: string, text: string, provider: 'openai'|'gemini', sttModel: string,
  *             textModel: string|null, audioSeconds: number, cost: number,
  *             warning: string|null }} DictationResult
@@ -21,6 +22,12 @@ function refineFailureMessage(err) {
   if (e?.name === 'ProviderError') return e.message;
   if (e?.name === 'TimeoutError' || e?.name === 'AbortError') return 'Request timed out.';
   return 'Text model failed.';
+}
+
+/** @param {string} text */
+function asSentence(text) {
+  const t = String(text).trim();
+  return /[.!?]$/.test(t) ? t : `${t}.`;
 }
 
 /**
@@ -51,7 +58,7 @@ export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeK
   if (!raw) throw new ProviderError('No speech detected.', { code: 'empty' });
 
   let text = raw;
-  let textUsage = null;
+  let textUsage = null; // set whenever the text model answered, so an empty answer is still billed
   let refined = false;
   let warning = null;
   const instructions = (mode.prompt || '').trim();
@@ -59,20 +66,23 @@ export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeK
     const filled = fillTemplate(instructions, { targetLanguage: settings.translateTargetLang || 'English' });
     try {
       const out = await adapter.refine({ key, instructions: filled, text: raw, signal });
-      text = (out.text || '').trim() || raw;
       textUsage = out.usage || null;
-      refined = true;
+      const refinedText = (out.text || '').trim();
+      if (refinedText) {
+        text = refinedText;
+        refined = true;
+      } else {
+        warning = 'Mode returned nothing. Raw transcript inserted.';
+      }
     } catch (err) {
-      text = raw;
-      textUsage = null;
-      warning = `Mode not applied (${refineFailureMessage(err)}). Inserted the raw transcript.`;
+      warning = `Mode not applied: ${asSentence(refineFailureMessage(err))} Raw transcript inserted.`;
     }
   }
 
   const sttModel = PROVIDERS[provider].stt;
-  const textModel = refined && !warning ? PROVIDERS[provider].text : null;
+  const textModel = refined ? PROVIDERS[provider].text : null;
   const audioSeconds = stt.usage?.kind === 'duration' ? stt.usage.seconds : durationSec;
-  const cost = estimateSttCost(sttModel, stt.usage, durationSec) + (textModel ? estimateTextCost(textModel, textUsage) : 0);
+  const cost = estimateSttCost(sttModel, stt.usage, durationSec) + estimateTextCost(PROVIDERS[provider].text, textUsage);
 
   return { raw, text, provider, sttModel, textModel, audioSeconds, cost, warning };
 }

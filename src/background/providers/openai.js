@@ -32,7 +32,7 @@ export async function transcribe({ audioBase64, mimeType = 'audio/webm', key, la
   return {
     text: String(data.text || '').trim(),
     usage: normalizeSttUsage(data.usage),
-    languages: Array.isArray(data.languages) ? data.languages.map((l) => l.code).filter(Boolean) : [],
+    languages: Array.isArray(data.languages) ? data.languages.map((l) => l?.code).filter(Boolean) : [],
   };
 }
 
@@ -75,19 +75,26 @@ export function extractOutputText(data) {
   return parts.join('');
 }
 
-/** @returns {import('../../shared/pricing.js').SttUsage|null} */
+/**
+ * Null on any unexpected shape so pricing falls back to the recording length; never throws.
+ * @returns {import('../../shared/pricing.js').SttUsage|null}
+ */
 export function normalizeSttUsage(usage) {
-  if (!usage || typeof usage !== 'object') return null;
-  if (usage.type === 'duration') return { kind: 'duration', seconds: Number(usage.seconds) || 0 };
-  if (usage.type === 'tokens') {
-    return {
-      kind: 'tokens',
-      audioTokens: usage.input_token_details?.audio_tokens || 0,
-      textTokens: usage.input_token_details?.text_tokens || 0,
-      outputTokens: usage.output_tokens || 0,
-    };
+  try {
+    if (!usage || typeof usage !== 'object') return null;
+    if (usage.type === 'duration') return { kind: 'duration', seconds: Number(usage.seconds) || 0 };
+    if (usage.type === 'tokens') {
+      return {
+        kind: 'tokens',
+        audioTokens: usage.input_token_details?.audio_tokens || 0,
+        textTokens: usage.input_token_details?.text_tokens || 0,
+        outputTokens: usage.output_tokens || 0,
+      };
+    }
+    return null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 export function base64ToBlob(base64, mimeType) {

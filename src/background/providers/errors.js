@@ -25,6 +25,10 @@ export function redact(text) {
  */
 export function friendlyHttpError(provider, status, apiMessage) {
   const label = provider === 'openai' ? 'OpenAI' : 'Gemini';
+  // OpenAI answers 403 for a valid key without access (project permissions, unsupported region).
+  if (status === 403 && provider === 'openai') {
+    return new ProviderError("OpenAI denied access (HTTP 403). Check the key's permissions or your region.", { status, code: 'forbidden' });
+  }
   if (status === 401 || status === 403) {
     return new ProviderError(`${label} rejected the API key. Check it in the extension settings.`, { status, code: 'auth' });
   }

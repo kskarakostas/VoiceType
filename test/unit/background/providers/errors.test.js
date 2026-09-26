@@ -19,6 +19,18 @@ describe('friendlyHttpError', () => {
     expect(e.message).toContain('OpenAI rejected the API key');
     expect(e.message).not.toContain('sk-proj');
   });
+  it('OpenAI 403 is a permissions or region denial, not a bad key', () => {
+    const e = friendlyHttpError('openai', 403, 'unsupported_country_region_territory');
+    expect(e.code).toBe('forbidden');
+    expect(e.status).toBe(403);
+    expect(e.message).toBe("OpenAI denied access (HTTP 403). Check the key's permissions or your region.");
+    expect(friendlyHttpError('openai', 401, '').code).toBe('auth');
+  });
+  it('Gemini 403 stays an auth error', () => {
+    const e = friendlyHttpError('gemini', 403, '');
+    expect(e.code).toBe('auth');
+    expect(e.message).toBe('Gemini rejected the API key. Check it in the extension settings.');
+  });
   it('maps rate limits, bad requests and server errors', () => {
     expect(friendlyHttpError('gemini', 429, '').message).toContain('Gemini rate limit or quota');
     expect(friendlyHttpError('gemini', 400, 'Unsupported MIME type').message).toBe('Gemini rejected the request: Unsupported MIME type');

@@ -92,6 +92,10 @@ describe('runDictation', () => {
     const adapters = fakeAdapters({ refineText: '' });
     const result = await runDictation({ ...base, modeKey: 'instruct', settings: settingsWith() }, adapters);
     expect(result.text).toBe('raw words');
+    expect(result.warning).toBe('Mode returned nothing. Raw transcript inserted.');
+    expect(result.textModel).toBeNull();
+    // The empty refine call was still billed.
+    expect(result.cost).toBeCloseTo(0.00225 + 0.0001 + 0.0001, 6);
   });
 
   it('gemini email mode uses the gemini key on both calls and the same signal', async () => {
@@ -121,8 +125,22 @@ describe('runDictation', () => {
     const result = await runDictation({ ...base, modeKey: 'email', settings: settingsWith() }, adapters);
     expect(result.text).toBe('raw words');
     expect(result.textModel).toBeNull();
-    expect(result.warning).toBe('Mode not applied (OpenAI rate limit or quota reached.). Inserted the raw transcript.');
+    expect(result.warning).toBe('Mode not applied: OpenAI rate limit or quota reached. Raw transcript inserted.');
     expect(result.cost).toBeCloseTo(0.00225, 6);
+  });
+
+  it('adds a period to a refine failure reason that lacks one', async () => {
+    const adapters = fakeAdapters();
+    adapters.openai.refine.mockRejectedValueOnce(Object.assign(new Error('OpenAI rejected the request: Unsupported model'), { name: 'ProviderError' }));
+    const result = await runDictation({ ...base, modeKey: 'email', settings: settingsWith() }, adapters);
+    expect(result.warning).toBe('Mode not applied: OpenAI rejected the request: Unsupported model. Raw transcript inserted.');
+  });
+
+  it('words a refine timeout in the warning', async () => {
+    const adapters = fakeAdapters();
+    adapters.openai.refine.mockRejectedValueOnce(new DOMException('signal timed out', 'TimeoutError'));
+    const result = await runDictation({ ...base, modeKey: 'email', settings: settingsWith() }, adapters);
+    expect(result.warning).toBe('Mode not applied: Request timed out. Raw transcript inserted.');
   });
 
   it('ignores inherited property names as providers', async () => {
