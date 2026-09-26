@@ -37,7 +37,7 @@ chrome.runtime.onInstalled.addListener(() => { storage.getSettings().catch(() =>
 chrome.runtime.onStartup.addListener(() => { storage.getSettings().catch(() => {}); });
 
 chrome.commands.onCommand.addListener((command) => {
-  if (command === MSG.TOGGLE_RECORDING) toggleActiveTab();
+  if (command === MSG.TOGGLE_RECORDING) toggleActiveTab().catch(() => {});
 });
 
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {

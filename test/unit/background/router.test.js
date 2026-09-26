@@ -37,6 +37,12 @@ describe('router', () => {
     expect(saved.provider).toBe('gemini');
   });
 
+  it('rejects a missing or non-object settings payload without touching storage', async () => {
+    expect(await handle({ action: MSG.SAVE_SETTINGS })).toEqual({ success: false, error: 'Invalid settings.' });
+    expect(await handle({ action: MSG.SAVE_SETTINGS, settings: [] })).toEqual({ success: false, error: 'Invalid settings.' });
+    expect(deps.storage.saveSettings).not.toHaveBeenCalled();
+  });
+
   it('reports whether the active provider has a key', async () => {
     expect(await handle({ action: MSG.CHECK_KEY })).toEqual({ hasKey: true });
   });
@@ -62,6 +68,15 @@ describe('router', () => {
     expect(res.warning).toBe('Mode not applied (x). Inserted the raw transcript.');
   });
 
+  it('keeps a successful dictation when usage logging fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    deps.storage.setUsageLog.mockRejectedValueOnce(new Error('quota'));
+    const res = await handle({ action: MSG.TRANSCRIBE, audioBase64: 'QUJD', mimeType: 'audio/webm', mode: 'email', audioDuration: 12 });
+    expect(res).toEqual({ success: true, text: 'final', raw: 'raw', cost: 0.0009, warning: null });
+    expect(warn).toHaveBeenCalledWith('VoiceType: usage logging failed', expect.any(Error));
+    warn.mockRestore();
+  });
+
   it('returns a friendly error when dictation fails and logs nothing', async () => {
     deps.runDictation.mockRejectedValueOnce(new ProviderError('No speech detected.', { code: 'empty' }));
     const res = await handle({ action: MSG.TRANSCRIBE, audioBase64: 'QUJD', mode: 'default', audioDuration: 1 });
@@ -70,9 +85,12 @@ describe('router', () => {
   });
 
   it('serves and clears usage', async () => {
+    usageLog.total.sessions = 3;
     await handle({ action: MSG.GET_USAGE });
     expect(deps.summarize).toHaveBeenCalledWith(usageLog);
     expect(await handle({ action: MSG.CLEAR_USAGE })).toEqual({ success: true });
+    expect(deps.storage.setUsageLog).toHaveBeenCalledTimes(1);
+    expect(deps.storage.setUsageLog).toHaveBeenCalledWith(expect.objectContaining({ total: expect.objectContaining({ sessions: 0 }) }));
     expect(usageLog.total.sessions).toBe(0);
   });
 

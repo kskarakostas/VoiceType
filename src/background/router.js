@@ -27,9 +27,12 @@ export function createRouter({ storage, runDictation, validateKey, applyUsage, s
       case MSG.GET_SETTINGS:
         return storage.getSettings();
 
-      case MSG.SAVE_SETTINGS:
-        await storage.saveSettings(request.settings);
+      case MSG.SAVE_SETTINGS: {
+        const next = request.settings;
+        if (!next || typeof next !== 'object' || Array.isArray(next)) return { success: false, error: 'Invalid settings.' };
+        await storage.saveSettings(next);
         return { success: true };
+      }
 
       case MSG.CHECK_KEY: {
         const settings = await storage.getSettings();
@@ -54,10 +57,15 @@ export function createRouter({ storage, runDictation, validateKey, applyUsage, s
             settings,
             durationSec: Number(request.audioDuration) || 0,
           });
-          const log = applyUsage(await storage.getUsageLog(), {
-            provider: result.provider, audioSeconds: result.audioSeconds, cost: result.cost, mode: request.mode,
-          });
-          await storage.setUsageLog(log);
+          try {
+            const log = applyUsage(await storage.getUsageLog(), {
+              provider: result.provider, audioSeconds: result.audioSeconds, cost: result.cost, mode: request.mode,
+            });
+            await storage.setUsageLog(log);
+          } catch (err) {
+            // Logging is bookkeeping; never lose a paid transcript over it.
+            console.warn('VoiceType: usage logging failed', err);
+          }
           return { success: true, text: result.text, raw: result.raw, cost: result.cost, warning: result.warning ?? null };
         } catch (err) {
           return { success: false, error: userMessage(err) };
