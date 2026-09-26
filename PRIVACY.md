@@ -1,6 +1,6 @@
 # Privacy Policy for VoiceType
 
-**Last Updated: January 2025**
+**Last Updated: September 2026**
 
 ## Overview
 
@@ -13,8 +13,8 @@ VoiceType is a Chrome extension that provides AI-powered speech-to-text function
 VoiceType collects and processes the following data **locally on your device**:
 
 1. **Audio Data**: Temporarily recorded for transcription purposes
-2. **API Keys**: Your OpenAI or Google Gemini API keys (encrypted)
-3. **Settings**: Your preferences (provider, model, modes)
+2. **API Keys**: Your OpenAI or Google Gemini API keys, stored in plain text in Chrome's local extension storage
+3. **Settings**: Your preferences (provider, modes, recording limits)
 4. **Usage Statistics**: Session counts, audio duration, and estimated costs
 
 ### What We Do NOT Collect
@@ -27,7 +27,7 @@ VoiceType collects and processes the following data **locally on your device**:
 ## Data Storage
 
 - All data is stored **locally** in Chrome's extension storage
-- API keys are encrypted using XOR encryption before storage
+- API keys are stored in plain text in `chrome.storage.local`. They are never written to `chrome.storage.sync`, so they do not leave this browser profile. Anyone with access to your browser profile on disk can read them; this is the same protection level as a saved website password without a master password.
 - No data is sent to our servers (we don't have any servers)
 - Usage statistics are stored locally and never transmitted
 
@@ -45,10 +45,12 @@ These transmissions occur only when you actively record and submit audio for tra
 
 ## Third-Party Services
 
-VoiceType uses third-party AI services for transcription:
+VoiceType uses third-party AI services for transcription and mode processing:
 
-- **OpenAI**: For GPT-4o based transcription
-- **Google Gemini**: For Gemini-based transcription
+- **OpenAI**: `gpt-transcribe` for speech recognition, `gpt-6-luna` for modes (Email, Translate, Instruct and custom modes)
+- **Google Gemini**: `gemini-3.5-transcribe` for speech recognition, `gemini-3.8-flash` for modes
+
+Mode processing sends the transcript text, not the audio, to the text model of the same provider you chose for speech recognition.
 
 Your use of these services is subject to their terms and privacy policies.
 
@@ -68,7 +70,7 @@ You can:
 
 ## Security
 
-- API keys are encrypted before storage
+- API keys are sent only over HTTPS in request headers, never in URLs
 - No external analytics or tracking
 - All processing happens locally or directly with your chosen AI provider
 - We recommend setting spending limits on your API provider accounts
