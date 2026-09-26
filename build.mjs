@@ -36,10 +36,23 @@ if (watch) {
   await ctx.watch();
   copyStatic();
   // esbuild only watches the JS graph; re-copy statics when any of them changes.
-  for (const src of ['manifest.json', 'src/popup/popup.html', 'src/popup/popup.css', 'src/content/content.css', 'icons']) {
-    watchPath(src, (_event, filename) => {
-      console.log(`static changed: ${src === 'icons' && filename ? `icons/${filename}` : src}`);
-      copyStatic();
+  // Watch parent directories, not files, so atomic-rename saves stay visible.
+  // Each entry maps a directory to the static basenames in it (null: any name).
+  const staticDirs = {
+    '.': ['manifest.json'],
+    'src/popup': ['popup.html', 'popup.css'],
+    'src/content': ['content.css'],
+    icons: null,
+  };
+  for (const [dir, names] of Object.entries(staticDirs)) {
+    watchPath(dir, (_event, filename) => {
+      if (!filename || (names && !names.includes(filename))) return;
+      console.log(`static changed: ${dir === '.' ? filename : `${dir}/${filename}`}`);
+      try {
+        copyStatic();
+      } catch (err) {
+        console.error(`static copy failed: ${err.message}`);
+      }
     });
   }
   console.log('watching for changes');
