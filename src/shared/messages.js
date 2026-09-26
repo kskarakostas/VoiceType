@@ -12,6 +12,6 @@ export const MSG = Object.freeze({
 
 /**
  * @typedef {{ action: 'transcribe', audioBase64: string, mimeType: string, mode: string, audioDuration: number }} TranscribeRequest
- * @typedef {{ success: true, text: string, raw: string, cost: number } | { success: false, error: string }} TranscribeResponse
+ * @typedef {{ success: true, text: string, raw: string, cost: number, warning: string|null } | { success: false, error: string }} TranscribeResponse
  * @typedef {{ action: 'validateKey', provider: 'openai'|'gemini', key: string }} ValidateKeyRequest
  */

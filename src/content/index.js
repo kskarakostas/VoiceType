@@ -1,13 +1,18 @@
 // VoiceType - Content Script
 // Expandable pill toolbar for speech-to-text
 
-(function() {
-  'use strict';
-  
+import { MSG } from '../shared/messages.js';
+import { PROVIDERS } from '../shared/models.js';
+import { formatCost } from '../shared/pricing.js';
+import { freshSettings } from '../shared/defaults.js';
+import { isValidInput, deepActiveElement } from './fields.js';
+import { insertText } from './insert.js';
+
   // State
   let isRecording = false;
   let isStopping = false; // Prevent race conditions during stop
   let isProcessing = false; // Lock to prevent multiple transcriptions
+  let isStarting = false; // getUserMedia in flight; blocks toggles until it settles
   let mediaRecorder = null;
   let audioChunks = [];
   let currentInput = null;
@@ -22,9 +27,39 @@
   let hoverTimeout = null;
   let statusTimeout = null;
   let lastToggleTime = 0; // Track last toggle for debounce
+  let pendingToggle = false; // Shortcut toggle that arrived before init() finished
   let audioContext = null;
   let analyser = null;
   let animationFrameId = null;
+
+  // Every message to the service worker goes through here so a reloaded extension
+  // (orphaned content script) produces one clear notice instead of console noise.
+  function send(message) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            handleRuntimeError(chrome.runtime.lastError);
+            resolve(null);
+          } else {
+            resolve(response);
+          }
+        });
+      } catch (err) {
+        handleRuntimeError(err);
+        resolve(null);
+      }
+    });
+  }
+
+  function handleRuntimeError(err) {
+    const text = String(err?.message || err);
+    if (text.includes('Extension context invalidated') || text.includes('message port closed')) {
+      showStatus('VoiceType was updated. Reload this page.', 'error', { sticky: true });
+    } else {
+      console.error('VoiceType: runtime error', err);
+    }
+  }
 
   // Initialize
   async function init() {
@@ -32,31 +67,9 @@
     isInitialized = true;
     
     try {
-      // Load settings
-      settings = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'getSettings' }, (response) => {
-          if (chrome.runtime.lastError) {
-            resolve(null);
-          } else {
-            resolve(response);
-          }
-        });
-      });
-      
-      // Use default settings if none returned
-      if (!settings) {
-        settings = {
-          provider: 'openai',
-          model: 'gpt-4o-transcribe',
-          geminiModel: 'gemini-2.5-flash',
-          activeMode: 'default',
-          minRecordingTime: 0,
-          maxRecordingTime: 60,
-          modes: {
-            default: { name: 'Default', prompt: 'Transcribe accurately.', icon: '🎤' }
-          }
-        };
-      }
+      // Load settings (v2). An error reply has no modes, so it falls back to defaults too.
+      const loaded = await send({ action: MSG.GET_SETTINGS });
+      settings = loaded?.modes ? loaded : freshSettings();
       
       // Create UI elements
       createPill();
@@ -68,72 +81,50 @@
       // Listen for clicks outside to close dropdown (use mousedown to catch before DOM changes)
       document.addEventListener('mousedown', handleDocumentClick);
       
-      // Listen for keyboard shortcut from background
-      chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'toggle-recording') {
-          // If recording, stop it
-          if (isRecording) {
-            stopRecording();
-            sendResponse({ received: true });
-            return false;
-          }
-          
-          // Force reset any stuck flags
-          isStopping = false;
-          isProcessing = false;
-          
-          // Ensure we have an input
-          if (!currentInput) {
-            const activeEl = document.activeElement;
-            if (isValidInput(activeEl)) {
-              currentInput = activeEl;
-              showPill(activeEl);
-            }
-          }
-          
-          // Now start if we have a valid input
-          if (currentInput && pill) {
-            expandPill();
-            startRecording();
-          }
-          sendResponse({ received: true });
-        }
-        return false;
-      });
-      
       // Check if there's already a focused input
-      const activeEl = document.activeElement;
+      const activeEl = deepActiveElement();
       if (isValidInput(activeEl)) {
         currentInput = activeEl;
         showPill(activeEl);
+      }
+
+      // Run a shortcut toggle that arrived while settings were loading
+      if (pendingToggle) {
+        pendingToggle = false;
+        handleToggleCommand();
       }
     } catch (err) {
       console.error('VoiceType: Initialization error', err);
     }
   }
 
-  // Check if element is a valid text input
-  function isValidInput(el) {
-    if (!el) return false;
+  // Keyboard shortcut toggle from the service worker (listener registered at load, see bottom)
+  function handleToggleCommand() {
+    // If recording, stop it
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+    if (isStarting) return;
     
-    const tagName = el.tagName?.toLowerCase();
-    const type = el.type?.toLowerCase();
+    // Force reset any stuck flags
+    isStopping = false;
+    isProcessing = false;
     
-    // Standard inputs
-    if (tagName === 'textarea') return true;
-    if (tagName === 'input') {
-      const textTypes = ['text', 'search', 'email', 'url', 'tel', 'password'];
-      return textTypes.includes(type) || !type;
+    // Ensure we have an input
+    if (!currentInput) {
+      const activeEl = deepActiveElement();
+      if (isValidInput(activeEl)) {
+        currentInput = activeEl;
+        showPill(activeEl);
+      }
     }
     
-    // Contenteditable elements
-    if (el.isContentEditable) return true;
-    if (el.getAttribute('contenteditable') === 'true') return true;
-    
-    // Check for common editor roles
-    if (el.getAttribute('role') === 'textbox') return true;
-    
-    return false;
+    // Now start if we have a valid input
+    if (currentInput && pill) {
+      expandPill();
+      startRecording();
+    }
   }
 
   // Create the pill element
@@ -220,7 +211,7 @@
     
     const dropdown = pill.querySelector('#vt-dropdown');
     const provider = settings.provider || 'openai';
-    const maxTime = settings.maxRecordingTime || 60;
+    const maxTime = settings.maxRecordingTime || 120;
     const targetLang = settings.translateTargetLang || 'English';
     
     // Build modes list with special handling for translate mode
@@ -255,25 +246,6 @@
       <div class="vt-dropdown-divider"></div>
     ` : '';
     
-    // Build model buttons based on provider
-    const openaiModels = `
-      <button class="vt-model-btn ${settings.model === 'gpt-4o-transcribe' ? 'active' : ''}" data-model="gpt-4o-transcribe">
-        gpt-4o
-      </button>
-      <button class="vt-model-btn ${settings.model === 'gpt-4o-mini-transcribe' ? 'active' : ''}" data-model="gpt-4o-mini-transcribe">
-        gpt-4o-mini
-      </button>
-    `;
-    
-    const geminiModels = `
-      <button class="vt-model-btn ${settings.geminiModel === 'gemini-3-flash-preview' ? 'active' : ''}" data-model="gemini-3-flash-preview">
-        3 Flash
-      </button>
-      <button class="vt-model-btn ${settings.geminiModel === 'gemini-2.5-flash' ? 'active' : ''}" data-model="gemini-2.5-flash">
-        2.5 Flash
-      </button>
-    `;
-    
     dropdown.innerHTML = `
       <div class="vt-dropdown-section">
         <div class="vt-dropdown-label">Mode</div>
@@ -284,18 +256,9 @@
       <div class="vt-dropdown-section">
         <div class="vt-dropdown-label">Provider</div>
         <div class="vt-dropdown-row">
-          <button class="vt-provider-btn ${provider === 'openai' ? 'active' : ''}" data-provider="openai">
-            OpenAI
-          </button>
-          <button class="vt-provider-btn ${provider === 'gemini' ? 'active' : ''}" data-provider="gemini">
-            Gemini
-          </button>
-        </div>
-      </div>
-      <div class="vt-dropdown-section">
-        <div class="vt-dropdown-label">Model</div>
-        <div class="vt-dropdown-row vt-model-row">
-          ${provider === 'openai' ? openaiModels : geminiModels}
+          ${Object.entries(PROVIDERS).map(([id, p]) => `
+            <button class="vt-provider-btn ${provider === id ? 'active' : ''}" data-provider="${id}">${p.label}</button>
+          `).join('')}
         </div>
       </div>
       <div class="vt-dropdown-divider"></div>
@@ -306,6 +269,7 @@
           <button class="vt-time-btn ${maxTime === 60 ? 'active' : ''}" data-time="60">1m</button>
           <button class="vt-time-btn ${maxTime === 120 ? 'active' : ''}" data-time="120">2m</button>
           <button class="vt-time-btn ${maxTime === 180 ? 'active' : ''}" data-time="180">3m</button>
+          <button class="vt-time-btn ${maxTime === 300 ? 'active' : ''}" data-time="300">5m</button>
         </div>
       </div>
       <div class="vt-dropdown-divider"></div>
@@ -355,14 +319,6 @@
       });
     });
     
-    // Add click handlers for model
-    dropdown.querySelectorAll('.vt-model-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        selectModel(btn.dataset.model);
-      });
-    });
-    
     // Add click handlers for min time
     dropdown.querySelectorAll('.vt-time-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -379,16 +335,12 @@
     });
     
     updateModeButton();
-    loadUsageForDropdown();
   }
 
   // Load usage stats into dropdown
   async function loadUsageForDropdown() {
-    const stats = await new Promise(resolve => {
-      chrome.runtime.sendMessage({ action: 'getUsageStats' }, resolve);
-    });
-    
-    if (!stats || !pill) return;
+    const stats = await send({ action: MSG.GET_USAGE });
+    if (!stats?.today || !stats?.total || !pill) return;
     
     const costEl = pill.querySelector('#vt-usage-cost');
     const todayEl = pill.querySelector('#vt-today-stats');
@@ -412,12 +364,6 @@
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
-  // Format cost helper
-  function formatCost(cost) {
-    if (cost < 0.01) return '$' + cost.toFixed(4);
-    return '$' + cost.toFixed(2);
-  }
-
   // Select provider
   async function selectProvider(provider) {
     settings.provider = provider;
@@ -429,55 +375,7 @@
       btn.classList.toggle('active', btn.dataset.provider === provider);
     });
     
-    // Update model buttons for new provider
-    const modelRow = dropdown.querySelector('.vt-model-row');
-    if (modelRow) {
-      if (provider === 'openai') {
-        modelRow.innerHTML = `
-          <button class="vt-model-btn ${settings.model === 'gpt-4o-transcribe' ? 'active' : ''}" data-model="gpt-4o-transcribe">gpt-4o</button>
-          <button class="vt-model-btn ${settings.model === 'gpt-4o-mini-transcribe' ? 'active' : ''}" data-model="gpt-4o-mini-transcribe">gpt-4o-mini</button>
-        `;
-      } else {
-        modelRow.innerHTML = `
-          <button class="vt-model-btn ${settings.geminiModel === 'gemini-3-flash-preview' ? 'active' : ''}" data-model="gemini-3-flash-preview">3 Flash</button>
-          <button class="vt-model-btn ${settings.geminiModel === 'gemini-2.5-flash' ? 'active' : ''}" data-model="gemini-2.5-flash">2.5 Flash</button>
-        `;
-      }
-      // Re-add click handlers for new model buttons
-      modelRow.querySelectorAll('.vt-model-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          selectModel(btn.dataset.model);
-        });
-      });
-    }
-    
-    showStatus(`Provider: ${provider === 'openai' ? 'OpenAI' : 'Gemini'}`, '');
-  }
-
-  // Select model
-  async function selectModel(model) {
-    const provider = settings.provider || 'openai';
-    if (provider === 'gemini') {
-      settings.geminiModel = model;
-    } else {
-      settings.model = model;
-    }
-    saveSettings();
-    
-    // Update active state without rebuilding dropdown
-    const dropdown = pill.querySelector('#vt-dropdown');
-    dropdown.querySelectorAll('.vt-model-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.model === model);
-    });
-    
-    const modelNames = {
-      'gpt-4o-transcribe': 'gpt-4o',
-      'gpt-4o-mini-transcribe': 'gpt-4o-mini',
-      'gemini-3-flash-preview': 'Gemini 3 Flash',
-      'gemini-2.5-flash': 'Gemini 2.5 Flash'
-    };
-    showStatus(`Model: ${modelNames[model] || model}`, '');
+    showStatus(`Provider: ${PROVIDERS[provider]?.label || provider}`, '');
   }
 
   // Select max time
@@ -520,10 +418,7 @@
 
   // Save settings helper
   function saveSettings() {
-    chrome.runtime.sendMessage({ 
-      action: 'saveSettings', 
-      settings: settings 
-    });
+    send({ action: MSG.SAVE_SETTINGS, settings });
   }
 
   // Select mode
@@ -658,25 +553,26 @@
     }
   }
 
-  // Handle focus in
+  // Handle focus in (composedPath reaches inputs inside open shadow roots)
   function handleFocusIn(e) {
-    if (isValidInput(e.target)) {
-      currentInput = e.target;
-      showPill(e.target);
+    const target = e.composedPath ? e.composedPath()[0] : e.target;
+    if (isValidInput(target)) {
+      currentInput = target;
+      showPill(target);
     }
   }
 
   // Handle focus out
   function handleFocusOut(e) {
-    // Don't hide anything while recording
-    if (isRecording) return;
+    // Don't hide anything while recording or while the microphone is starting
+    if (isRecording || isStarting) return;
     
     // Small delay to allow clicking the pill
     setTimeout(() => {
-      if (isRecording) return;
+      if (isRecording || isStarting) return;
       
-      if (document.activeElement !== currentInput) {
-        if (!pill?.contains(document.activeElement)) {
+      if (deepActiveElement() !== currentInput) {
+        if (!pill?.contains(deepActiveElement())) {
           hidePill();
         }
       }
@@ -692,7 +588,7 @@
     lastToggleTime = now;
     
     // Don't toggle if we're in the middle of stopping or processing
-    if (isStopping || isProcessing) return;
+    if (isStopping || isProcessing || isStarting) return;
     
     if (isRecording) {
       await stopRecording();
@@ -703,73 +599,45 @@
 
   // Start recording
   async function startRecording() {
-    // Prevent starting if already recording or stopping
-    if (isRecording || isStopping) return;
-    
-    // Check for API key
-    const apiCheck = await new Promise(resolve => {
-      chrome.runtime.sendMessage({ action: 'checkApiKey' }, resolve);
-    });
-    
-    if (!apiCheck.hasKey) {
-      showStatus('⚠️ Add API key in extension settings', 'error');
-      return;
-    }
-    
+    if (isRecording || isStopping || isStarting) return;
+    isStarting = true;
     try {
-      // Set recording flag FIRST to prevent race conditions
-      isRecording = true;
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
+      const apiCheck = await send({ action: MSG.CHECK_KEY });
+      if (!apiCheck) return; // send() already reported the failure; keep its notice visible
+      if (!apiCheck.hasKey) {
+        showStatus('Add an API key in the extension settings', 'error');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
-      
       audioChunks = [];
-      mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      });
-      
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunks.push(e.data);
-        }
-      };
-      
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 32000 });
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
       mediaRecorder.onstop = handleRecordingComplete;
-      
-      // Set up audio analyzer for voice visualization
       setupAudioAnalyzer(stream);
-      
       mediaRecorder.start(100);
       recordingStartTime = Date.now();
-      
-      // Set up max recording time auto-stop
-      const maxTime = (settings?.maxRecordingTime || 60) * 1000; // Convert to ms
-      if (maxTime > 0) {
-        maxRecordingTimer = setTimeout(() => {
-          if (isRecording && !isStopping) {
-            showStatus('⏱️ Max time reached', '');
-            stopRecording();
-          }
-        }, maxTime);
-      }
-      
-      // Update UI
+      isRecording = true; // only now: nothing can observe a half-started recorder
+
+      const maxTime = (settings?.maxRecordingTime || 120) * 1000;
+      maxRecordingTimer = setTimeout(() => {
+        if (isRecording && !isStopping) {
+          showStatus('Max time reached', '');
+          stopRecording();
+        }
+      }, maxTime);
+
       pill.classList.add('recording');
       expandPill();
       updateRecordButton(true);
       startRecordingTimer();
       startVoiceVisualization();
-      
     } catch (err) {
-      // Reset state on error
-      isRecording = false;
       console.error('VoiceType: Failed to start recording', err);
-      showStatus('❌ Microphone access denied', 'error');
+      showStatus(err?.name === 'NotAllowedError' ? 'Microphone access denied' : 'Could not start the microphone', 'error');
+    } finally {
+      isStarting = false;
     }
   }
 
@@ -931,74 +799,56 @@
 
   // Handle recording complete
   async function handleRecordingComplete() {
-    // Prevent duplicate processing
-    if (isProcessing) {
-      isStopping = false;
-      return;
-    }
+    if (isProcessing) { isStopping = false; return; }
     isProcessing = true;
-    
+    // Take this recording's chunks now: a shortcut toggle may start the next recording
+    // while this one is still being transcribed.
+    const chunks = audioChunks;
+    audioChunks = [];
     const recordingDuration = recordingStartTime ? (Date.now() - recordingStartTime) / 1000 : 0;
     recordingStartTime = null;
-    
-    // Minimum 3 seconds - treat shorter as misclick, silently ignore
-    if (recordingDuration < 3) {
-      audioChunks = [];
-      isProcessing = false;
-      isStopping = false;
-      collapsePill();
-      return;
-    }
-    
-    // Check if we have audio data
-    if (audioChunks.length === 0) {
-      showStatus('⚠️ No audio recorded', 'warning');
-      isProcessing = false;
-      isStopping = false;
-      return;
-    }
-    
-    showStatus('⏳ Processing...', 'processing');
-    
+    const minTime = Number(settings?.minRecordingTime ?? 1);
+
     try {
-      // Convert audio to base64
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-      const base64 = await blobToBase64(audioBlob);
-      
-      // Clear chunks immediately to prevent reuse
-      audioChunks = [];
-      
-      // Send to background for transcription
-      const response = await new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage({
-          action: 'transcribe',
-          audioBlob: base64,
-          mode: settings?.activeMode || 'default',
-          audioDuration: recordingDuration
-        }, (result) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else {
-            resolve(result);
-          }
-        });
-      });
-      
-      if (response.success) {
-        insertText(response.text);
-        showStatus('✓ Done!', 'success');
-        
-        // Collapse pill after 1.5 seconds
-        setTimeout(() => {
-          collapsePill();
-        }, 1500);
-      } else {
-        throw new Error(response.error);
+      if (recordingDuration < minTime) {
+        showStatus('Too short, ignored', 'warning');
+        collapsePill();
+        return;
       }
-      
+      if (chunks.length === 0) {
+        showStatus('No audio recorded', 'warning');
+        return;
+      }
+      showStatus('Processing…', 'processing', { sticky: true });
+
+      const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+      const base64 = await blobToBase64(audioBlob);
+      const watchdog = new Promise((resolve) => {
+        setTimeout(() => resolve({ success: false, error: 'No response from the extension. Try again.' }), 75_000);
+      });
+      const response = await Promise.race([
+        send({
+          action: MSG.TRANSCRIBE,
+          audioBase64: base64,
+          mimeType: 'audio/webm',
+          mode: settings?.activeMode || 'default',
+          audioDuration: recordingDuration,
+        }),
+        watchdog,
+      ]);
+      if (!response) throw new Error('VoiceType is not responding. Reload the page.');
+      if (!response.success) throw new Error(response.error || 'Transcription failed');
+
+      const outcome = await insertText(currentInput, response.text);
+      if (outcome === 'inserted') {
+        if (typeof response.warning === 'string' && response.warning) showStatus(response.warning, 'warning');
+        else showStatus(`Done ${formatCost(response.cost || 0)}`, 'success');
+      } else if (outcome === 'clipboard') showStatus('Copied to clipboard (field not editable)', 'warning');
+      else showStatus('Could not insert or copy the text', 'error');
+      setTimeout(collapsePill, 1500);
     } catch (err) {
       console.error('VoiceType: Transcription failed', err);
-      showStatus(`❌ ${err.message}`, 'error');
+      showStatus(err.message, 'error');
     } finally {
       isProcessing = false;
       isStopping = false;
@@ -1018,65 +868,33 @@
     });
   }
 
-  // Insert text into current input
-  function insertText(text) {
-    if (!currentInput || !text) return;
-    
-    // Focus the input
-    currentInput.focus();
-    
-    if (currentInput.isContentEditable || currentInput.getAttribute('contenteditable') === 'true') {
-      // For contenteditable elements
-      const selection = window.getSelection();
-      const range = selection.getRangeAt(0);
-      
-      range.deleteContents();
-      
-      const textNode = document.createTextNode(text);
-      range.insertNode(textNode);
-      
-      range.setStartAfter(textNode);
-      range.setEndAfter(textNode);
-      selection.removeAllRanges();
-      selection.addRange(range);
-      
-      currentInput.dispatchEvent(new Event('input', { bubbles: true }));
-      
-    } else {
-      // For regular inputs and textareas
-      const start = currentInput.selectionStart || 0;
-      const end = currentInput.selectionEnd || 0;
-      const value = currentInput.value || '';
-      
-      currentInput.value = value.slice(0, start) + text + value.slice(end);
-      
-      const newPos = start + text.length;
-      currentInput.setSelectionRange(newPos, newPos);
-      
-      currentInput.dispatchEvent(new Event('input', { bubbles: true }));
-      currentInput.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-  }
-
-  // Show status message
-  function showStatus(message, type = '') {
+  // Show status message (sticky ones stay until the next message replaces them)
+  function showStatus(message, type = '', { sticky = false } = {}) {
     if (!pill) return;
-    
     const statusEl = pill.querySelector('.vt-status');
     statusEl.textContent = message;
     statusEl.className = `vt-status show ${type}`;
-    
     clearTimeout(statusTimeout);
-    statusTimeout = setTimeout(() => {
-      statusEl.classList.remove('show');
-    }, 2500);
+    if (!sticky) statusTimeout = setTimeout(() => statusEl.classList.remove('show'), 2500);
   }
 
-  // Listen for settings changes
+  // Keyboard shortcut from the service worker. Registered at load, before init() awaits
+  // settings, so an early toggle is queued instead of lost and the service worker's
+  // fallback injection never runs a second copy of this script.
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === MSG.TOGGLE_RECORDING) {
+      if (pill) handleToggleCommand();
+      else pendingToggle = true; // pill exists only once init() has settings; init() runs it
+      sendResponse({ received: true });
+    }
+    return false;
+  });
+
+  // Listen for settings changes (an open dropdown is not rebuilt under the cursor)
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'local' && changes.settings) {
       settings = changes.settings.newValue;
-      updateDropdown();
+      if (dropdownOpen) updateModeButton(); else updateDropdown();
     }
   });
 
@@ -1086,5 +904,3 @@
   } else {
     init();
   }
-  
-})();
