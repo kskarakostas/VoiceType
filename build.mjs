@@ -15,6 +15,8 @@ const ENTRIES = {
   background: 'src/background/index.js',
   content: 'src/content/index.js',
   popup: 'src/popup/popup.js',
+  offscreen: 'src/offscreen/offscreen.js',
+  permission: 'src/offscreen/permission.js',
 };
 
 /** Static files as [source, path under dist/] pairs. */
@@ -22,6 +24,8 @@ const STATICS = [
   ['manifest.json', 'manifest.json'],
   ['src/popup/popup.html', 'popup.html'],
   ['src/popup/popup.css', 'popup.css'],
+  ['src/offscreen/offscreen.html', 'offscreen.html'],
+  ['src/offscreen/permission.html', 'permission.html'],
   ['src/content/content.css', 'content.css'],
   ['icons/icon16.png', 'icons/icon16.png'],
   ['icons/icon48.png', 'icons/icon48.png'],
