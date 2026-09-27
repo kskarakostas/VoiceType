@@ -1,5 +1,28 @@
-// Keeps the pill attached to its field: any scroll (including inside nested containers),
-// window resize or field resize schedules one callback on the next animation frame.
+// Keeps the pill attached to its field: any scroll (including inside nested containers and
+// shadow roots), window resize or field resize schedules one callback on the next animation frame.
+
+const DOCUMENT_NODE = 9;
+const DOCUMENT_FRAGMENT_NODE = 11;
+
+/**
+ * Every shadow root between the field and its document, following slot assignment so a
+ * light-DOM field slotted into a component's shadow tree finds that tree's root.
+ * @param {Node} el
+ * @returns {ShadowRoot[]}
+ */
+function shadowRootsAbove(el) {
+  const roots = [];
+  let node = el;
+  while (node && node.nodeType !== DOCUMENT_NODE) {
+    node = node.assignedSlot ?? node.parentNode;
+    // Only a ShadowRoot is a fragment with a host (a link's `host` is its URL's host string).
+    if (node?.nodeType === DOCUMENT_FRAGMENT_NODE && node.host) {
+      roots.push(node);
+      node = node.host;
+    }
+  }
+  return roots;
+}
 
 /**
  * @param {Element} el the field the pill is anchored to
@@ -17,9 +40,12 @@ export function watchAnchor(el, onChange, { win = window } = {}) {
       if (!stopped) onChange();
     });
   };
-  // Scroll events do not bubble; a capture listener on the window sees every container scroll.
+  // Scroll events neither bubble nor cross shadow boundaries: a capture listener on the window
+  // sees every light-DOM container scroll, one on each shadow root above the field the rest.
   const scrollOptions = { capture: true, passive: true };
+  const shadowRoots = shadowRootsAbove(el);
   win.addEventListener('scroll', schedule, scrollOptions);
+  for (const root of shadowRoots) root.addEventListener('scroll', schedule, scrollOptions);
   win.addEventListener('resize', schedule);
   const observer = typeof win.ResizeObserver === 'function' ? new win.ResizeObserver(schedule) : null;
   observer?.observe(el);
@@ -28,6 +54,7 @@ export function watchAnchor(el, onChange, { win = window } = {}) {
     if (stopped) return;
     stopped = true;
     win.removeEventListener('scroll', schedule, scrollOptions);
+    for (const root of shadowRoots) root.removeEventListener('scroll', schedule, scrollOptions);
     win.removeEventListener('resize', schedule);
     observer?.disconnect();
     if (frame !== null) {

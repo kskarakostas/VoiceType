@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
+// @vitest-environment jsdom
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { watchAnchor } from '../../../src/content/anchor.js';
 
 const captureOf = (options) => (typeof options === 'object' ? Boolean(options?.capture) : Boolean(options));
@@ -69,7 +70,7 @@ describe('watchAnchor', () => {
     const fake = fakeWin();
     const onChange = vi.fn();
     watchAnchor(el, onChange, { win: fake.win });
-    // Scroll events do not bubble; only a capture listener on the window sees a container scroll.
+    // Scroll events do not bubble; only a capture listener on the window sees a light-DOM container scroll.
     expect(fake.listeners.find((l) => l.type === 'scroll').options.capture).toBe(true);
     fake.fire('scroll');
     expect(onChange).not.toHaveBeenCalled();
@@ -127,5 +128,102 @@ describe('watchAnchor', () => {
     stop();
     expect(() => stop()).not.toThrow();
     expect(fake.win.cancelAnimationFrame).not.toHaveBeenCalled();
+  });
+});
+
+/** An open shadow root on a new host in `parent`, holding a scrolling container. */
+function shadowScroller(parent = document.body) {
+  const host = document.createElement('div');
+  parent.append(host);
+  const root = host.attachShadow({ mode: 'open' });
+  const scroller = document.createElement('div');
+  root.append(scroller);
+  return { host, root, scroller };
+}
+
+// Scroll events are not composed: one inside a shadow tree stops at its shadow root and
+// never reaches the window, so these dispatch real events through jsdom's shadow DOM.
+const scroll = (target) => target.dispatchEvent(new Event('scroll'));
+
+describe('watchAnchor inside shadow roots', () => {
+  afterEach(() => document.body.replaceChildren());
+
+  it('spec 6.3: follows a scroll inside the open shadow root holding the field, one callback per frame', () => {
+    const fake = fakeWin();
+    const onChange = vi.fn();
+    const { scroller } = shadowScroller();
+    const field = document.createElement('textarea');
+    scroller.append(field);
+    watchAnchor(field, onChange, { win: fake.win });
+    scroll(scroller);
+    scroll(scroller);
+    expect(fake.win.requestAnimationFrame).toHaveBeenCalledTimes(1);
+    fake.fire('scroll');
+    expect(fake.win.requestAnimationFrame).toHaveBeenCalledTimes(1);
+    fake.flushFrames();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    scroll(scroller);
+    fake.flushFrames();
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('registers on the shadow root whose scroller a light-DOM field is slotted into', () => {
+    const fake = fakeWin();
+    const onChange = vi.fn();
+    const { host, root, scroller } = shadowScroller();
+    const slot = document.createElement('slot');
+    scroller.append(slot);
+    const field = document.createElement('input');
+    host.append(field);
+    expect(field.assignedSlot).toBe(slot);
+    const add = vi.spyOn(root, 'addEventListener');
+    watchAnchor(field, onChange, { win: fake.win });
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith('scroll', expect.any(Function), { capture: true, passive: true });
+    scroll(scroller);
+    fake.flushFrames();
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues from each host, and stop removes every shadow-root listener with the same options', () => {
+    const fake = fakeWin();
+    const onChange = vi.fn();
+    const outer = shadowScroller();
+    const inner = shadowScroller(outer.scroller);
+    const field = document.createElement('textarea');
+    inner.scroller.append(field);
+    const roots = [inner.root, outer.root];
+    const adds = roots.map((root) => vi.spyOn(root, 'addEventListener'));
+    const removes = roots.map((root) => vi.spyOn(root, 'removeEventListener'));
+    const stop = watchAnchor(field, onChange, { win: fake.win });
+    scroll(inner.scroller);
+    fake.flushFrames();
+    scroll(outer.scroller);
+    fake.flushFrames();
+    expect(onChange).toHaveBeenCalledTimes(2);
+    stop();
+    roots.forEach((root, i) => {
+      expect(adds[i]).toHaveBeenCalledTimes(1);
+      const [type, listener, options] = adds[i].mock.calls[0];
+      expect(removes[i]).toHaveBeenCalledTimes(1);
+      expect(removes[i]).toHaveBeenCalledWith(type, listener, options);
+      expect(removes[i].mock.calls[0][2]).toBe(options);
+    });
+  });
+
+  it('walks past a link ancestor, whose host is a URL string, to the shadow root above it', () => {
+    const fake = fakeWin();
+    const onChange = vi.fn();
+    const { scroller } = shadowScroller();
+    const link = document.createElement('a');
+    link.href = 'https://example.com/';
+    scroller.append(link);
+    const field = document.createElement('span');
+    field.contentEditable = 'true';
+    link.append(field);
+    watchAnchor(field, onChange, { win: fake.win });
+    scroll(scroller);
+    fake.flushFrames();
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 });
