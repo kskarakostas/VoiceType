@@ -3,7 +3,7 @@
 ## 2.1.1 (unreleased)
 
 ### Fixed
-- Single-line dictation into Slate editors, such as Discord's message box, now stays in the field. 2.1.0 showed "Done", but the text vanished at the next keystroke and was not on the clipboard either. One `Ctrl+Z` removes the dictated text (dictated at a fresh caret).
+- Single-line dictation into Slate-based editors now stays in the field. 2.1.0 showed "Done", but the text vanished at the next keystroke and was not on the clipboard either. One `Ctrl+Z` removes the dictated text (dictated at a fresh caret).
 - Dictating into a field inside an embedded frame (an iframe) and then clicking a field on the page while the text is processed no longer pulls the cursor out of the page field. The frame keeps the text with "Return to the field to insert, or click here to copy." and inserts it once when you click back into its field. A clipboard fallback never moves the cursor out of the field you are typing in.
 - The hotkey no longer records while a password field has focus. Nothing is recorded or sent, and the pill shows "VoiceType does not record in password fields." in the corner.
 - Pressing REC on the pill of an embedded frame that does not have keyboard focus now explains "Click into the field you want to dictate into, then press REC." instead of recording. This also closes a way to record while a password field in another frame had focus.
