@@ -12,6 +12,9 @@ const POLL_MS = 16;
 const SETTLE_MS = 100;
 const CONFIRM_MS = 100;
 
+/** @param {Event} event */
+const isTrustedEvent = (event) => event.isTrusted === true;
+
 /**
  * @typedef {'inserted'|'unverified'|'clipboard'|'failed'} InsertOutcome
  * @typedef {{
@@ -55,7 +58,11 @@ export function normalizeForCompare(s) {
  * frame without focus or without clipboard-write rejects it, so `execCommand('copy')` stands
  * in there. Neither path moves focus or the selection.
  * @param {string} text
- * @param {{ writeClipboard?: (text: string) => Promise<void>, execCopy?: (text: string) => boolean }} [deps]
+ * @param {{
+ *   writeClipboard?: (text: string) => Promise<void>,
+ *   execCopy?: (text: string) => boolean,
+ *   isTrusted?: (event: Event) => boolean,
+ * }} [deps]
  * @returns {Promise<boolean>}
  */
 export async function copyText(text, deps = {}) {
@@ -69,7 +76,8 @@ export async function copyText(text, deps = {}) {
     }
   }
   try {
-    return (deps.execCopy ?? execCopy)(text) === true;
+    const copy = deps.execCopy ?? ((t) => execCopy(t, deps.isTrusted ?? isTrustedEvent));
+    return copy(text) === true;
   } catch {
     return false;
   }
@@ -86,15 +94,21 @@ function clipboardWriter() {
  * keyboard focus out of the page the user is typing in. Chrome runs the command only during a
  * user gesture, such as the click on the pill.
  * @param {string} text
+ * @param {(event: Event) => boolean} isTrusted
  * @returns {boolean} true only when the command ran and the listener supplied the text
  */
-function execCopy(text) {
+function execCopy(text, isTrusted) {
   const doc = globalThis.document;
   let supplied = false;
   const onCopy = (event) => {
+    // A copy event the page dispatched itself is not the command's: filling it would hand the
+    // page the text while the clipboard keeps whatever the page chose.
+    if (!isTrusted(event)) return;
     // Cancelled first, so a failed setData never lets the page's selection reach the clipboard.
     event.preventDefault();
     event.stopImmediatePropagation();
+    // A page listener that ran earlier may have added other types, such as text/html.
+    event.clipboardData.clearData();
     event.clipboardData.setData('text/plain', text);
     supplied = true;
   };
@@ -159,7 +173,7 @@ function prepare(target, text, deps) {
     settle: deps.settle ?? defaultSettle,
     confirm: deps.confirm ?? defaultConfirm,
     createPasteEvent: deps.createPasteEvent ?? createPasteEvent,
-    isTrusted: deps.isTrusted ?? ((event) => event.isTrusted === true),
+    isTrusted: deps.isTrusted ?? isTrustedEvent,
   };
 }
 

@@ -628,21 +628,59 @@ describe('insertText with the default settle under fake timers', () => {
 describe('copyText', () => {
   const denied = async () => { throw new Error('Document is not focused.'); };
 
+  /** A clipboardData stand-in with DataTransfer's setData, getData and clearData. */
+  function clipboardData() {
+    const data = new Map();
+    return {
+      data,
+      setData: (type, value) => data.set(type, value),
+      getData: (type) => data.get(type) ?? '',
+      clearData: (type) => (type === undefined ? data.clear() : data.delete(type)),
+    };
+  }
+
   /**
    * execCommand('copy') as Chrome runs it: without a user gesture it refuses and fires nothing;
-   * otherwise a cancelable copy event goes to the focused element (or the body), and the
-   * clipboard receives the event's clipboardData when the event was prevented, else the selection.
+   * otherwise a trusted, cancelable copy event goes to the focused element (or the body), and
+   * the clipboard receives every type in the event's clipboardData when the event was
+   * prevented, else the selection.
    */
   function chromeCopy(clipboard, { allowed = true } = {}) {
     return vi.fn((command) => {
       if (command !== 'copy' || !allowed) return false;
-      const data = new Map();
       const event = new Event('copy', { bubbles: true, cancelable: true, composed: true });
-      event.clipboardData = { setData: (type, value) => data.set(type, value), getData: (type) => data.get(type) ?? '' };
+      event.clipboardData = clipboardData();
+      trustedEvents.add(event);
       (document.activeElement ?? document.body).dispatchEvent(event);
-      clipboard.text = event.defaultPrevented ? (data.get('text/plain') ?? '') : String(document.getSelection());
+      clipboard.data = event.defaultPrevented
+        ? Object.fromEntries(event.clipboardData.data)
+        : { 'text/plain': String(document.getSelection()) };
+      clipboard.text = clipboard.data['text/plain'] ?? '';
       return true;
     });
+  }
+
+  /**
+   * A page's capture listener that runs before VoiceType's: on the real copy event it
+   * dispatches a copy event of its own with a clipboardData it can read, and records what it read.
+   */
+  function pageCopyDecoy({ stopReal }) {
+    const seen = { read: null };
+    const listener = (event) => {
+      if (!isTrusted(event)) return;
+      if (stopReal) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        event.clipboardData.setData('text/plain', 'page text');
+      }
+      const decoy = new Event('copy', { bubbles: true, cancelable: true, composed: true });
+      decoy.clipboardData = clipboardData();
+      document.body.dispatchEvent(decoy);
+      seen.read = decoy.clipboardData.getData('text/plain');
+    };
+    window.addEventListener('copy', listener, true);
+    seen.remove = () => window.removeEventListener('copy', listener, true);
+    return seen;
   }
 
   it('uses navigator.clipboard.writeText when available', async () => {
@@ -696,7 +734,7 @@ describe('copyText', () => {
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
-    expect(await copyText('copied text', { writeClipboard: denied })).toBe(true);
+    expect(await copyText('copied text', { writeClipboard: denied, isTrusted })).toBe(true);
     for (const record of observer.takeRecords()) added.push(...record.addedNodes);
     observer.disconnect();
 
@@ -713,16 +751,66 @@ describe('copyText', () => {
     expect(navigator.clipboard).toBeUndefined();
     const clipboard = {};
     document.execCommand = chromeCopy(clipboard);
-    expect(await copyText('hi')).toBe(true);
+    expect(await copyText('hi', { isTrusted })).toBe(true);
     expect(clipboard.text).toBe('hi');
+  });
+
+  it('by default the fallback counts only events whose isTrusted is true', async () => {
+    const clipboard = {};
+    document.execCommand = chromeCopy(clipboard);
+    // jsdom marks every event a script dispatches as untrusted, the stand-in's included.
+    expect(await copyText('hi', { writeClipboard: denied })).toBe(false);
+    expect(clipboard.text).toBe('');
+  });
+
+  it('a copy event the page dispatches itself is ignored, and stopping the real one fails the copy', async () => {
+    const clipboard = {};
+    document.execCommand = chromeCopy(clipboard);
+    const decoy = pageCopyDecoy({ stopReal: true });
+    try {
+      expect(await copyText('transcript', { writeClipboard: denied, isTrusted })).toBe(false);
+    } finally {
+      decoy.remove();
+    }
+    expect(decoy.read).toBe('');
+    expect(clipboard.data).toEqual({ 'text/plain': 'page text' });
+  });
+
+  it('a copy event the page dispatches itself gets nothing while the real one copies', async () => {
+    const clipboard = {};
+    document.execCommand = chromeCopy(clipboard);
+    const decoy = pageCopyDecoy({ stopReal: false });
+    try {
+      expect(await copyText('transcript', { writeClipboard: denied, isTrusted })).toBe(true);
+    } finally {
+      decoy.remove();
+    }
+    expect(decoy.read).toBe('');
+    expect(clipboard.data).toEqual({ 'text/plain': 'transcript' });
+  });
+
+  it('clears what an earlier page copy listener set, so a rich paste gets only the text', async () => {
+    const clipboard = {};
+    document.execCommand = chromeCopy(clipboard);
+    const attribution = (event) => {
+      event.clipboardData.setData('text/html', '<b>page attribution</b>');
+      event.clipboardData.setData('text/plain', 'page text');
+    };
+    window.addEventListener('copy', attribution, true);
+    try {
+      expect(await copyText('transcript', { writeClipboard: denied, isTrusted })).toBe(true);
+    } finally {
+      window.removeEventListener('copy', attribution, true);
+    }
+    expect(clipboard.data).toEqual({ 'text/plain': 'transcript' });
   });
 
   it('the fallback returns false when the copy listener never ran or execCommand refused', async () => {
     document.execCommand = vi.fn(() => true);
-    expect(await copyText('hi', { writeClipboard: denied })).toBe(false);
+    expect(await copyText('hi', { writeClipboard: denied, isTrusted })).toBe(false);
 
     document.execCommand = chromeCopy({}, { allowed: false });
-    expect(await copyText('hi', { writeClipboard: denied })).toBe(false);
+    expect(await copyText('hi', { writeClipboard: denied, isTrusted })).toBe(false);
 
     const clipboard = {};
     const copyThenRefuse = chromeCopy(clipboard);
@@ -730,18 +818,18 @@ describe('copyText', () => {
       copyThenRefuse(command);
       return false;
     });
-    expect(await copyText('hi', { writeClipboard: denied })).toBe(false);
+    expect(await copyText('hi', { writeClipboard: denied, isTrusted })).toBe(false);
   });
 
-  it('the copy event reaches no page listener, and the listener is gone afterwards', async () => {
+  it('the copy event reaches no page listener that runs after VoiceType\'s, and the listener is gone afterwards', async () => {
     const page = vi.fn();
     document.addEventListener('copy', page);
     document.execCommand = chromeCopy({});
-    expect(await copyText('hi', { writeClipboard: denied })).toBe(true);
+    expect(await copyText('hi', { writeClipboard: denied, isTrusted })).toBe(true);
     expect(page).not.toHaveBeenCalled();
 
     document.execCommand = vi.fn(() => { throw new Error('refused'); });
-    expect(await copyText('hi', { writeClipboard: denied })).toBe(false);
+    expect(await copyText('hi', { writeClipboard: denied, isTrusted })).toBe(false);
 
     // The user's own copy afterwards is untouched.
     const later = new Event('copy', { bubbles: true, cancelable: true });
