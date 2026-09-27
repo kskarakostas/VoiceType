@@ -36,6 +36,7 @@ const NO_RESPONSE = 'No response from VoiceType. Try again.';
 const CLICK_TO_COPY = 'Could not insert. Click here to copy the text.';
 const HOLD_NOTICE = 'Return to the field to insert, or click here to copy.';
 const PASSWORD_NOTICE = 'VoiceType does not record in password fields.';
+const FOCUS_NOTICE = 'Click into the field you want to dictate into, then press REC.';
 const AUTO_STOP = Object.freeze({
   maxTime: { text: 'Max time reached', tone: 'info' },
   silence: { text: 'Stopped after silence', tone: 'info' },
@@ -71,6 +72,8 @@ export function createController(deps) {
   let lastField = null;
   /** A status is showing; the pill is not hidden under it. */
   let statusBusy = false;
+  /** The status showing is sticky and clickable: a click on it is the way to a paid transcript. */
+  let copyPending = false;
   let statusTimer = null;
   let focusTimer = null;
   let watchdog = null;
@@ -137,6 +140,7 @@ export function createController(deps) {
     deps.clearTimeout(statusTimer);
     statusTimer = null;
     statusBusy = true;
+    copyPending = sticky && clickable;
     if (sticky) return;
     statusTimer = deps.setTimeout(() => {
       statusTimer = null;
@@ -170,6 +174,7 @@ export function createController(deps) {
     deps.clearTimeout(statusTimer);
     statusTimer = null;
     statusBusy = false;
+    copyPending = false;
     pill.clearStatus();
   }
 
@@ -210,14 +215,29 @@ export function createController(deps) {
     }, FOCUS_OUT_MS);
   }
 
+  /**
+   * Why a recording may not start from this frame now, or null. A REC click on this frame's
+   * pill leaves the keyboard focus where it was, possibly in another frame whose field this
+   * frame cannot see, so only the frame that holds the focus records. The audio would go to a
+   * cloud API, so a password field never starts a recording.
+   * @param {Element|null} active
+   */
+  function startRefusal(active) {
+    const tag = active?.tagName.toLowerCase();
+    if (!deps.hasFocus() || tag === 'iframe' || tag === 'frame') return FOCUS_NOTICE;
+    if (isPasswordField(active)) return PASSWORD_NOTICE;
+    return null;
+  }
+
   async function start() {
     // REC while a result is held settles that result first; the next REC records.
     if (held) return deliverHeld();
     const active = deepActiveElement();
-    // The audio would go to a cloud API, so a password field never starts a recording.
-    if (isPasswordField(active)) {
+    const refusal = startRefusal(active);
+    if (refusal) {
       pressStarted = false;
-      notify(PASSWORD_NOTICE, { tone: 'info' });
+      // A pending click-to-copy status is kept: replacing it would strand the transcript.
+      if (!copyPending) notify(refusal, { tone: 'info' });
       return;
     }
     target = isValidInput(active) ? active : null;

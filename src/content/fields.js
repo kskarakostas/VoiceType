@@ -42,7 +42,7 @@ export function isValidInput(el) {
 /**
  * True for password fields: an input of type `password`, or an input with an `autocomplete`
  * token ending in `-password`, which marks a password field a page has revealed as plain
- * text. VoiceType never dictates into one and never records while one has focus.
+ * text. Checks the element only; which frame holds the focus is for the caller to check.
  * @param {Element|null|undefined} el
  * @returns {boolean}
  */

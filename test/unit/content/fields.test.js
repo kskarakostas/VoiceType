@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import {
-  isValidInput, isPasswordField, isEditableElement, isFrameworkEditor, deepActiveElement, TEXT_INPUT_TYPES,
+  isValidInput, isPasswordField, isEditableElement, isFrameworkEditor, isPasteFirstEditor, deepActiveElement,
+  TEXT_INPUT_TYPES, PASTE_FIRST_EDITOR_SELECTOR,
 } from '../../../src/content/fields.js';
-import { isPasteFirstEditor, PASTE_FIRST_EDITOR_SELECTOR } from '../../../src/content/fields.js';
 
 function make(html) {
   document.body.innerHTML = html;

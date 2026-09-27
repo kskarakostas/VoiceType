@@ -325,6 +325,81 @@ describe('password fields', () => {
   });
 });
 
+describe('a frame without keyboard focus', () => {
+  const NO_FOCUS = ['Click into the field you want to dictate into, then press REC.', { tone: 'info', sticky: false, clickable: false }];
+
+  it('REC while another frame or window has the focus sends nothing and says where to click', async () => {
+    const t = setup();
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    // A REC click on this frame's pill leaves the focus in the other frame.
+    t.deps.hasFocus.mockReturnValue(false);
+    await t.controller.toggle();
+    expect(t.send).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('idle');
+    expect(lastStatus(t.pill)).toEqual(NO_FOCUS);
+  });
+
+  it.each(['iframe', 'frame'])('REC while a child %s has the focus sends nothing and shows the notice at the corner', async (tag) => {
+    const child = document.createElement(tag);
+    const t = setup({ activeElement: () => child });
+    await t.controller.toggle();
+    expect(t.send).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('idle');
+    expect(lastStatus(t.pill)).toEqual(NO_FOCUS);
+    expect(t.pill.show).toHaveBeenLastCalledWith(null, { gap: 8 });
+    expect(t.deps.watchAnchor).not.toHaveBeenCalled();
+  });
+
+  it('the hotkey in the frame that has the focus still records', async () => {
+    const t = setup();
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    await t.controller.press();
+    await t.controller.release({ held: true });
+    expect(t.actions()).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING]);
+    expect(t.controller.state).toBe('processing');
+  });
+});
+
+describe('a pending click-to-copy status', () => {
+  const COPY_STATUS = [CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true }];
+
+  function focusPasswordField() {
+    const input = document.createElement('input');
+    input.type = 'password';
+    document.body.append(input);
+    input.focus();
+  }
+
+  it.each([
+    ['a password field has the focus', 'VoiceType does not record in password fields.', () => focusPasswordField()],
+    ['another frame or window has the focus', 'Click into the field you want to dictate into, then press REC.', (t) => t.deps.hasFocus.mockReturnValue(false)],
+  ])('stays clickable when a start is refused because %s', async (_name, notice, refuse) => {
+    const t = setup({ insert: 'failed' });
+    await recordAndStop(t);
+    t.controller.handleMessage({ action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null });
+    await flush();
+    expect(lastStatus(t.pill)).toEqual(COPY_STATUS);
+    const statuses = t.pill.setStatus.mock.calls.length;
+    t.send.mockClear();
+    refuse(t);
+    await t.controller.press();
+    await t.controller.toggle();
+    expect(t.send).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('idle');
+    expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
+    expect(t.pill.clearStatus).toHaveBeenCalledTimes(1);
+    await t.controller.copyLast();
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    expect(lastStatus(t.pill)).toEqual(['Copied to clipboard.', { tone: 'success', sticky: false, clickable: false }]);
+    // Copied: nothing is pending any more, so the next refusal says why.
+    await t.controller.toggle();
+    expect(t.send).not.toHaveBeenCalled();
+    expect(lastStatus(t.pill)).toEqual([notice, { tone: 'info', sticky: false, clickable: false }]);
+  });
+});
+
 describe('service worker messages', () => {
   it.each([
     ['maxTime', 'Max time reached', 'info'],
@@ -654,11 +729,26 @@ describe('another frame or window has focus', () => {
     expect(t.actions()).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING]);
     expect(t.deps.insertText).not.toHaveBeenCalled();
     expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    t.deps.hasFocus.mockReturnValue(true);
     await t.controller.toggle();
     expect(t.actions()).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING, MSG.START_RECORDING]);
-    t.deps.hasFocus.mockReturnValue(true);
     await t.controller.onWindowFocus();
     expect(t.deps.insertText).not.toHaveBeenCalled();
+  });
+
+  it('a REC click here while a password field in another frame has the focus delivers the held result, then refuses', async () => {
+    const t = setup();
+    await holdResult(t);
+    t.send.mockClear();
+    await t.controller.toggle();
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    expect(lastStatus(t.pill)).toEqual(['The field lost focus. Text copied to clipboard.', { tone: 'warning', sticky: false, clickable: false }]);
+    // This frame cannot see the password field, only that it does not have the focus.
+    await t.controller.toggle();
+    expect(t.send).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('idle');
+    expect(lastStatus(t.pill)).toEqual(['Click into the field you want to dictate into, then press REC.', { tone: 'info', sticky: false, clickable: false }]);
   });
 
   /**
