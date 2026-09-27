@@ -15,6 +15,15 @@ describe('sanitizeHint', () => {
     expect(sanitizeHint(null)).toBe('');
     expect(sanitizeHint(42)).toBe('42');
   });
+  it('trims a space left at the end of the cut', () => {
+    expect(sanitizeHint('ab cd', 3)).toBe('ab');
+  });
+  it('treats a negative maxLen as 0', () => {
+    expect(sanitizeHint('abc', -1)).toBe('');
+  });
+  it('cuts by code point, never inside a surrogate pair', () => {
+    expect(sanitizeHint('a😀b', 2)).toBe('a😀');
+  });
 });
 
 describe('fillTemplate', () => {
@@ -26,5 +35,14 @@ describe('fillTemplate', () => {
   });
   it('does not resolve inherited object properties', () => {
     expect(fillTemplate('{{constructor}}{{toString}}', {})).toBe('');
+  });
+  it('keeps falsy values that are not null or undefined', () => {
+    expect(fillTemplate('{{a}}|{{b}}|{{c}}', { a: 0, b: false, c: '' })).toBe('0|false|');
+  });
+  it('blanks every placeholder when vars is null', () => {
+    expect(fillTemplate('x{{a}}y', null)).toBe('xy');
+  });
+  it('fills a known name written with inner spaces', () => {
+    expect(fillTemplate('Into {{ targetLanguage }}.', { targetLanguage: 'Greek' })).toBe('Into Greek.');
   });
 });
