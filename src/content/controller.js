@@ -65,6 +65,8 @@ export function createController(deps) {
   let lastResult = null;
   /** A result for a field that kept this frame's focus while another frame or window had it. */
   let held = null;
+  /** The last valid field focused in this frame (D12 across frames). */
+  let lastField = null;
   /** A status is showing; the pill is not hidden under it. */
   let statusBusy = false;
   let statusTimer = null;
@@ -193,6 +195,7 @@ export function createController(deps) {
   /** @param {Element|null} el */
   function focusIn(el) {
     if (inactive() || !isValidInput(el)) return;
+    lastField = el;
     if (state === 'idle') anchorTo(el);
   }
 
@@ -313,6 +316,19 @@ export function createController(deps) {
     }
   }
 
+  /**
+   * True while el still owns this frame's focus. Chromium resets a frame's activeElement to its
+   * body when another frame takes the focus, so a blank activeElement counts for the field
+   * focused last.
+   * @param {Element} el
+   */
+  function ownsFrameFocus(el) {
+    const active = deepActiveElement();
+    if (active === el) return true;
+    const doc = el.ownerDocument;
+    return lastField === el && (active === null || active === doc.body || active === doc.documentElement);
+  }
+
   async function deliver(message) {
     clearWatchdog();
     const bound = target;
@@ -330,7 +346,7 @@ export function createController(deps) {
     lastResult = { text, raw: typeof message.raw === 'string' ? message.raw : text };
     const result = { text, cost: finite(message.cost), warning: textOr(message.warning, null) };
 
-    if (bound && bound.isConnected && deepActiveElement() === bound && !deps.hasFocus()) {
+    if (bound && bound.isConnected && ownsFrameFocus(bound) && !deps.hasFocus()) {
       // The field kept this frame's focus, but another frame or window has the page's focus.
       // Inserting would pull focus away from where the user is typing, so wait for it to return.
       held = { bound, result };
@@ -398,6 +414,15 @@ export function createController(deps) {
   /** This frame's window regained focus: a held result can go to its field now. */
   async function onWindowFocus() {
     if (inactive() || !held) return;
+    const { bound } = held;
+    if (bound.isConnected && deepActiveElement() !== bound && ownsFrameFocus(bound)) {
+      // Chromium focuses a frame's window before the element clicked inside it, so the
+      // field's own focus lands later in this task: check again once it has.
+      deps.setTimeout(() => {
+        if (!inactive() && held) deliverHeld();
+      }, 0);
+      return;
+    }
     await deliverHeld();
   }
 
@@ -488,6 +513,7 @@ export function createController(deps) {
     anchorEl = null;
     target = null;
     held = null;
+    lastField = null;
     pill.destroy();
   }
 

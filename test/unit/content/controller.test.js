@@ -32,7 +32,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function setup({ replies = {}, insert = 'inserted', copy = true } = {}) {
+function setup({ replies = {}, insert = 'inserted', copy = true, activeElement = () => deepActiveElement(document) } = {}) {
   const pill = fakePill();
   const sent = [];
   const table = {
@@ -54,7 +54,7 @@ function setup({ replies = {}, insert = 'inserted', copy = true } = {}) {
     insertText: vi.fn(async () => insert),
     copyText: vi.fn(async () => copy),
     isValidInput,
-    deepActiveElement: () => deepActiveElement(document),
+    deepActiveElement: activeElement,
     rectOf: (el) => (el?.isConnected ? { ...RECT } : null),
     watchAnchor: vi.fn(() => unwatch),
     hasFocus: vi.fn(() => true),
@@ -608,6 +608,107 @@ describe('another frame or window has focus', () => {
     t.deps.hasFocus.mockReturnValue(true);
     await t.controller.onWindowFocus();
     expect(t.deps.insertText).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Another frame took the focus: Chromium resets this frame's activeElement to its body, so
+   * the bound field is no longer active although it was the last field focused here.
+   */
+  async function holdAfterReset(t) {
+    await recordAndStop(t);
+    $('a').blur();
+    t.controller.focusOut();
+    t.deps.hasFocus.mockReturnValue(false);
+    expect(document.activeElement).toBe(document.body);
+    t.controller.handleMessage(RESULT);
+    await flush();
+  }
+
+  it('focus moved to another frame holds even when activeElement reset to body', async () => {
+    const t = setup();
+    await holdAfterReset(t);
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.deps.copyText).not.toHaveBeenCalled();
+    expect(lastStatus(t.pill)).toEqual(HOLD);
+    expect(t.controller.state).toBe('idle');
+    vi.advanceTimersByTime(60000);
+    expect(t.pill.hide).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['null', () => null],
+    ['the document element', () => document.documentElement],
+  ])('a blank activeElement (%s) also holds for the field focused last', async (_name, blank) => {
+    let reset = false;
+    const t = setup({ activeElement: () => (reset ? blank() : deepActiveElement(document)) });
+    await recordAndStop(t);
+    reset = true;
+    t.deps.hasFocus.mockReturnValue(false);
+    t.controller.handleMessage(RESULT);
+    await flush();
+    expect(lastStatus(t.pill)).toEqual(HOLD);
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.deps.copyText).not.toHaveBeenCalled();
+  });
+
+  it('focus moved to another field of this frame first takes the clipboard, not the hold', async () => {
+    const t = setup();
+    await recordAndStop(t);
+    $('b').focus();
+    t.controller.focusIn($('b'));
+    $('b').blur();
+    t.deps.hasFocus.mockReturnValue(false);
+    t.controller.handleMessage(RESULT);
+    await flush();
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    expect(lastStatus(t.pill)).toEqual(['The field lost focus. Text copied to clipboard.', { tone: 'warning', sticky: false, clickable: false }]);
+  });
+
+  it('after a hold, a window focus with the field active and focused inserts once', async () => {
+    const t = setup();
+    await holdAfterReset(t);
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    t.deps.hasFocus.mockReturnValue(true);
+    await t.controller.onWindowFocus();
+    expect(t.deps.insertText).toHaveBeenCalledTimes(1);
+    expect(t.deps.insertText).toHaveBeenCalledWith($('a'), 'hello');
+    expect(lastStatus(t.pill)).toEqual(['Done $0.01', { tone: 'success', sticky: false, clickable: false }]);
+    await t.controller.onWindowFocus();
+    vi.advanceTimersByTime(0);
+    await flush();
+    expect(t.deps.insertText).toHaveBeenCalledTimes(1);
+    expect(t.deps.copyText).not.toHaveBeenCalled();
+  });
+
+  it('a window focus that lands before the field\'s own focus waits one task for it', async () => {
+    const t = setup();
+    await holdAfterReset(t);
+    // Chromium focuses the frame's window first, while its activeElement is still the body.
+    t.deps.hasFocus.mockReturnValue(true);
+    await t.controller.onWindowFocus();
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.deps.copyText).not.toHaveBeenCalled();
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    vi.advanceTimersByTime(0);
+    await flush();
+    expect(t.deps.insertText).toHaveBeenCalledTimes(1);
+    expect(t.deps.insertText).toHaveBeenCalledWith($('a'), 'hello');
+    expect(t.deps.copyText).not.toHaveBeenCalled();
+  });
+
+  it('returning to the frame but not to the field takes the clipboard', async () => {
+    const t = setup();
+    await holdAfterReset(t);
+    t.deps.hasFocus.mockReturnValue(true);
+    await t.controller.onWindowFocus();
+    vi.advanceTimersByTime(0);
+    await flush();
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    expect(lastStatus(t.pill)).toEqual(['The field lost focus. Text copied to clipboard.', { tone: 'warning', sticky: false, clickable: false }]);
   });
 });
 
