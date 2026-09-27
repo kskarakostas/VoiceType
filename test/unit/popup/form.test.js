@@ -102,6 +102,40 @@ describe('createInlineConfirm', () => {
     expect(button.dataset.confirming).toBeUndefined();
   });
 
+  it('a second click within 400 ms of arming does not confirm and the button stays armed', () => {
+    const { button, onConfirm } = setup();
+    button.click();
+    vi.advanceTimersByTime(399);
+    button.click();
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(button.textContent).toBe('Click again to confirm');
+    expect(button.dataset.confirming).toBe('true');
+    vi.advanceTimersByTime(1);
+    button.click();
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('a click with detail 2 does not confirm and the label reverts at the normal timeout', () => {
+    const { button, onConfirm } = setup();
+    button.click();
+    vi.advanceTimersByTime(1000);
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 2 }));
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(button.textContent).toBe('Click again to confirm');
+    vi.advanceTimersByTime(2000);
+    expect(button.textContent).toBe('Clear history');
+    expect(button.dataset.confirming).toBeUndefined();
+  });
+
+  it('a click 400 ms after arming confirms', () => {
+    const { button, onConfirm } = setup();
+    button.click();
+    vi.advanceTimersByTime(400);
+    button.click();
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(button.textContent).toBe('Clear history');
+  });
+
   it('the label reverts after the window and the next click starts over', () => {
     const { button, onConfirm } = setup({ ms: 1000 });
     button.click();

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { initPopup } from '../../../src/popup/popup.js';
-import { parseKeywords } from '../../../src/popup/form.js';
+import { parseKeywords, CONFIRM_GUARD_MS } from '../../../src/popup/form.js';
 import { MSG } from '../../../src/shared/messages.js';
 import { freshSettings, AUTO_STOP_CHOICES } from '../../../src/shared/defaults.js';
 import { formatChord } from '../../../src/shared/chord.js';
@@ -271,6 +271,7 @@ describe('popup load failure', () => {
 
 describe('popup inline confirms', () => {
   it('Clear history needs two clicks', async () => {
+    vi.useFakeTimers();
     const chrome = fakeChrome();
     await start(chrome);
     const button = $('clear-usage');
@@ -278,6 +279,7 @@ describe('popup inline confirms', () => {
     await flush();
     expect(chrome.count(MSG.CLEAR_USAGE)).toBe(0);
     expect(button.textContent).toBe('Click again to clear usage history');
+    await vi.advanceTimersByTimeAsync(CONFIRM_GUARD_MS);
     button.click();
     await flush();
     expect(chrome.count(MSG.CLEAR_USAGE)).toBe(1);
@@ -286,17 +288,31 @@ describe('popup inline confirms', () => {
     expect(button.textContent).toBe('Clear history');
   });
 
+  it('a double click does not clear usage history', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    const button = $('clear-usage');
+    button.click();
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 2 }));
+    await flush();
+    expect(chrome.count(MSG.CLEAR_USAGE)).toBe(0);
+    expect(button.textContent).toBe('Click again to clear usage history');
+  });
+
   it('Clear history toasts success only on { success: true }', async () => {
+    vi.useFakeTimers();
     const chrome = fakeChrome();
     chrome.script(MSG.CLEAR_USAGE, { success: false }, undefined);
     await start(chrome);
     const button = $('clear-usage');
     button.click();
+    await vi.advanceTimersByTimeAsync(CONFIRM_GUARD_MS);
     button.click();
     await flush();
     expect($('toast').textContent).toBe('Could not clear usage history.');
     expect($('toast').dataset.tone).toBe('error');
     button.click();
+    await vi.advanceTimersByTimeAsync(CONFIRM_GUARD_MS);
     button.click();
     await flush();
     expect($('toast').textContent).toBe('Could not clear usage history.');
@@ -311,13 +327,17 @@ describe('popup inline confirms', () => {
     });
     stored.modes.custom_1 = { name: 'Notes', icon: 'N', prompt: 'Bullet notes.', builtIn: false };
     stored.modes.email.prompt = 'My own email prompt';
+    vi.useFakeTimers();
     const chrome = fakeChrome(stored);
     await start(chrome);
 
     const button = $('reset');
     button.click();
     expect(button.textContent).toBe('Click again to reset modes, prompts, recording limits, silence auto-stop and hotkey');
+    button.click();
+    await flush();
     expect(chrome.saves()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(CONFIRM_GUARD_MS);
     button.click();
     await flush();
     expect(chrome.saves().at(-1)).toEqual({
@@ -449,11 +469,12 @@ describe('popup modes', () => {
     $('mode-name').value = 'Notes';
     $('mode-icon').value = 'N';
     $('mode-prompt').value = 'Turn this into bullet notes.';
-    $('save-mode').click();
+    $('create-mode').click();
     await flush();
     const modes = chrome.saves().at(-1).modes;
     const key = Object.keys(modes).find((k) => k.startsWith('custom_'));
     expect(modes[key]).toEqual({ name: 'Notes', icon: 'N', prompt: 'Turn this into bullet notes.', builtIn: false });
+    $('close-mode').click();
     expect($('mode-editor').hidden).toBe(true);
 
     document.querySelector(`[data-focus-key="edit:${key}"]`).click();
@@ -461,6 +482,150 @@ describe('popup modes', () => {
     $('delete-mode').click();
     await flush();
     expect(Object.hasOwn(chrome.saves().at(-1).modes, key)).toBe(false);
+    expect($('mode-editor').hidden).toBe(true);
+  });
+
+  it('there is no Save mode button for an existing mode', async () => {
+    await start(fakeChrome());
+    document.querySelector('[data-focus-key="edit:email"]').click();
+    const labels = [...$('mode-editor').querySelectorAll('button')].filter((b) => !b.hidden).map((b) => b.textContent.trim());
+    expect(labels).toEqual(['Close']);
+    expect(document.getElementById('save-mode')).toBeNull();
+    $('close-mode').click();
+    expect($('mode-editor').hidden).toBe(true);
+  });
+
+  it('typing in an existing mode prompt then blurring saves it', async () => {
+    const chrome = fakeChrome();
+    const popup = await start(chrome);
+    document.querySelector('[data-focus-key="edit:email"]').click();
+    const prompt = $('mode-prompt');
+    prompt.focus();
+    typeInto(prompt, 'Write it as a short email.  ');
+    expect(chrome.saves()).toHaveLength(0);
+    prompt.blur();
+    await flush();
+    expect(chrome.saves()).toHaveLength(1);
+    expect(chrome.saves()[0].modes.email).toEqual({ ...freshSettings().modes.email, prompt: 'Write it as a short email.' });
+    expect(popup.settings.modes.email.prompt).toBe('Write it as a short email.');
+    expect($('mode-list').textContent).toContain('Write it as a short email.');
+    expect($('mode-editor').hidden).toBe(false);
+  });
+
+  it('mode edits also save 800 ms after the last input', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome();
+    await start(chrome);
+    document.querySelector('[data-focus-key="edit:email"]').click();
+    const name = $('mode-name');
+    typeInto(name, 'Mail');
+    await vi.advanceTimersByTimeAsync(500);
+    typeInto($('mode-icon'), 'M');
+    await vi.advanceTimersByTimeAsync(799);
+    expect(chrome.saves()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(chrome.saves()).toHaveLength(1);
+    expect(chrome.saves()[0].modes.email).toMatchObject({ name: 'Mail', icon: 'M', builtIn: true });
+    name.blur();
+    await flush();
+    expect(chrome.saves()).toHaveLength(1);
+  });
+
+  it('an empty mode name is not saved', async () => {
+    const chrome = fakeChrome();
+    const popup = await start(chrome);
+    document.querySelector('[data-focus-key="edit:email"]').click();
+    const name = $('mode-name');
+    name.focus();
+    typeInto(name, '   ');
+    name.blur();
+    await flush();
+    expect(chrome.saves()).toHaveLength(0);
+    expect(popup.settings.modes.email.name).toBe('Email');
+    expect($('toast').textContent).toBe('Enter a mode name');
+    expect($('toast').dataset.tone).toBe('error');
+  });
+
+  it('a new mode needs the Create button once, then further edits autosave', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    $('add-mode').click();
+    expect($('create-mode').hidden).toBe(false);
+    expect($('close-mode').textContent).toBe('Cancel');
+    for (const [id, value] of [['mode-name', 'Notes'], ['mode-icon', 'N'], ['mode-prompt', 'Bullet notes.']]) {
+      const field = $(id);
+      field.focus();
+      typeInto(field, value);
+      change(field);
+      field.blur();
+    }
+    await flush();
+    expect(chrome.saves()).toHaveLength(0);
+
+    $('create-mode').click();
+    $('create-mode').click();
+    await flush();
+    expect(chrome.saves()).toHaveLength(1);
+    const customKeys = (modes) => Object.keys(modes).filter((k) => k.startsWith('custom_'));
+    const [key] = customKeys(chrome.saves()[0].modes);
+    expect(chrome.saves()[0].modes[key]).toEqual({ name: 'Notes', icon: 'N', prompt: 'Bullet notes.', builtIn: false });
+    expect($('toast').textContent).toBe('Mode created');
+    expect($('mode-editor').hidden).toBe(false);
+    expect($('create-mode').hidden).toBe(true);
+    expect($('close-mode').textContent).toBe('Close');
+    expect($('delete-mode').hidden).toBe(false);
+
+    const prompt = $('mode-prompt');
+    prompt.focus();
+    typeInto(prompt, 'Bullet notes, one line each.');
+    prompt.blur();
+    await flush();
+    expect(chrome.saves()).toHaveLength(2);
+    expect(customKeys(chrome.saves()[1].modes)).toEqual([key]);
+    expect(chrome.saves()[1].modes[key].prompt).toBe('Bullet notes, one line each.');
+  });
+
+  it('a failed mode save reverts the editor and the in-memory mode', async () => {
+    const chrome = fakeChrome();
+    chrome.script(MSG.SAVE_SETTINGS, { success: false, error: 'Storage is full.' });
+    const popup = await start(chrome);
+    const saved = freshSettings().modes.email.prompt;
+    document.querySelector('[data-focus-key="edit:email"]').click();
+    const prompt = $('mode-prompt');
+    prompt.focus();
+    typeInto(prompt, 'Short email.');
+    prompt.blur();
+    await flush();
+    expect(chrome.saves()).toHaveLength(1);
+    expect(popup.settings.modes.email.prompt).toBe(saved);
+    expect(prompt.value).toBe(saved);
+    expect($('toast').textContent).toBe('Storage is full.');
+  });
+
+  it('Close saves an edit still waiting for the typing pause', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome();
+    await start(chrome);
+    document.querySelector('[data-focus-key="edit:email"]').click();
+    typeInto($('mode-name'), 'Mail');
+    $('close-mode').click();
+    await flush();
+    expect(chrome.saves()).toHaveLength(1);
+    expect(chrome.saves()[0].modes.email.name).toBe('Mail');
+    expect($('mode-editor').hidden).toBe(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(chrome.saves()).toHaveLength(1);
+  });
+
+  it('a new mode without a name is not created', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    $('add-mode').click();
+    $('create-mode').click();
+    await flush();
+    expect(chrome.saves()).toHaveLength(0);
+    expect($('toast').textContent).toBe('Enter a mode name');
+    expect($('create-mode').hidden).toBe(false);
   });
 
   it('built-in modes have no delete button', async () => {

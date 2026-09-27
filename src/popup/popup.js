@@ -67,7 +67,7 @@ export async function initPopup({ chrome, document, window }) {
     languages: $('languages'), keywords: $('keywords'), keywordCount: $('keyword-count'),
     modeList: $('mode-list'), addMode: $('add-mode'), editor: $('mode-editor'), editorTitle: $('editor-title'),
     modeName: $('mode-name'), modeIcon: $('mode-icon'), modePrompt: $('mode-prompt'),
-    deleteMode: $('delete-mode'), cancelMode: $('cancel-mode'), saveMode: $('save-mode'),
+    deleteMode: $('delete-mode'), closeMode: $('close-mode'), createMode: $('create-mode'),
     refreshUsage: $('refresh-usage'), clearUsage: $('clear-usage'),
     version: $('version'), reset: $('reset'), toast: $('toast'),
   };
@@ -85,6 +85,7 @@ export async function initPopup({ chrome, document, window }) {
   let hotkeyArmed = false;
   let toastTimer;
   let keywordTimer;
+  let modeTimer;
   const keyTimers = {};
 
   async function send(message) {
@@ -151,6 +152,7 @@ export async function initPopup({ chrome, document, window }) {
     renderRecording();
     renderSpeech();
     renderModes();
+    renderEditor();
   }
 
   function renderProvider() {
@@ -237,6 +239,15 @@ export async function initPopup({ chrome, document, window }) {
         if (button.dataset.focusKey === focused) button.focus();
       }
     }
+  }
+
+  /** The editor shows the saved mode it edits; a new-mode draft is not in settings yet. */
+  function renderEditor() {
+    const mode = editing?.key ? settings.modes[editing.key] : null;
+    if (!mode) return;
+    if (document.activeElement !== el.modeName) el.modeName.value = mode.name;
+    if (document.activeElement !== el.modeIcon) el.modeIcon.value = mode.icon || DEFAULT_MODE_ICON;
+    if (document.activeElement !== el.modePrompt) el.modePrompt.value = mode.prompt;
   }
 
   // Provider and keys.
@@ -383,39 +394,70 @@ export async function initPopup({ chrome, document, window }) {
     commit((s) => { s.activeMode = key; }, `Mode: ${settings.modes[key].name}`);
   }
 
-  function openEditor(key) {
-    editing = { key };
-    const mode = key ? settings.modes[key] : null;
+  /** The editor fields as a mode, or null when the name is empty. */
+  function readEditor() {
+    const name = el.modeName.value.trim();
+    if (!name) return null;
+    return { name, icon: el.modeIcon.value.trim() || DEFAULT_MODE_ICON, prompt: el.modePrompt.value.trim() };
+  }
+
+  // An existing mode autosaves like every other control; only a new mode waits for Create.
+  function syncEditorActions() {
+    const key = editing?.key ?? null;
     el.editorTitle.textContent = key ? 'Edit mode' : 'New mode';
+    el.createMode.hidden = Boolean(key);
+    el.closeMode.textContent = key ? 'Close' : 'Cancel';
+    el.deleteMode.hidden = !key || Boolean(settings.modes[key]?.builtIn);
+  }
+
+  async function saveModeEdits() {
+    clearTimer(modeTimer);
+    const key = editing?.key;
+    const mode = key ? settings.modes[key] : null;
+    if (!mode) return;
+    const fields = readEditor();
+    if (!fields) {
+      toast('Enter a mode name', 'error');
+      return;
+    }
+    if (fields.name === mode.name && fields.icon === mode.icon && fields.prompt === mode.prompt) return;
+    await commit((s) => { s.modes[key] = { ...s.modes[key], ...fields }; });
+  }
+
+  function openEditor(key) {
+    saveModeEdits();
+    editing = { key };
+    syncEditorActions();
+    const mode = key ? settings.modes[key] : null;
     el.modeName.value = mode?.name ?? '';
     el.modeIcon.value = mode?.icon ?? DEFAULT_MODE_ICON;
     el.modePrompt.value = mode?.prompt ?? '';
-    el.deleteMode.hidden = !key || Boolean(mode?.builtIn);
     el.editor.hidden = false;
     el.modeName.focus();
   }
 
   function closeEditor() {
+    saveModeEdits();
     editing = null;
     el.editor.hidden = true;
   }
 
-  async function saveEditor() {
-    if (!editing) return;
-    const name = el.modeName.value.trim();
-    if (!name) {
+  async function createMode() {
+    const draft = editing;
+    if (draft?.key !== null || el.createMode.disabled) return;
+    const fields = readEditor();
+    if (!fields) {
       toast('Enter a mode name', 'error');
       el.modeName.focus();
       return;
     }
-    const icon = el.modeIcon.value.trim() || DEFAULT_MODE_ICON;
-    const prompt = el.modePrompt.value.trim();
-    const created = editing.key === null;
-    const key = created ? `custom_${Date.now()}` : editing.key;
-    const ok = await commit((s) => {
-      s.modes[key] = { ...(s.modes[key] || { builtIn: false }), name, icon, prompt };
-    }, created ? 'Mode created' : 'Mode updated');
-    if (ok) closeEditor();
+    const key = `custom_${Date.now()}`;
+    el.createMode.disabled = true;
+    const ok = await commit((s) => { s.modes[key] = { ...fields, builtIn: false }; }, 'Mode created');
+    el.createMode.disabled = false;
+    if (!ok || editing !== draft) return;
+    editing = { key };
+    syncEditorActions();
   }
 
   async function deleteEditingMode() {
@@ -429,9 +471,18 @@ export async function initPopup({ chrome, document, window }) {
   }
 
   el.addMode.addEventListener('click', () => openEditor(null));
-  el.saveMode.addEventListener('click', saveEditor);
-  el.cancelMode.addEventListener('click', closeEditor);
+  el.createMode.addEventListener('click', createMode);
+  el.closeMode.addEventListener('click', closeEditor);
   el.deleteMode.addEventListener('click', deleteEditingMode);
+  for (const field of [el.modeName, el.modeIcon, el.modePrompt]) {
+    field.addEventListener('input', () => {
+      if (!editing?.key) return;
+      clearTimer(modeTimer);
+      modeTimer = setTimer(saveModeEdits, TYPING_SAVE_MS);
+    });
+    field.addEventListener('change', saveModeEdits);
+    field.addEventListener('blur', saveModeEdits);
+  }
 
   // Usage.
 
