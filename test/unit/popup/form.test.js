@@ -136,6 +136,28 @@ describe('createInlineConfirm', () => {
     expect(button.textContent).toBe('Clear history');
   });
 
+  it('an armed button prevents repeated Enter and Space keydowns and does not confirm', () => {
+    const { button, onConfirm } = setup();
+    button.click();
+    vi.advanceTimersByTime(500);
+    for (const key of ['Enter', ' ']) {
+      const event = new KeyboardEvent('keydown', { key, repeat: true, bubbles: true, cancelable: true });
+      button.dispatchEvent(event);
+      expect(event.defaultPrevented, key).toBe(true);
+    }
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(button.dataset.confirming).toBe('true');
+  });
+
+  it('a non-repeated Enter keydown is not prevented', () => {
+    const { button } = setup();
+    button.click();
+    vi.advanceTimersByTime(500);
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    button.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it('the label reverts after the window and the next click starts over', () => {
     const { button, onConfirm } = setup({ ms: 1000 });
     button.click();

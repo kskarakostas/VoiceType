@@ -64,7 +64,8 @@ export const CONFIRM_GUARD_MS = 400;
  * The first click swaps the label to `prompt`; a second click within `ms` calls `onConfirm`;
  * otherwise the label reverts. A second click within CONFIRM_GUARD_MS of arming, or one that
  * is part of a multi-click (`detail > 1`), is ignored and the button stays armed, so a double
- * click cannot arm and confirm in one gesture.
+ * click cannot arm and confirm in one gesture. Auto-repeated Enter and Space keydowns are
+ * prevented, so holding a key never produces the confirming click.
  * @param {HTMLButtonElement} button
  * @param {{ prompt?: string, ms?: number, onConfirm: () => unknown,
  *           setTimeout: typeof setTimeout, clearTimeout: typeof clearTimeout }} options
@@ -99,5 +100,9 @@ export function createInlineConfirm(button, {
     if (!settled || event.detail > 1) return;
     disarm();
     onConfirm();
+  });
+
+  button.addEventListener('keydown', (event) => {
+    if (event.repeat && (event.key === 'Enter' || event.key === ' ')) event.preventDefault();
   });
 }
