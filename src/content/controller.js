@@ -30,7 +30,7 @@ export const FOCUS_OUT_MS = 200;
 /** Processing with no word from the service worker for this long: it stopped or restarted. */
 export const PROCESSING_TIMEOUT_MS = 75_000;
 
-const ORPHAN_NOTICE = 'VoiceType was updated. Reload this page.';
+const ORPHAN_NOTICE = 'VoiceType was turned off or updated. Reload this page.';
 const NO_REPLY = 'VoiceType could not reach its background service. Try again.';
 const NO_RESPONSE = 'No response from VoiceType. Try again.';
 const CLICK_TO_COPY = 'Could not insert. Click here to copy the text.';
@@ -507,7 +507,7 @@ export function createController(deps) {
     else if (reply.success !== true) notify(textOr(reply.error, 'Could not save the setting.'), { tone: 'error' });
   }
 
-  /** The extension was reloaded or updated under this page: say so, then do nothing more. */
+  /** The extension was turned off, reloaded or updated under this page: say so, then do nothing more. */
   function orphaned() {
     if (inactive()) return;
     orphan = true;

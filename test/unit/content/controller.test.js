@@ -5,7 +5,7 @@ import { isValidInput, deepActiveElement } from '../../../src/content/fields.js'
 import { MSG } from '../../../src/shared/messages.js';
 
 const RECT = { top: 100, left: 400, width: 300, height: 30 };
-const ORPHAN = 'VoiceType was updated. Reload this page.';
+const ORPHAN = 'VoiceType was turned off or updated. Reload this page.';
 const CLICK_TO_COPY = 'Could not insert. Click here to copy the text.';
 
 /** Records every call the controller makes on the pill; tracks visibility like the real one. */

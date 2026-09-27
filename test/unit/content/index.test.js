@@ -90,7 +90,7 @@ const hosts = () => document.documentElement.querySelectorAll('voicetype-host');
 const shadow = () => hosts()[0].shadowRoot;
 const statusText = () => shadow().querySelector('[role="status"]').textContent;
 const HOLD = 'Return to the field to insert, or click here to copy.';
-const ORPHAN = 'VoiceType was updated. Reload this page.';
+const ORPHAN = 'VoiceType was turned off or updated. Reload this page.';
 const RESULT = { action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null };
 
 /** REC, then REC again: the instance waits for the result of a session bound to the focused field. */
@@ -185,14 +185,14 @@ describe('orphan detection', () => {
     const root = shadow();
     root.querySelector('.rec').click();
     await flush();
-    expect(root.querySelector('[role="status"]').textContent).toBe('VoiceType was updated. Reload this page.');
+    expect(root.querySelector('[role="status"]').textContent).toBe('VoiceType was turned off or updated. Reload this page.');
     expect(console.warn).not.toHaveBeenCalled();
 
     root.querySelector('.rec').click();
     document.getElementById('field').dispatchEvent(hotkey('keydown'));
     await flush();
     expect(t.sent().filter((a) => a === MSG.START_RECORDING)).toHaveLength(1);
-    expect(root.querySelector('[role="status"]').textContent).toBe('VoiceType was updated. Reload this page.');
+    expect(root.querySelector('[role="status"]').textContent).toBe('VoiceType was turned off or updated. Reload this page.');
   });
 
   it('a synchronous throw is treated the same way', async () => {
@@ -202,7 +202,7 @@ describe('orphan detection', () => {
     t.chrome.runtime.sendMessage.mockImplementation(() => { throw new Error('Extension context invalidated.'); });
     shadow().querySelector('.rec').click();
     await flush();
-    expect(shadow().querySelector('[role="status"]').textContent).toBe('VoiceType was updated. Reload this page.');
+    expect(shadow().querySelector('[role="status"]').textContent).toBe('VoiceType was turned off or updated. Reload this page.');
   });
 
   it('other errors are logged and are not terminal', async () => {

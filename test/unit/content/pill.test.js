@@ -279,11 +279,11 @@ describe('status', () => {
     vi.useFakeTimers();
     const { pill } = makePill();
     pill.show(FIELD);
-    pill.setStatus('VoiceType was updated. Reload this page.', { tone: 'error', terminal: true });
+    pill.setStatus('VoiceType was turned off or updated. Reload this page.', { tone: 'error', terminal: true });
     pill.setStatus('Done $0.01', { tone: 'success' });
     pill.clearStatus();
     vi.advanceTimersByTime(60000);
-    expect(statusEl(pill).textContent).toBe('VoiceType was updated. Reload this page.');
+    expect(statusEl(pill).textContent).toBe('VoiceType was turned off or updated. Reload this page.');
     expect(statusEl(pill).dataset.tone).toBe('error');
   });
 
