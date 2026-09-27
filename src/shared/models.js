@@ -9,8 +9,23 @@
  *             pricing: PerMinutePricing|AudioTokenPricing|TextTokenPricing }} ModelInfo
  */
 
+/**
+ * Freeze a value and everything reachable through its own enumerable properties.
+ * Shared registries and defaults must fail loudly on a stray write. The value must be acyclic.
+ * @template T
+ * @param {T} value
+ * @returns {T}
+ */
+export function deepFreeze(value) {
+  if (value && typeof value === 'object') {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 /** @type {Record<string, ModelInfo>} */
-export const MODELS = Object.freeze({
+export const MODELS = deepFreeze({
   'gpt-transcribe': {
     provider: 'openai', kind: 'stt', label: 'GPT Transcribe',
     pricing: { perMinute: 0.0045 },
@@ -33,13 +48,13 @@ export const MODELS = Object.freeze({
 /** Gemini audio tokenisation rate used when the API returns no usage. */
 export const GEMINI_AUDIO_TOKENS_PER_SECOND = 32;
 
-export const PROVIDERS = Object.freeze({
+export const PROVIDERS = deepFreeze({
   openai: { label: 'OpenAI', stt: 'gpt-transcribe', text: 'gpt-6-luna', keyPlaceholder: 'sk-...' },
   gemini: { label: 'Gemini', stt: 'gemini-3.5-transcribe', text: 'gemini-3.8-flash', keyPlaceholder: 'AQ.... or AIza...' },
 });
 
 /** v1 model ids, kept only so migration can recover the provider. Never sent to an API. */
-export const LEGACY_PROVIDER_OF_MODEL = Object.freeze({
+export const LEGACY_PROVIDER_OF_MODEL = deepFreeze({
   'gpt-4o-transcribe': 'openai',
   'gpt-4o-mini-transcribe': 'openai',
   'gemini-2.5-flash': 'gemini',

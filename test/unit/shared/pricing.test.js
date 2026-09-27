@@ -23,6 +23,11 @@ describe('estimateSttCost', () => {
   it('returns 0 for unknown models', () => {
     expect(estimateSttCost('nope', null, 60)).toBe(0);
   });
+  it('prices inherited property names at 0 instead of throwing', () => {
+    for (const id of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(estimateSttCost(id, null, 1), id).toBe(0);
+    }
+  });
 });
 
 describe('estimateTextCost', () => {
@@ -30,8 +35,16 @@ describe('estimateTextCost', () => {
     expect(estimateTextCost('gpt-6-luna', { inputTokens: 1000, outputTokens: 200 })).toBeCloseTo(0.0001 + 0.0001, 9);
     expect(estimateTextCost('gemini-3.8-flash', { inputTokens: 1e6, outputTokens: 0 })).toBeCloseTo(0.75, 9);
   });
+  it('prices Gemini 3.8 Flash output tokens', () => {
+    expect(estimateTextCost('gemini-3.8-flash', { inputTokens: 0, outputTokens: 1e6 })).toBeCloseTo(3.75, 9);
+  });
   it('returns 0 without usage', () => {
     expect(estimateTextCost('gpt-6-luna', null)).toBe(0);
+  });
+  it('prices unknown and inherited model ids at 0 instead of throwing', () => {
+    for (const id of ['nope', 'constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(estimateTextCost(id, { inputTokens: 1, outputTokens: 1 }), id).toBe(0);
+    }
   });
 });
 
@@ -40,5 +53,9 @@ describe('formatCost', () => {
     expect(formatCost(0)).toBe('$0.00');
     expect(formatCost(0.004)).toBe('<$0.01');
     expect(formatCost(0.1234)).toBe('$0.12');
+  });
+  it('shows exactly one cent as $0.01', () => {
+    expect(formatCost(0.01)).toBe('$0.01');
+    expect(formatCost(0.0099)).toBe('<$0.01');
   });
 });
