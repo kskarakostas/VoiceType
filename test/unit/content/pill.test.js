@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Pill, PILL_SIZE, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
-import { computePillPosition } from '../../../src/content/position.js';
+import { computePillPosition, EDGE } from '../../../src/content/position.js';
 
 // A path, not a URL literal: jsdom replaces the global URL, and the web transform rewrites
 // `new URL('<literal>', import.meta.url)` into a dev-server address.
@@ -45,6 +45,16 @@ function settings(overrides = {}) {
 
 const q = (pill, selector) => pill.root.querySelector(selector);
 const statusEl = (pill) => q(pill, '[role="status"]');
+const rect = (width, height) => () => ({ top: 0, left: 0, right: width, bottom: height, width, height });
+
+/** Asserts the status, `height` px tall, lies fully inside the viewport. "above" is lifted by its own height in CSS. */
+function expectStatusOnScreen(pill, height) {
+  const el = statusEl(pill);
+  const top = parseInt(el.style.top, 10) - (el.dataset.side === 'above' ? height : 0);
+  const label = `status ${el.dataset.side} at ${top}`;
+  expect(top, label).toBeGreaterThanOrEqual(EDGE);
+  expect(top + height, label).toBeLessThanOrEqual(VIEWPORT.height - EDGE);
+}
 
 beforeEach(() => {
   document.documentElement.querySelectorAll('voicetype-host').forEach((el) => el.remove());
@@ -298,11 +308,49 @@ describe('status', () => {
     pill.closeMenu();
     expect(statusEl(pill).dataset.side).toBe('below');
 
-    q(pill, '.menu').getBoundingClientRect = () => ({ top: 0, left: 0, right: 248, bottom: 300, width: 248, height: 300 });
+    q(pill, '.menu').getBoundingClientRect = rect(248, 300);
+    statusEl(pill).getBoundingClientRect = rect(120, 29);
     pill.show(BOTTOM_FIELD);
     pill.openMenu();
     expect(q(pill, '.menu').dataset.placement).toBe('above');
-    expect(statusEl(pill).dataset.side).toBe('below');
+    expectStatusOnScreen(pill, 29);
+  });
+
+  it('keeps the status on screen for an above pill near the top', () => {
+    const { pill } = makePill();
+    pill.renderMenu(settings(), null);
+    pill.show({ top: 50, left: 100, width: 800, height: 30 });
+    statusEl(pill).getBoundingClientRect = rect(120, 29);
+    q(pill, '.menu').getBoundingClientRect = rect(248, 300);
+    pill.setStatus('Hello');
+    expect(q(pill, '.pill').dataset.placement).toBe('above');
+    expect(parseInt(q(pill, '.pill').style.top, 10)).toBeLessThan(35);
+    expectStatusOnScreen(pill, 29);
+    pill.openMenu();
+    expect(q(pill, '.menu').dataset.placement).toBe('below');
+    expectStatusOnScreen(pill, 29);
+  });
+
+  it('keeps the status on screen in the corner, with and without the menu', () => {
+    const { pill } = makePill();
+    pill.renderMenu(settings(), null);
+    pill.show(null);
+    statusEl(pill).getBoundingClientRect = rect(120, 29);
+    q(pill, '.menu').getBoundingClientRect = rect(248, 300);
+    pill.setStatus('Hello');
+    expect(q(pill, '.pill').dataset.placement).toBe('corner');
+    expectStatusOnScreen(pill, 29);
+    pill.openMenu();
+    expect(q(pill, '.menu').dataset.placement).toBe('above');
+    expectStatusOnScreen(pill, 29);
+  });
+
+  it('clamps a status that fits on neither side into the viewport', () => {
+    const { pill } = makePill();
+    pill.show(FIELD);
+    statusEl(pill).getBoundingClientRect = rect(300, 740);
+    pill.setStatus('A very long message');
+    expectStatusOnScreen(pill, 740);
   });
 });
 
@@ -392,6 +440,29 @@ describe('menu', () => {
     for (const button of buttons) expect(button.getAttribute('type')).toBe('button');
   });
 
+  it('caps the menu to the room on its side, measuring it uncapped each time', () => {
+    const { pill } = makePill();
+    pill.renderMenu(settings(), null);
+    pill.show(FIELD);
+    const menu = q(pill, '.menu');
+    const measuredWith = [];
+    menu.getBoundingClientRect = () => {
+      measuredWith.push(menu.style.maxHeight);
+      return rect(248, 700)();
+    };
+    pill.openMenu();
+    // Pill at 100: 628 px below, 90 px above; neither fits 700, so below, capped.
+    expect(menu.dataset.placement).toBe('below');
+    expect(menu.style.top).toBe('136px');
+    expect(menu.style.maxHeight).toBe('628px');
+    pill.reposition(BOTTOM_FIELD);
+    // Pill at 730: 720 px above fits 700, clear of the pill.
+    expect(menu.dataset.placement).toBe('above');
+    expect(menu.style.top).toBe('24px');
+    expect(menu.style.maxHeight).toBe('720px');
+    expect(measuredWith).toEqual(['', '']);
+  });
+
   it('opens from the menu button, calls onMenuOpen, and closes on Escape', () => {
     const { pill, h } = makePill();
     pill.renderMenu(settings(), null);
@@ -457,6 +528,12 @@ describe('page isolation', () => {
     pill.show(FIELD);
     q(pill, '.rec').click();
     expect(h.onRec).toHaveBeenCalledTimes(1);
+  });
+
+  it('pins text direction on .vt so an rtl page cannot flip the pill', () => {
+    const vtRule = CSS_TEXT.match(/^\.vt \{([^}]*)\}/m)[1];
+    expect(vtRule).toMatch(/^\s*direction: ltr;$/m);
+    expect(vtRule).toMatch(/^\s*unicode-bidi: isolate;$/m);
   });
 
   it('never uses an HTML string sink', () => {

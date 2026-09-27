@@ -38,7 +38,7 @@ const GROWS_LEFT = new Set(['left', 'inside', 'corner']);
 const MENU_GAP = 6;
 const MENU_WIDTH = 248;
 const STATUS_GAP = 6;
-/** Room a one-line status needs below the pill before it flips above. */
+/** Least room reserved for a status (one line); also its height when it cannot be measured. */
 const STATUS_ROOM = 40;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -348,6 +348,8 @@ export class Pill {
     const box = this.#box;
     if (!box) return;
     const { menu } = this.#els;
+    // Measure the menu's own height, not the cap from its previous placement.
+    menu.style.maxHeight = '';
     const rect = menu.getBoundingClientRect();
     const pos = computeMenuPlacement({
       pill: box,
@@ -357,27 +359,37 @@ export class Pill {
     });
     this.#menuPlacement = pos.placement;
     menu.dataset.placement = pos.placement;
-    menu.style.top = `${Math.round(Math.max(EDGE, pos.top))}px`;
+    menu.style.top = `${Math.round(pos.top)}px`;
     menu.style.left = `${Math.round(pos.left)}px`;
+    menu.style.maxHeight = `${Math.floor(pos.maxHeight)}px`;
   }
 
-  /** The status goes on the side opposite an open menu, else below unless there is no room. */
+  /**
+   * The status prefers the side opposite an open menu, else above for the above and corner
+   * placements and below otherwise. It takes the other side when the preferred one has no
+   * room, and is clamped into the viewport when neither has.
+   */
   #placeStatus() {
     const box = this.#box;
     if (!box) return;
     const { status } = this.#els;
     const viewport = this.#viewport();
-    let side;
-    if (this.#menuOpen) side = this.#menuPlacement === 'below' ? 'above' : 'below';
-    else if (box.placement === 'above' || box.placement === 'corner') side = 'above';
-    else side = box.top + box.height + STATUS_GAP + STATUS_ROOM <= viewport.height - EDGE ? 'below' : 'above';
+    const { width, height: measured } = status.getBoundingClientRect();
+    const height = Math.max(measured, STATUS_ROOM);
+    const tops = { below: box.top + box.height + STATUS_GAP, above: box.top - STATUS_GAP - height };
+    const fits = (side) => tops[side] >= EDGE && tops[side] + height <= viewport.height - EDGE;
+    let preferred;
+    if (this.#menuOpen) preferred = this.#menuPlacement === 'below' ? 'above' : 'below';
+    else preferred = box.placement === 'above' || box.placement === 'corner' ? 'above' : 'below';
+    const other = preferred === 'below' ? 'above' : 'below';
+    const side = fits(preferred) || !fits(other) ? preferred : other;
+    const top = fits(side) ? tops[side] : Math.max(EDGE, Math.min(tops[side], viewport.height - height - EDGE));
     status.dataset.side = side;
-    const width = status.getBoundingClientRect().width;
     const wanted = GROWS_LEFT.has(box.placement) ? box.left + box.width - width : box.left;
     const left = Math.max(EDGE, Math.min(wanted, viewport.width - width - EDGE));
     status.style.left = `${Math.round(left)}px`;
-    // "above" is lifted by its own height in CSS (translateY(-100%)).
-    status.style.top = `${Math.round(side === 'below' ? box.top + box.height + STATUS_GAP : box.top - STATUS_GAP)}px`;
+    // "above" is lifted by its own height in CSS (translateY(-100%)), so it is placed by its bottom edge.
+    status.style.top = `${Math.round(side === 'above' ? top + height : top)}px`;
   }
 
   #resetStatus() {

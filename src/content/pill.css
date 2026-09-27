@@ -49,6 +49,9 @@
   color-scheme: light;
   font: 500 12px/1.35 var(--vt-font);
   color: var(--vt-text);
+  /* all: initial on the host leaves direction and unicode-bidi inherited from the page. */
+  direction: ltr;
+  unicode-bidi: isolate;
   font-style: normal;
   letter-spacing: normal;
   text-align: left;

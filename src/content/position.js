@@ -56,14 +56,22 @@ export function computePillPosition({ anchor, pill, viewport, gap }) {
 }
 
 /**
- * Opens the menu below the pill when it fits, else above (never past the top edge);
- * left-aligned with the pill.
+ * Opens the menu below the pill when it fits, else above when it fits there, else on the
+ * side with more room, capped by maxHeight to that room. It never overlaps the pill and is
+ * left-aligned with it.
  * @param {{ pill: Box, menu: Size, viewport: Size, gap: number }} input
- * @returns {{ top: number, left: number, placement: 'below'|'above' }}
+ * @returns {{ top: number, left: number, placement: 'below'|'above', maxHeight: number }}
  */
 export function computeMenuPlacement({ pill, menu, viewport, gap }) {
   const left = clamp(pill.left, EDGE, viewport.width - menu.width - EDGE);
   const below = pill.top + pill.height + gap;
-  if (below + menu.height <= viewport.height - EDGE) return { top: below, left, placement: 'below' };
-  return { top: Math.max(EDGE, pill.top - gap - menu.height), left, placement: 'above' };
+  const spaceBelow = viewport.height - EDGE - below;
+  const spaceAbove = pill.top - gap - EDGE;
+  if (menu.height <= spaceBelow) return { top: below, left, placement: 'below', maxHeight: spaceBelow };
+  if (menu.height <= spaceAbove) {
+    return { top: pill.top - gap - menu.height, left, placement: 'above', maxHeight: spaceAbove };
+  }
+  if (spaceBelow >= spaceAbove) return { top: below, left, placement: 'below', maxHeight: Math.max(0, spaceBelow) };
+  const maxHeight = Math.max(0, spaceAbove);
+  return { top: pill.top - gap - maxHeight, left, placement: 'above', maxHeight };
 }
