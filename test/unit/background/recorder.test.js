@@ -423,6 +423,39 @@ describe('stale captures', () => {
     expect(tabMessages()).toEqual([{ endpoint: B, action: MSG.AUDIO_LEVEL, level: 0.3 }]);
   });
 
+  it('an error from the capture that is still starting frees the session and tells its frame', async () => {
+    const pending = deferred();
+    const { recorder, tabMessages, offscreenMessages, id } = setup({ startReply: () => pending.promise });
+    const started = recorder.start(A);
+    await vi.waitFor(() => expect(offscreenMessages()).toHaveLength(1));
+    await recorder.onOffscreenError({ error: 'Recording failed.', captureId: id() });
+    expect(recorder.session).toBeNull();
+    expect(tabMessages()).toEqual([{
+      endpoint: A, action: MSG.RECORDING_STATE, state: 'idle', reason: 'error',
+      notice: { text: 'Recording failed. Try again.', tone: 'error' },
+    }]);
+    pending.resolve({ ok: true });
+    expect(await started).toEqual({ ok: false, reason: 'micError', error: 'Recording cancelled.' });
+    expect(offscreenMessages().at(-1)).toEqual(discardOf(id()));
+  });
+
+  it('an auto-stop from the capture that is still starting ends the session without a provider call', async () => {
+    const pending = deferred();
+    const { deps, recorder, tabMessages, offscreenMessages, id } = setup({ startReply: () => pending.promise });
+    const started = recorder.start(A);
+    await vi.waitFor(() => expect(offscreenMessages()).toHaveLength(1));
+    await recorder.onDone(done({ reason: 'ended', durationSec: 0.2, captureId: id() }));
+    expect(deps.dictate).not.toHaveBeenCalled();
+    expect(recorder.session).toBeNull();
+    expect(tabMessages()).toEqual([
+      { endpoint: A, action: MSG.RECORDING_STATE, state: 'processing', reason: 'ended' },
+      { endpoint: A, action: MSG.DICTATION_RESULT, success: false, error: 'Too short, ignored', tone: 'warning' },
+    ]);
+    pending.resolve({ ok: true });
+    expect(await started).toEqual({ ok: false, reason: 'micError', error: 'Recording cancelled.' });
+    expect(offscreenMessages().at(-1)).toEqual(discardOf(id()));
+  });
+
   it('an ok start reply for a session replaced meanwhile discards only that capture', async () => {
     const replies = [deferred(), deferred()];
     let calls = 0;
