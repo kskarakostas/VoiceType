@@ -41,7 +41,7 @@ const options = {
   entryPoints: ENTRIES,
   bundle: true,
   format: 'iife',
-  target: 'chrome116',
+  target: 'chrome140',
   outdir: OUTDIR,
   // `import css from './x.css'` yields the file text (Shadow DOM styles); vitest.config.js mirrors this.
   loader: { '.css': 'text' },

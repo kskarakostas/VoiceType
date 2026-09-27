@@ -3,9 +3,12 @@ import { MSG } from '../shared/messages.js';
 import { migrateSettings, toPublicSettings } from '../shared/defaults.js';
 import { createStorage } from './storage.js';
 import { createRouter, createValidateKey, senderKind, userMessage } from './router.js';
-import { ADAPTERS } from './pipeline.js';
-import { summarize } from './usage.js';
-import { broadcast } from './tabs.js';
+import { runDictation, ADAPTERS } from './pipeline.js';
+import { applyUsage, summarize } from './usage.js';
+import { createDictate } from './dictate.js';
+import { createRecorder } from './recorder.js';
+import { createOffscreenClient } from './offscreen-client.js';
+import { broadcast, reinject, sendToFrame } from './tabs.js';
 
 // Keys live in storage.local; only the service worker and extension pages may read it.
 (async () => {
@@ -17,13 +20,15 @@ import { broadcast } from './tabs.js';
 })();
 
 const storage = createStorage(chrome.storage.local);
-
-// Recording moves to the offscreen recorder; until it is wired every recording request fails cleanly.
-const unavailable = async () => ({ ok: false, reason: 'micError', error: 'Recording is not available yet.' });
-const recorder = {
-  start: unavailable, stop: unavailable, cancel: unavailable, onLevel: unavailable,
-  onDone: unavailable, onOffscreenError: unavailable, onPermissionResult: unavailable, onTabRemoved: unavailable,
-};
+const offscreenClient = createOffscreenClient({ runtime: chrome.runtime, offscreen: chrome.offscreen });
+const recorder = createRecorder({
+  ensureOffscreen: () => offscreenClient.ensure(),
+  toOffscreen: (message) => offscreenClient.send(message),
+  toTab: (endpoint, message) => sendToFrame(chrome.tabs, endpoint, message),
+  openPermissionPage: async () => { await chrome.tabs.create({ url: chrome.runtime.getURL('permission.html') }); },
+  getSettings: () => storage.getSettings(),
+  dictate: createDictate({ storage, runDictation, applyUsage, userMessage }),
+});
 
 // Built from the id: URL parsers outside Chrome give chrome-extension: URLs an opaque 'null' origin,
 // which content scripts in sandboxed frames also report.
@@ -37,33 +42,14 @@ const handle = createRouter({
   identify: (sender) => senderKind(sender, { extensionId: chrome.runtime.id, extensionOrigin, offscreenUrl }),
 });
 
-/** Send toggle to the active tab, injecting the content script if it is not there. */
-async function toggleActiveTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return false;
-  try {
-    // Always ask first: tab.url can be missing without a host permission for the page.
-    await chrome.tabs.sendMessage(tab.id, { action: MSG.TOGGLE_RECORDING });
-  } catch {
-    // No content script answered. Inject only into pages content scripts can run on.
-    if (!/^(https?|file):/.test(tab.url || '')) return false;
-    try {
-      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['content.css'] });
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-      setTimeout(() => { chrome.tabs.sendMessage(tab.id, { action: MSG.TOGGLE_RECORDING }).catch(() => {}); }, 150);
-    } catch {
-      // Page forbids injection (browser UI, store pages). Nothing to do.
-    }
-  }
-  return true;
-}
-
-chrome.runtime.onInstalled.addListener(() => { storage.getSettings().catch(() => {}); });
+chrome.runtime.onInstalled.addListener(() => {
+  storage.getSettings().catch(() => {});
+  // Content scripts already in open tabs belong to the old version; give every frame the new one.
+  reinject(chrome.tabs, chrome.scripting);
+});
 chrome.runtime.onStartup.addListener(() => { storage.getSettings().catch(() => {}); });
 
-chrome.commands.onCommand.addListener((command) => {
-  if (command === MSG.TOGGLE_RECORDING) toggleActiveTab().catch(() => {});
-});
+chrome.tabs.onRemoved.addListener((tabId) => { recorder.onTabRemoved(tabId); });
 
 // Content scripts cannot read storage any more, so push key-free settings to every frame.
 chrome.storage.onChanged.addListener((changes, areaName) => {

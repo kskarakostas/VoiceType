@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MSG } from '../../../src/shared/messages.js';
 import { freshSettings } from '../../../src/shared/defaults.js';
 
-/** Minimal chrome stand-in: records listeners and keeps storage.local in memory. */
+/**
+ * Minimal chrome stand-in: records listeners and keeps storage.local in memory. It has no
+ * `commands` namespace, so an entry that still registers a command listener fails to load.
+ */
 function fakeChrome({ accessLevel = true } = {}) {
   const listeners = {};
   const on = (name) => ({ addListener: vi.fn((fn) => { listeners[name] = fn; }) });
@@ -11,11 +14,13 @@ function fakeChrome({ accessLevel = true } = {}) {
     runtime: {
       id: 'abc',
       getURL: (path) => `chrome-extension://abc/${path.replace(/^\//, '')}`,
+      getContexts: vi.fn(async () => []),
+      sendMessage: vi.fn(async () => ({ ok: true })),
       onMessage: on('message'),
       onInstalled: on('installed'),
       onStartup: on('startup'),
     },
-    commands: { onCommand: on('command') },
+    offscreen: { createDocument: vi.fn(async () => {}) },
     storage: {
       local: {
         get: vi.fn(async (key) => ({ [key]: structuredClone(store[key]) })),
@@ -24,15 +29,22 @@ function fakeChrome({ accessLevel = true } = {}) {
       },
       onChanged: on('storageChanged'),
     },
-    tabs: { query: vi.fn(async () => [{ id: 1 }, { id: 2 }]), sendMessage: vi.fn(async () => undefined) },
-    scripting: { executeScript: vi.fn(async () => []), insertCSS: vi.fn(async () => {}) },
+    tabs: {
+      query: vi.fn(async () => [{ id: 1 }, { id: 2 }]),
+      sendMessage: vi.fn(async () => undefined),
+      create: vi.fn(async () => ({ id: 9 })),
+      onRemoved: on('tabRemoved'),
+    },
+    scripting: { executeScript: vi.fn(async () => []) },
   };
   return { chrome, listeners, store };
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const PAGE = { id: 'abc', origin: 'https://example.com', url: 'https://example.com/', tab: { id: 1 }, frameId: 0 };
+const OTHER_PAGE = { id: 'abc', origin: 'https://example.org', url: 'https://example.org/', tab: { id: 2 }, frameId: 0 };
 const POPUP = { id: 'abc', origin: 'chrome-extension://abc', url: 'chrome-extension://abc/popup.html' };
+const OFFSCREEN = { id: 'abc', origin: 'chrome-extension://abc', url: 'chrome-extension://abc/offscreen.html' };
 
 async function load(options) {
   const fake = fakeChrome(options);
@@ -106,5 +118,44 @@ describe('service worker entry', () => {
     expect(full.keys.openai).toBe('sk-secret-123456');
     expect(await send(fake.listeners, { action: MSG.SAVE_SETTINGS, settings: {} }, PAGE)).toEqual({ success: false, error: 'Not allowed.' });
     expect(await send(fake.listeners, { action: 'nope' }, POPUP)).toEqual({ success: false, error: 'Unknown action' });
+  });
+});
+
+describe('recording wiring', () => {
+  beforeEach(() => {
+    fake.store.settings = { ...freshSettings(), keys: { openai: 'sk-secret-123456', gemini: '' } };
+  });
+
+  it('re-injects content scripts into open tabs on install', async () => {
+    fake.listeners.installed({ reason: 'update' });
+    await flush();
+    expect(fake.chrome.tabs.query).toHaveBeenCalledWith({ url: ['http://*/*', 'https://*/*', 'file:///*'] });
+    expect(fake.chrome.scripting.executeScript).toHaveBeenCalledWith({ target: { tabId: 1, allFrames: true }, files: ['content.js'] });
+    expect(fake.chrome.scripting.executeScript).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts a recording through the offscreen document and relays levels to the frame', async () => {
+    expect(await send(fake.listeners, { action: MSG.START_RECORDING }, PAGE)).toEqual({ ok: true });
+    expect(fake.chrome.offscreen.createDocument).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'chrome-extension://abc/offscreen.html', reasons: ['USER_MEDIA'],
+    }));
+    expect(fake.chrome.runtime.sendMessage).toHaveBeenCalledWith({ action: MSG.OFFSCREEN_START, maxSec: 120, silenceSec: 0 });
+    expect(JSON.stringify(fake.chrome.runtime.sendMessage.mock.calls)).not.toContain('sk-secret');
+    expect(await send(fake.listeners, { action: MSG.OFFSCREEN_LEVEL, level: 0.5 }, OFFSCREEN)).toEqual({ ok: true });
+    await vi.waitFor(() => expect(fake.chrome.tabs.sendMessage).toHaveBeenCalledWith(1, { action: MSG.AUDIO_LEVEL, level: 0.5 }, { frameId: 0 }));
+  });
+
+  it('a removed tab frees its recording for the next tab', async () => {
+    await send(fake.listeners, { action: MSG.START_RECORDING }, PAGE);
+    await fake.listeners.tabRemoved(1);
+    await vi.waitFor(() => expect(fake.chrome.runtime.sendMessage).toHaveBeenCalledWith({ action: MSG.OFFSCREEN_STOP, discard: true }));
+    expect(await send(fake.listeners, { action: MSG.START_RECORDING }, OTHER_PAGE)).toEqual({ ok: true });
+  });
+
+  it('opens the permission page when the microphone needs permission', async () => {
+    fake.chrome.runtime.sendMessage.mockResolvedValueOnce({ ok: false, reason: 'needsPermission', error: 'Microphone permission needed.' });
+    const res = await send(fake.listeners, { action: MSG.START_RECORDING }, PAGE);
+    expect(res.reason).toBe('needsPermission');
+    expect(fake.chrome.tabs.create).toHaveBeenCalledWith({ url: 'chrome-extension://abc/permission.html' });
   });
 });
