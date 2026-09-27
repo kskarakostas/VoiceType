@@ -110,16 +110,16 @@ Keys stay in your browser's local extension storage, never synced. Audio goes st
 
 ```bash
 # Clone the repository and build (requires Node.js 20+)
-git clone https://github.com/YOUR_USERNAME/voicetype.git
-cd voicetype
+git clone https://github.com/kskarakostas/VoiceType.git
+cd VoiceType
 npm install
 npm run build
 ```
 
-Or download the ZIP from GitHub, extract it (the folder is named `voicetype-main`) and build there:
+Or download the ZIP from GitHub, extract it (the folder is named `VoiceType-main`) and build there:
 
 ```bash
-cd voicetype-main
+cd VoiceType-main
 npm install
 npm run build
 ```
@@ -248,7 +248,7 @@ MIT License: use it, modify it, share it.
 </p>
 
 <p align="center">
-  <a href="https://github.com/YOUR_USERNAME/voicetype/issues">Report Bug</a>
+  <a href="https://github.com/kskarakostas/VoiceType/issues">Report Bug</a>
   ·
-  <a href="https://github.com/YOUR_USERNAME/voicetype/issues">Request Feature</a>
+  <a href="https://github.com/kskarakostas/VoiceType/issues">Request Feature</a>
 </p>
