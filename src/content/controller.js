@@ -230,7 +230,8 @@ export function createController(deps) {
   }
 
   async function start() {
-    // REC while a result is held settles that result first; the next REC records.
+    // REC while a result is held settles that result first. The next REC starts a recording
+    // when this frame has the focus and no password field is focused.
     if (held) return deliverHeld();
     const active = deepActiveElement();
     const refusal = startRefusal(active);
