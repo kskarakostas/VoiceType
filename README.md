@@ -252,7 +252,7 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 | **Microphone not working** | VoiceType asks in its own tab, not in the site's address bar. If the pill says the microphone is blocked, open `chrome://settings/content/microphone`, remove VoiceType from the blocked list, and press REC again |
 | **Asked for the microphone every time** | You chose "Allow this time". Reset it at `chrome://settings/content/microphone`, press REC and choose **Allow while visiting the site** |
 | **Hotkey doesn't work** | Click into the page first. Browser shortcuts such as `Ctrl+T` never reach a page; set another hotkey in the popup (Recording, Hotkey) |
-| **"VoiceType was updated. Reload this page."** | That tab could not be switched to the new version; reload the page |
+| **"VoiceType was turned off or updated. Reload this page."** | VoiceType was turned off on `chrome://extensions`, or that tab could not be switched to the new version. Turn VoiceType on if it is off, then reload the page |
 | **Text went to the clipboard** | Focus moved before the text arrived, or the site does not accept inserted text. Paste with `Ctrl+V` |
 | **Transcription fails** | Check your API key and account balance |
 | **Poor quality** | Speak clearly, reduce background noise, or try the other provider |
