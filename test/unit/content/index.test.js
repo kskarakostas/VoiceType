@@ -314,9 +314,9 @@ describe('wiring', () => {
     expect(field.value).toBe('');
     hasFocus.mockReturnValue(true);
     window.dispatchEvent(new Event('focus'));
-    await flush();
+    // The insert reports only once its read-back has settled (a macrotask, a frame, then polling).
+    await vi.waitFor(() => expect(statusText()).toBe('Done $0.00'));
     expect(field.value).toBe('hello');
-    expect(statusText()).toBe('Done $0.00');
   });
 
   it('menu choices send a whitelisted patch', async () => {
