@@ -2,155 +2,173 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="color-scheme" content="light dark">
   <title>VoiceType</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <header class="header">
-      <div class="logo">
-        <span class="logo-icon" aria-hidden="true">🎙️</span>
-        <div class="logo-text">
-          <h1>VoiceType</h1>
-          <span class="tagline">BYOK speech to text</span>
-        </div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v3"/></svg>
+      </span>
+      <div>
+        <h1>VoiceType</h1>
+        <p class="tagline">BYOK dictation</p>
       </div>
-      <div class="status-indicator" id="status-indicator" role="status">
-        <span class="status-dot"></span>
-        <span class="status-text">Add API key</span>
-      </div>
-    </header>
-
-    <div class="tabs" role="tablist">
-      <button class="tab active" data-tab="settings" role="tab">Settings</button>
-      <button class="tab" data-tab="modes" role="tab">Modes</button>
-      <button class="tab" data-tab="usage" role="tab">Usage</button>
     </div>
+    <p class="status" id="status" data-ready="false"><span class="status-dot" aria-hidden="true"></span><span id="status-text">Add API key</span></p>
+  </header>
 
-    <div class="tab-content active" id="tab-settings">
-      <section class="section">
-        <div class="form-group">
-          <label>Provider</label>
-          <div class="provider-tabs">
-            <button class="provider-tab" data-provider="openai">OpenAI</button>
-            <button class="provider-tab" data-provider="gemini">Gemini</button>
-          </div>
-        </div>
-
-        <div class="provider-settings" id="openai-settings">
-          <div class="form-group">
-            <label for="api-key">OpenAI API key</label>
-            <div class="key-row">
-              <input type="password" id="api-key" class="key-input" autocomplete="new-password" spellcheck="false" placeholder="sk-...">
-              <button type="button" class="btn btn-secondary btn-small" id="test-key">Test</button>
-              <button type="button" class="btn btn-secondary btn-small" id="clear-key" title="Clear key">Clear</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="provider-settings" id="gemini-settings" style="display: none;">
-          <div class="form-group">
-            <label for="gemini-key">Gemini API key</label>
-            <div class="key-row">
-              <input type="password" id="gemini-key" class="key-input" autocomplete="new-password" spellcheck="false" placeholder="AQ.... or AIza...">
-              <button type="button" class="btn btn-secondary btn-small" id="test-gemini-key">Test</button>
-              <button type="button" class="btn btn-secondary btn-small" id="clear-gemini-key" title="Clear key">Clear</button>
-            </div>
-          </div>
-        </div>
-
-        <p class="help-text warning" id="api-key-warning" style="display: none;">Set a spending limit on your provider account.</p>
-
-        <div class="form-row">
-          <div class="form-group compact">
-            <label for="min-time">Min recording</label>
-            <select id="min-time">
-              <option value="0.5">0.5 s</option>
-              <option value="1">1 s</option>
-              <option value="2">2 s</option>
-              <option value="3">3 s</option>
-            </select>
-          </div>
-          <div class="form-group compact">
-            <label for="max-time">Max recording</label>
-            <select id="max-time">
-              <option value="30">30 s</option>
-              <option value="60">1 min</option>
-              <option value="120">2 min</option>
-              <option value="180">3 min</option>
-              <option value="300">5 min</option>
-            </select>
-          </div>
-        </div>
-      </section>
-
-      <div class="shortcut-row">
-        <span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> toggles recording</span>
-        <a href="#" id="shortcuts-link">change</a>
-      </div>
-
-      <p class="help-text">Settings save automatically.</p>
-      <button class="btn-text" id="reset-defaults">Reset settings to defaults (keys are kept)</button>
-    </div>
-
-    <div class="tab-content" id="tab-modes">
-      <section class="section">
-        <h2 class="section-title">
-          Modes
-          <button class="btn-icon" id="add-mode" title="Add custom mode" aria-label="Add custom mode">+</button>
-        </h2>
-        <div class="modes-list" id="modes-list"></div>
-      </section>
-
-      <section class="section" id="mode-editor" style="display: none;">
-        <h2 class="section-title"><span id="editor-title">Edit mode</span></h2>
-        <div class="form-group">
-          <label for="mode-name">Name</label>
-          <input type="text" id="mode-name" placeholder="e.g. Meeting notes">
-        </div>
-        <div class="form-group">
-          <label for="mode-icon">Icon (emoji)</label>
-          <input type="text" id="mode-icon" placeholder="e.g. 📝" maxlength="8">
-        </div>
-        <div class="form-group">
-          <label for="mode-prompt">Instructions for the text model</label>
-          <textarea id="mode-prompt" rows="5" placeholder="Leave empty for raw transcription."></textarea>
-          <p class="help-text">Applied to the transcript after speech recognition. Empty means insert the transcript as is.</p>
-        </div>
-        <div class="button-group">
-          <button class="btn btn-secondary" id="cancel-edit">Cancel</button>
-          <button class="btn btn-danger" id="delete-mode" style="display: none;">Delete</button>
-          <button class="btn btn-primary" id="save-mode">Save mode</button>
-        </div>
-      </section>
-    </div>
-
-    <div class="tab-content" id="tab-usage">
-      <section class="section">
-        <div class="stats-compact">
-          <div class="stats-row-header"><span></span><span>Sessions</span><span>Audio</span><span>Cost</span></div>
-          <div class="stats-row-data"><span class="stats-period">Today</span><span id="today-sessions">0</span><span id="today-time">0:00</span><span id="today-cost">$0.00</span></div>
-          <div class="stats-row-data"><span class="stats-period">7 days</span><span id="week-sessions">0</span><span id="week-time">0:00</span><span id="week-cost">$0.00</span></div>
-          <div class="stats-row-data highlight"><span class="stats-period">All time</span><span id="total-sessions">0</span><span id="total-time">0:00</span><span id="total-cost">$0.00</span></div>
-        </div>
-        <div class="provider-breakdown">
-          <div class="provider-stat"><span class="provider-name">OpenAI</span><span class="provider-data"><span id="openai-sessions">0</span> sessions, <span id="openai-time">0:00</span></span><span class="provider-cost" id="openai-cost">$0.00</span></div>
-          <div class="provider-stat"><span class="provider-name">Gemini</span><span class="provider-data"><span id="gemini-sessions">0</span> sessions, <span id="gemini-time">0:00</span></span><span class="provider-cost" id="gemini-cost">$0.00</span></div>
-        </div>
-        <p class="help-text center">Estimates from list prices. Check your provider dashboard for billing.</p>
-        <div class="usage-actions">
-          <button class="btn-text" id="refresh-stats">Refresh</button>
-          <button class="btn-text danger" id="clear-stats">Clear history</button>
-        </div>
-      </section>
-    </div>
-
-    <footer class="footer">
-      <span class="version-text" id="version-text"></span>
-      <span class="credits-text">by K. S. Karakostas</span>
-    </footer>
+  <div class="banner" id="banner" role="alert" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+    <p id="banner-text"></p>
   </div>
-  <div class="toast" id="toast" role="status"></div>
+
+  <main>
+    <section class="card" aria-labelledby="h-provider">
+      <h2 id="h-provider"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2"/><path d="m17 6 2 2"/><path d="m14 9 2 2"/></svg>Provider</h2>
+      <div class="segmented" role="radiogroup" aria-labelledby="h-provider">
+        <label class="segment"><input type="radio" name="provider" value="openai"><span>OpenAI</span></label>
+        <label class="segment"><input type="radio" name="provider" value="gemini"><span>Gemini</span></label>
+      </div>
+      <div class="key-row" id="key-row-openai">
+        <label class="field-label" for="key-openai">OpenAI API key</label>
+        <div class="key-controls">
+          <input type="password" id="key-openai" class="key-input" autocomplete="new-password" spellcheck="false">
+          <button type="button" class="btn" id="test-openai">Test</button>
+          <button type="button" class="btn btn-quiet" id="clear-openai">Clear</button>
+        </div>
+      </div>
+      <div class="key-row" id="key-row-gemini" hidden>
+        <label class="field-label" for="key-gemini">Gemini API key</label>
+        <div class="key-controls">
+          <input type="password" id="key-gemini" class="key-input" autocomplete="new-password" spellcheck="false">
+          <button type="button" class="btn" id="test-gemini">Test</button>
+          <button type="button" class="btn btn-quiet" id="clear-gemini">Clear</button>
+        </div>
+      </div>
+      <p class="hint hint-warning" id="spend-hint" hidden>Set a spending limit on your provider account.</p>
+    </section>
+
+    <section class="card" aria-labelledby="h-recording">
+      <h2 id="h-recording"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 2h6"/></svg>Recording</h2>
+      <div class="grid-2">
+        <div class="field">
+          <label class="field-label" for="min-time">Minimum length</label>
+          <select id="min-time">
+            <option value="0.5">0.5 s</option>
+            <option value="1">1 s</option>
+            <option value="2">2 s</option>
+            <option value="3">3 s</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="max-time">Maximum length</label>
+          <select id="max-time">
+            <option value="30">30 s</option>
+            <option value="60">1 min</option>
+            <option value="120">2 min</option>
+            <option value="180">3 min</option>
+            <option value="300">5 min</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="auto-stop">Silence auto-stop</label>
+          <select id="auto-stop"></select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="hotkey">Hotkey</label>
+          <button type="button" class="hotkey" id="hotkey" aria-pressed="false" aria-describedby="hotkey-hint"></button>
+        </div>
+      </div>
+      <p class="hint" id="hotkey-hint" aria-live="polite">Tap to toggle, hold to talk.</p>
+    </section>
+
+    <section class="card" aria-labelledby="h-speech">
+      <h2 id="h-speech"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg>Speech</h2>
+      <fieldset class="languages">
+        <legend class="field-label">Spoken languages</legend>
+        <div class="check-grid" id="languages"></div>
+      </fieldset>
+      <p class="hint">Auto detects the language. Pick languages to steer recognition.</p>
+      <div class="field field-spaced">
+        <label class="field-label" for="keywords">Vocabulary</label>
+        <textarea id="keywords" rows="4" spellcheck="false" placeholder="One term per line: names, jargon, product names" aria-describedby="keyword-count"></textarea>
+        <p class="hint" id="keyword-count">0 of 100 terms</p>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="h-modes">
+      <div class="card-head">
+        <h2 id="h-modes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>Modes</h2>
+        <button type="button" class="btn btn-quiet" id="add-mode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Add mode</button>
+      </div>
+      <ul class="mode-list" id="mode-list" aria-labelledby="h-modes"></ul>
+      <div class="editor" id="mode-editor" hidden>
+        <h3 id="editor-title">Edit mode</h3>
+        <div class="editor-row">
+          <div class="field">
+            <label class="field-label" for="mode-icon">Icon</label>
+            <input type="text" id="mode-icon" maxlength="8" placeholder="Emoji">
+          </div>
+          <div class="field">
+            <label class="field-label" for="mode-name">Name</label>
+            <input type="text" id="mode-name" maxlength="40" placeholder="Meeting notes">
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="mode-prompt">Instructions for the text model</label>
+          <textarea id="mode-prompt" rows="5" placeholder="Leave empty for raw transcription."></textarea>
+          <p class="hint">Applied to the transcript after speech recognition. Empty means the transcript is inserted as is.</p>
+        </div>
+        <div class="editor-actions">
+          <button type="button" class="btn btn-danger" id="delete-mode" hidden>Delete</button>
+          <button type="button" class="btn btn-quiet" id="cancel-mode">Cancel</button>
+          <button type="button" class="btn btn-primary" id="save-mode">Save mode</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="h-usage">
+      <div class="card-head">
+        <h2 id="h-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11"/><path d="M10 20V5"/><path d="M16 20v-6"/><path d="M21 20H3"/></svg>Usage</h2>
+        <button type="button" class="btn btn-quiet" id="refresh-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>Refresh</button>
+      </div>
+      <table class="usage">
+        <thead>
+          <tr><td></td><th scope="col">Sessions</th><th scope="col">Audio</th><th scope="col">Cost</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Today</th><td id="usage-today-sessions">0</td><td id="usage-today-audio">0:00</td><td id="usage-today-cost">$0.00</td></tr>
+          <tr><th scope="row">7 days</th><td id="usage-week-sessions">0</td><td id="usage-week-audio">0:00</td><td id="usage-week-cost">$0.00</td></tr>
+          <tr class="total"><th scope="row">All time</th><td id="usage-total-sessions">0</td><td id="usage-total-audio">0:00</td><td id="usage-total-cost">$0.00</td></tr>
+        </tbody>
+        <tbody class="by-provider">
+          <tr><th scope="row">OpenAI</th><td id="usage-openai-sessions">0</td><td id="usage-openai-audio">0:00</td><td id="usage-openai-cost">$0.00</td></tr>
+          <tr><th scope="row">Gemini</th><td id="usage-gemini-sessions">0</td><td id="usage-gemini-audio">0:00</td><td id="usage-gemini-cost">$0.00</td></tr>
+        </tbody>
+      </table>
+      <p class="hint">Estimates from list prices. Provider rows cover all time. Check your provider dashboard for billing.</p>
+      <div class="card-actions">
+        <button type="button" class="btn btn-danger" id="clear-usage">Clear history</button>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="h-about">
+      <h2 id="h-about"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>About</h2>
+      <p class="about-line"><span id="version">Version</span><span aria-hidden="true"> · </span><span>by K. S. Karakostas</span></p>
+      <p class="links">
+        <a href="https://github.com/kskarakostas/VoiceType" data-external>GitHub</a>
+        <a href="https://github.com/kskarakostas/VoiceType/blob/main/PRIVACY.md" data-external>Privacy</a>
+      </p>
+      <button type="button" class="btn btn-danger btn-block" id="reset">Reset to defaults</button>
+      <p class="hint">Resets modes, prompts, recording limits, silence auto-stop and the hotkey. Keeps your API keys, provider, spoken languages and vocabulary.</p>
+    </section>
+  </main>
+
+  <p class="footnote">Changes save automatically.</p>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="popup.js"></script>
 </body>
 </html>
