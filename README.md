@@ -145,7 +145,7 @@ Then in Chrome 140 or newer:
 ### 3. Configure & Go
 
 1. Click the VoiceType icon in Chrome
-2. Paste your API key (it saves as soon as you click away)
+2. Paste your API key. It saves when you press Tab or Esc, or after a second. Clicking outside to close the popup right after pasting may not save it, so press Esc
 3. Click into any text field, then click **REC** on the pill or hold `Ctrl+Shift+Space` while you speak
 4. The first time, VoiceType opens a tab asking for the microphone. Choose **Allow while visiting the site**, then press REC again
 
@@ -248,7 +248,7 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 
 | Problem | Solution |
 |---------|----------|
-| **"Add an API key" message** | Click the extension icon → paste your API key (it saves as soon as you click away) |
+| **"Add an API key" message** | Click the extension icon → paste your API key and press Esc. A key or typed text saves when you press Tab or Esc, or after a second; clicking outside to close the popup right after pasting may not save it |
 | **Microphone not working** | VoiceType asks in its own tab, not in the site's address bar. If the pill says the microphone is blocked, open `chrome://settings/content/microphone`, remove VoiceType from the blocked list, and press REC again |
 | **Asked for the microphone every time** | You chose "Allow this time". Reset it at `chrome://settings/content/microphone`, press REC and choose **Allow while visiting the site** |
 | **Hotkey doesn't work** | Click into the page first. Browser shortcuts such as `Ctrl+T` never reach a page; set another hotkey in the popup (Recording, Hotkey) |

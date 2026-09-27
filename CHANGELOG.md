@@ -10,7 +10,7 @@
 - After VoiceType is disabled, pages that stay open no longer swallow the hotkey (`Ctrl+Shift+Space` by default): the keys reach the page again, and the first press shows "VoiceType was turned off or updated. Reload this page." The same holds for a tab that an update could not switch over.
 - The popup keeps the first click after typing: right after typing in the mode editor, one click on a mode selects it.
 - Built-in modes are listed first, then your own modes in the order you created them, in the popup and in the pill menu. 2.1.0 listed your modes above Default once the popup was reopened.
-- Pressing `Esc` right after pasting a key or typing vocabulary or a mode prompt in the popup saves it before the popup closes. 2.1.0 dropped anything entered less than about a second before the popup closed.
+- Pressing `Esc` right after pasting a key or typing vocabulary or a mode prompt in the popup saves it before the popup closes. 2.1.0 dropped anything entered less than about a second before `Esc` closed the popup.
 
 ## 2.1.0 (2026-09-27)
 
