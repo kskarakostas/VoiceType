@@ -34,10 +34,13 @@ Companion documents:
 | D7 | Hotkey ownership (Phase 1) | Content script captures the chord; `commands` entry removed | Enables hold-to-talk; popup gets a key recorder |
 | D8 | Recording location (Phase 1) | Offscreen document under the extension origin | One mic grant for all sites; content script never calls `getUserMedia` |
 | D9 | In-page UI isolation (Phase 1) | Shadow DOM host on `document.documentElement`, `position: fixed` | Page CSS cannot leak in; `content.css` and `web_accessible_resources` removed |
+| D10 | Key isolation (Phase 1, 2026-09-27) | `chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })`; keys never sent to content scripts or the offscreen document | `minimum_chrome_version` 140; content scripts get key-free settings by message and pushes, never `chrome.storage` |
+| D11 | Re-injection after update (Phase 1, 2026-09-27) | `host_permissions: ["<all_urls>"]` | Install warning unchanged (the content script already matches all URLs); open tabs get a working pill without reload |
+| D12 | Result target (Phase 1, 2026-09-27) | Bind to the field focused at REC start; if it no longer has focus when the text arrives, or none was focused, copy to the clipboard with a notice | Text never lands in the wrong field; focus is never stolen; the hotkey works with no field focused |
 
 ## 3. Global constraints
 
-- Manifest V3. `minimum_chrome_version: "116"` (needed by `chrome.runtime.getContexts` and the offscreen mic sample; adopted from Phase 0 to avoid a later bump).
+- Manifest V3. `minimum_chrome_version: "140"` from Phase 1 (Phase 0 shipped 116; raised on 2026-09-27 because `chrome.storage.local.setAccessLevel` exists only from Chrome 140, see D10).
 - Node 20 or newer for the toolchain. No TypeScript compile step. JSDoc `@typedef` for shared shapes.
 - Dependencies: `esbuild`, `vitest`, `jsdom` as devDependencies only. Zero runtime dependencies.
 - Model IDs, labels and list prices live only in `src/shared/models.js`.
@@ -192,6 +195,18 @@ Legacy IDs (`gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, `gemini-2.5-flash`, `
 ## 6. Phase 1: Core rebuild
 
 **Goal:** recording, UI and insertion are robust on real sites. Delivered as v2.1.0.
+
+### 6.0 Amendments (2026-09-27, verified against Chrome docs and Chromium, Lexical and ProseMirror source)
+
+These override the subsections below where they conflict. The Phase 1 plan (`docs/superpowers/plans/2026-09-27-phase-1-core-rebuild.md`) carries the full message contract, which supersedes the table in 4.3.
+- 6.1: an offscreen document can call only `chrome.runtime`. Levels, auto-stop notices and results reach the tab through the service worker (`tabs.sendMessage(tabId, message, { frameId })`). Level metering polls the `AnalyserNode` with `setInterval(100)` because `requestAnimationFrame` does not run in an offscreen document. The `AudioContext` is created after `getUserMedia` resolves and resumed explicitly. A second `createDocument` rejecting with "Only a single offscreen document may be created" counts as success.
+- 6.1 acceptance: replace "the tab's mic indicator turns on only while recording" with "the Chrome status-tray microphone indicator is present only while recording; every stop and error path stops the tracks". A web page tab shows no microphone icon for an offscreen capture.
+- 6.1 permission page copy steers the user to the persistent grant ("Allow while visiting the site"); an "Allow this time" grant may expire when the page closes.
+- 6.5 ladder, form fields: break the typing run with `setSelectionRange` on the current offsets, then `execCommand('insertText')`, then a cancelable composed `beforeinput` followed (if not prevented) by the native setter plus `input`, then clipboard.
+- 6.5 ladder, contenteditable: single-line text tries `execCommand` first, multi-line text tries a synthetic `paste` (`text/plain` only) first, then the other of the two, then a `beforeinput` counted only when the editor prevents it, then a raw DOM insert only on plain (non-framework) editables, then clipboard.
+- 6.5 verification: an ambiguous read-back ends the ladder with the clipboard and a notice. The ladder never inserts twice. `docs.google.com` goes straight to the clipboard.
+- 6.7: `chrome.scripting.executeScript` needs host permissions (D11).
+- 6.10: `page.route` does not see service worker fetches. Stub with `context.route` (Playwright 1.57 or newer), launch with both `--disable-extensions-except` and `--load-extension` (absolute path) on `channel: 'chromium'`, and feed the offscreen document with `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream --use-file-for-fake-audio-capture=<wav>`.
 
 ### 6.1 Offscreen recorder (D8)
 - Files: `src/offscreen/offscreen.html|js`, `src/offscreen/permission.html|js`, `src/background/recorder.js`.
