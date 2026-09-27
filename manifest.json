@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "VoiceType - BYOK Speech to Text",
   "short_name": "VoiceType",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Dictate into any text field with your own OpenAI or Gemini API key. Email, translation and instruction modes. Every session priced.",
   "author": "K. S. Karakostas",
   "permissions": ["storage", "scripting", "offscreen"],
