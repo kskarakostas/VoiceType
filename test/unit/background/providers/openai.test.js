@@ -65,6 +65,12 @@ describe('transcribe', () => {
     await transcribe({ audioBase64: AUDIO, key: 'k', signal: controller.signal });
     expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
   });
+
+  it('caps each keyword at 64 characters', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ text: 'x' }));
+    await transcribe({ audioBase64: AUDIO, key: 'k', keywords: ['k'.repeat(70)] });
+    expect(fetchMock.mock.calls[0][1].body.getAll('keywords[]')).toEqual(['k'.repeat(64)]);
+  });
 });
 
 describe('refine', () => {
@@ -83,6 +89,16 @@ describe('refine', () => {
     expect(JSON.parse(init.body)).toEqual({ model: 'gpt-6-luna', instructions: 'Write an email.', input: 'hi team hello', reasoning: { effort: 'none' } });
     expect(result).toEqual({ text: 'Dear team, hello.', usage: { inputTokens: 120, outputTokens: 30 } });
   });
+
+  it('posts with bearer auth and passes the abort signal', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ output: [] }));
+    const controller = new AbortController();
+    await refine({ key: 'sk-test', instructions: 'x', text: 'y', signal: controller.signal });
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer sk-test');
+    expect(init.signal).toBe(controller.signal);
+  });
 });
 
 describe('validateKey', () => {
@@ -92,6 +108,18 @@ describe('validateKey', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.openai.com/v1/models');
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: { message: 'nope' } }, 401));
     await expect(validateKey({ key: 'sk-bad' })).rejects.toMatchObject({ code: 'auth' });
+  });
+
+  it('sends a GET with bearer auth, the abort signal and no body', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ data: [] }));
+    const controller = new AbortController();
+    await validateKey({ key: 'sk-ok', signal: controller.signal });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).not.toContain('sk-ok');
+    expect(init.method ?? 'GET').toBe('GET');
+    expect(init.body).toBeUndefined();
+    expect(init.headers.Authorization).toBe('Bearer sk-ok');
+    expect(init.signal).toBe(controller.signal);
   });
 });
 

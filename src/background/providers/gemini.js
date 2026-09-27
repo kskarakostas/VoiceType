@@ -1,6 +1,6 @@
 import { PROVIDERS } from '../../shared/models.js';
 import { sanitizeHint } from '../../shared/text.js';
-import { friendlyHttpError, ProviderError } from './errors.js';
+import { authError, friendlyHttpError } from './errors.js';
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -16,7 +16,7 @@ function headers(key) {
 }
 
 /**
- * @param {{ audioBase64: string, mimeType?: string, key: string, languages?: string[], keywords?: string[], prompt?: string, signal?: AbortSignal }} args
+ * @param {{ audioBase64: string, mimeType?: string, key: string, languages?: string[], keywords?: string[], signal?: AbortSignal }} args
  * @returns {Promise<{ text: string, usage: import('../../shared/pricing.js').SttUsage|null, languages: string[] }>}
  */
 export async function transcribe({ audioBase64, mimeType = 'audio/webm', key, languages = [], keywords = [], signal }) {
@@ -103,15 +103,15 @@ export function normalizeSttUsage(meta) {
   }
 }
 
-const INVALID_KEY = /api key not valid|API_KEY_INVALID/i;
+const INVALID_KEY = /api key not valid|api key expired|API_KEY_(?:INVALID|EXPIRED)/i;
 
-/** Map a failed response to a ProviderError. Gemini reports a bad key as HTTP 400, not 401 or 403. */
+/** Map a failed response to a ProviderError. Gemini reports a bad or expired key as HTTP 400, not 401 or 403. */
 async function httpError(res) {
   const error = (await readErrorBody(res))?.error;
   const message = typeof error?.message === 'string' ? error.message : '';
   const reasons = Array.isArray(error?.details) ? error.details.map((d) => d?.reason) : [];
   if (res.status === 400 && [message, ...reasons].some((s) => typeof s === 'string' && INVALID_KEY.test(s))) {
-    return new ProviderError('Gemini rejected the API key. Check it in the extension settings.', { status: 400, code: 'auth' });
+    return authError('gemini', 400);
   }
   return friendlyHttpError('gemini', res.status, message);
 }
