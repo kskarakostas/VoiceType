@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ProviderError, friendlyHttpError, redact } from '../../../../src/background/providers/errors.js';
+import { ProviderError, friendlyHttpError, redact, authError } from '../../../../src/background/providers/errors.js';
 
 describe('redact', () => {
   it('replaces OpenAI and Gemini key patterns', () => {
@@ -8,6 +8,25 @@ describe('redact', () => {
   });
   it('caps length', () => {
     expect(redact('x'.repeat(500)).length).toBe(160);
+  });
+  it('redacts a key glued to a word by an underscore', () => {
+    expect(redact('token_sk-abcdef123456')).toBe('token_[key]');
+  });
+  it('redacts an AQ. key with inner dots but keeps the sentence period after it', () => {
+    expect(redact('AQ.Ab8Rn2.xyz98765')).toBe('[key]');
+    expect(redact('Key AQ.Ab8Rn2.xyz98765.')).toBe('Key [key].');
+  });
+  it('leaves key-like text inside a longer word alone', () => {
+    expect(redact('task-abcdef and mask-12345')).toBe('task-abcdef and mask-12345');
+  });
+});
+
+describe('authError', () => {
+  it('builds the standard auth error for either provider', () => {
+    const e = authError('gemini', 400);
+    expect(e).toBeInstanceOf(ProviderError);
+    expect(e).toMatchObject({ name: 'ProviderError', code: 'auth', status: 400, message: 'Gemini rejected the API key. Check it in the extension settings.' });
+    expect(authError('openai', 401)).toMatchObject({ code: 'auth', status: 401, message: 'OpenAI rejected the API key. Check it in the extension settings.' });
   });
 });
 
