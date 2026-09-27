@@ -66,11 +66,12 @@ function installChrome(respond = reply) {
  * Evaluate a fresh copy of the content script, as Chrome does when it injects content.js again.
  * Events a test dispatches are untrusted, so the instance is booted to accept them; the page
  * isolation tests load the real entry, which does not.
+ * @param {{ isAlive?: () => boolean }} [options] more boot options
  */
-async function loadInstance() {
+async function loadInstance(options = {}) {
   vi.resetModules();
   const { boot } = await import('../../../src/content/boot.js');
-  boot({ isTrusted: () => true });
+  boot({ isTrusted: () => true, ...options });
   await flush();
 }
 
@@ -89,6 +90,7 @@ const hosts = () => document.documentElement.querySelectorAll('voicetype-host');
 const shadow = () => hosts()[0].shadowRoot;
 const statusText = () => shadow().querySelector('[role="status"]').textContent;
 const HOLD = 'Return to the field to insert, or click here to copy.';
+const ORPHAN = 'VoiceType was updated. Reload this page.';
 const RESULT = { action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null };
 
 /** REC, then REC again: the instance waits for the result of a session bound to the focused field. */
@@ -220,6 +222,79 @@ describe('orphan detection', () => {
     await flush();
     expect(t.sent().filter((a) => a === MSG.START_RECORDING)).toHaveLength(2);
     expect(shadow().querySelector('.rec').getAttribute('aria-label')).toBe('Stop recording');
+  });
+
+  it('an orphaned instance lets the hotkey through', async () => {
+    const t = installChrome();
+    const field = document.getElementById('field');
+    field.focus();
+    await loadInstance();
+    // Disabling or reloading the extension leaves this copy running without a runtime id.
+    delete t.chrome.runtime.id;
+    const page = vi.fn();
+    document.addEventListener('keydown', page);
+
+    const first = hotkey('keydown');
+    field.dispatchEvent(first);
+    field.dispatchEvent(hotkey('keyup'));
+    await flush();
+    expect(first.defaultPrevented).toBe(false);
+    expect(statusText()).toBe(ORPHAN);
+
+    const second = hotkey('keydown');
+    field.dispatchEvent(second);
+    await flush();
+    expect(second.defaultPrevented).toBe(false);
+    expect(page).toHaveBeenCalledTimes(2);
+    expect(t.sent()).toEqual([MSG.GET_SETTINGS]);
+    document.removeEventListener('keydown', page);
+  });
+
+  it('a dead instance shows the notice for the chord only and never consumes a key', async () => {
+    const t = installChrome();
+    const field = document.getElementById('field');
+    field.focus();
+    let alive = true;
+    await loadInstance({ isAlive: () => alive });
+    alive = false;
+
+    const typed = new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', bubbles: true, cancelable: true });
+    field.dispatchEvent(typed);
+    await flush();
+    expect(typed.defaultPrevented).toBe(false);
+    expect(statusText()).not.toBe(ORPHAN);
+
+    const chord = hotkey('keydown');
+    field.dispatchEvent(chord);
+    await flush();
+    expect(chord.defaultPrevented).toBe(false);
+    expect(statusText()).toBe(ORPHAN);
+    expect(t.sent()).toEqual([MSG.GET_SETTINGS]);
+  });
+
+  it('an instance orphaned through a failed send also stops preventing the chord afterwards', async () => {
+    const t = installChrome((message) => {
+      if (message.action === MSG.START_RECORDING) throw new Error('Extension context invalidated.');
+      return reply(message);
+    });
+    const field = document.getElementById('field');
+    field.focus();
+    await loadInstance();
+
+    // The runtime id is still there, so this press is consumed and goes to the service worker.
+    const first = hotkey('keydown');
+    field.dispatchEvent(first);
+    field.dispatchEvent(hotkey('keyup'));
+    await flush();
+    expect(first.defaultPrevented).toBe(true);
+    expect(statusText()).toBe(ORPHAN);
+
+    const second = hotkey('keydown');
+    field.dispatchEvent(second);
+    field.dispatchEvent(hotkey('keyup'));
+    await flush();
+    expect(second.defaultPrevented).toBe(false);
+    expect(t.sent().filter((a) => a === MSG.START_RECORDING)).toHaveLength(1);
   });
 });
 

@@ -3,7 +3,7 @@
 // events, so the page listeners act only on the browser's own (trusted) events.
 import { MSG } from '../shared/messages.js';
 import { DEFAULT_SETTINGS } from '../shared/defaults.js';
-import { isValidChord } from '../shared/chord.js';
+import { isValidChord, matchesChord } from '../shared/chord.js';
 import { isValidInput, deepActiveElement } from './fields.js';
 import { insertText, copyText } from './insert.js';
 import { watchAnchor } from './anchor.js';
@@ -14,10 +14,14 @@ import { createController } from './controller.js';
 const TEARDOWN_EVENT = 'voicetype:teardown';
 
 /**
- * @param {{ isTrusted?: (event: Event) => boolean }} [options] isTrusted is a seam for tests,
- *   whose dispatched events are all untrusted.
+ * @param {{ isTrusted?: (event: Event) => boolean, isAlive?: () => boolean }} [options]
+ *   isTrusted is a seam for tests, whose dispatched events are all untrusted. isAlive is false
+ *   once the extension was disabled, reloaded or updated under this page.
  */
-export function boot({ isTrusted = (event) => event.isTrusted === true } = {}) {
+export function boot({
+  isTrusted = (event) => event.isTrusted === true,
+  isAlive = () => Boolean(globalThis.chrome?.runtime?.id),
+} = {}) {
   // Version 2.0 does not answer the teardown event below, so a page open during the update keeps its pill.
   document.getElementById('voicetype-pill')?.remove();
   // A copy injected before an extension reload or update is still listening: remove it first.
@@ -49,6 +53,13 @@ export function boot({ isTrusted = (event) => event.isTrusted === true } = {}) {
   });
 
   const tracker = createChordTracker({ getChord: () => chord });
+  /** The extension is gone under this page: only the terminal notice is left, and keys go to the page. */
+  let orphan = false;
+
+  function becomeOrphan() {
+    orphan = true;
+    controller.orphaned();
+  }
 
   /**
    * Message the service worker. Resolves null on any failure; an invalidated extension
@@ -61,7 +72,7 @@ export function boot({ isTrusted = (event) => event.isTrusted === true } = {}) {
       return (await chrome.runtime.sendMessage(message)) ?? null;
     } catch (err) {
       const text = String(err?.message ?? err);
-      if (text.includes('Extension context invalidated')) controller.orphaned();
+      if (text.includes('Extension context invalidated')) becomeOrphan();
       else console.warn(`VoiceType: ${text}`);
       return null;
     }
@@ -100,7 +111,12 @@ export function boot({ isTrusted = (event) => event.isTrusted === true } = {}) {
   }
 
   function onKeyDown(event) {
-    if (!isTrusted(event)) return;
+    if (!isTrusted(event) || orphan) return;
+    if (!isAlive()) {
+      // Checked before any preventDefault, so the chord reaches the page; its press says why.
+      if (matchesChord(event, chord)) becomeOrphan();
+      return;
+    }
     const kind = tracker.keydown(event);
     if (!kind) return;
     event.preventDefault();
@@ -109,13 +125,13 @@ export function boot({ isTrusted = (event) => event.isTrusted === true } = {}) {
   }
 
   function onKeyUp(event) {
-    if (!isTrusted(event)) return;
+    if (!isTrusted(event) || orphan) return;
     const released = tracker.keyup(event);
     if (released) controller.release(released);
   }
 
   function onWindowBlur(event) {
-    if (!isTrusted(event)) return;
+    if (!isTrusted(event) || orphan) return;
     const released = tracker.blur();
     if (released) controller.release(released);
     // Focus left this frame for another frame or window: settle so an idle pill hides (spec 6.4).
