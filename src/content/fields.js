@@ -71,6 +71,24 @@ export function isFrameworkEditor(el) {
 }
 
 /**
+ * Editors that get the paste rung before `execCommand('insertText')`, single-line text
+ * included. Chrome fires no `beforeinput` for that command and slate-react ignores the
+ * `input` that follows, so the text reaches Slate's DOM but not its model, and the next
+ * keystroke erases it. Slate takes a plain-text paste into its model.
+ */
+export const PASTE_FIRST_EDITOR_SELECTOR = '[data-slate-editor]';
+
+/**
+ * True when el belongs to an editor that must get the paste rung first.
+ * @param {Element|null|undefined} el
+ * @returns {boolean}
+ */
+export function isPasteFirstEditor(el) {
+  if (!el || el.nodeType !== 1) return false;
+  return el.closest(PASTE_FIRST_EDITOR_SELECTOR) !== null;
+}
+
+/**
  * document.activeElement stops at shadow hosts; follow open shadow roots down.
  * @param {Document|ShadowRoot} [root]
  * @returns {Element|null}

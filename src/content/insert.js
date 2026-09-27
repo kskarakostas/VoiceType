@@ -2,7 +2,7 @@
 // because editors such as Lexical and ProseMirror commit in a microtask or later. The ladder
 // advances only when a rung provably did nothing; any other result ends at the clipboard,
 // so the text is never inserted twice.
-import { deepActiveElement, isEditableElement, isFrameworkEditor } from './fields.js';
+import { deepActiveElement, isEditableElement, isFrameworkEditor, isPasteFirstEditor } from './fields.js';
 
 /** Hosts whose editors ignore synthetic input (Google Docs types into a hidden iframe). */
 export const CLIPBOARD_ONLY_HOSTS = new Set(['docs.google.com']);
@@ -208,8 +208,10 @@ async function editableLadder(run) {
     return true;
   });
   // Chrome turns each newline of execCommand into a separate paragraph step, which Lexical
-  // may drop after the first line; editors take a multi-line paste whole.
-  const rungs = /[\r\n]/.test(run.text) ? [paste, exec] : [exec, paste];
+  // may drop after the first line; editors take a multi-line paste whole. Slate never takes
+  // execCommand text into its model, so it gets the paste first whatever the text.
+  const pasteFirst = /[\r\n]/.test(run.text) || isPasteFirstEditor(el);
+  const rungs = pasteFirst ? [paste, exec] : [exec, paste];
   // A synthetic beforeinput has no default action: it counts only when the editor handles it.
   rungs.push(() => attempt(run, () => {
     fire(run, beforeInputEvent(run.text));

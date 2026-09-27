@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isValidInput, isEditableElement, isFrameworkEditor, deepActiveElement, TEXT_INPUT_TYPES,
 } from '../../../src/content/fields.js';
+import { isPasteFirstEditor, PASTE_FIRST_EDITOR_SELECTOR } from '../../../src/content/fields.js';
 
 function make(html) {
   document.body.innerHTML = html;
@@ -80,6 +81,33 @@ describe('isFrameworkEditor', () => {
     expect(isFrameworkEditor(make('<textarea></textarea>'))).toBe(false);
     expect(isFrameworkEditor(document.createTextNode('x'))).toBe(false);
     expect(isFrameworkEditor(null)).toBe(false);
+  });
+});
+
+describe('isPasteFirstEditor', () => {
+  it('selects Slate editors', () => {
+    expect(PASTE_FIRST_EDITOR_SELECTOR).toBe('[data-slate-editor]');
+  });
+  it('is true for a Slate root and for an element inside it', () => {
+    const root = make('<div contenteditable="true" data-slate-editor="true">'
+      + '<p data-slate-node="element"><span id="leaf" data-slate-string="true">Hi</span></p></div>');
+    expect(isPasteFirstEditor(root)).toBe(true);
+    expect(isPasteFirstEditor(root.querySelector('#leaf'))).toBe(true);
+    expect(isFrameworkEditor(root)).toBe(true);
+  });
+  it('is false for other framework editors, plain editables, form fields, text nodes and null', () => {
+    const others = [
+      '<div contenteditable="true" data-lexical-editor="true"></div>',
+      '<div contenteditable="true" class="ProseMirror"></div>',
+      '<div contenteditable="true" class="ql-editor"></div>',
+      '<div contenteditable="true" data-contents="true"></div>',
+      '<div contenteditable="true" class="cm-content"></div>',
+      '<div contenteditable="true"><p>Hi</p></div>',
+      '<textarea></textarea>',
+    ];
+    for (const html of others) expect(isPasteFirstEditor(make(html)), html).toBe(false);
+    expect(isPasteFirstEditor(document.createTextNode('x'))).toBe(false);
+    expect(isPasteFirstEditor(null)).toBe(false);
   });
 });
 

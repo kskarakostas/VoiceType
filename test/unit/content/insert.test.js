@@ -321,6 +321,45 @@ describe('insertText in contenteditable', () => {
     expect(el.textContent).toBe('Hione\ntwo');
   });
 
+  it('Slate editors get the paste rung first for single-line text', async () => {
+    const el = editable('<p>Hi</p>', 'contenteditable="true" data-slate-editor="true"');
+    const paste = vi.fn((e) => {
+      e.preventDefault();
+      insertAtCaret(e.clipboardData.getData('text/plain'));
+    });
+    el.addEventListener('paste', paste);
+    const d = deps({ execCommand: vi.fn(editableExec), createPasteEvent: fakePasteEvent });
+    expect(await insertText(el, ' there', d)).toBe('inserted');
+    expect(paste).toHaveBeenCalledTimes(1);
+    expect(d.execCommand).not.toHaveBeenCalled();
+    expect(el.textContent).toBe('Hi there');
+    expect(d.writeClipboard).not.toHaveBeenCalled();
+  });
+
+  it('a Slate editor that ignores the paste gets execCommand second, then beforeinput, never a raw insert', async () => {
+    const el = editable('Hi', 'contenteditable="true" data-slate-editor="true"');
+    const order = [];
+    const d = deps({ execCommand: recordRungs(el, order), createPasteEvent: fakePasteEvent });
+    expect(await insertText(el, ' there', d)).toBe('clipboard');
+    expect(order).toEqual(['paste', 'exec', 'beforeinput']);
+    expect(el.textContent).toBe('Hi');
+    expect(d.writeClipboard).toHaveBeenCalledWith(' there');
+  });
+
+  it.each([
+    ['Lexical', 'data-lexical-editor="true"'],
+    ['ProseMirror', 'class="ProseMirror"'],
+    ['Quill', 'class="ql-editor"'],
+    ['Draft.js', 'data-contents="true"'],
+    ['CodeMirror', 'class="cm-content"'],
+  ])('a non-Slate framework editor (%s) still tries execCommand first for single-line text', async (_name, marker) => {
+    const el = editable('Hi', `contenteditable="true" ${marker}`);
+    const order = [];
+    const d = deps({ execCommand: recordRungs(el, order), createPasteEvent: fakePasteEvent });
+    expect(await insertText(el, ' there', d)).toBe('clipboard');
+    expect(order).toEqual(['exec', 'paste', 'beforeinput']);
+  });
+
   it('a paste the editor handles (prevented, text inserted) counts as inserted', async () => {
     const el = editable('<p>Hi</p>');
     const beforeinput = vi.fn();
