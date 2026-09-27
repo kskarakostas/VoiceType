@@ -160,6 +160,18 @@ describe('teardown handshake', () => {
   });
 });
 
+describe('upgrade from 2.0', () => {
+  it('removes a leftover v2.0 pill when the entry boots', async () => {
+    installChrome();
+    const old = document.createElement('div');
+    old.id = 'voicetype-pill';
+    document.body.append(old);
+    await loadEntry();
+    expect(old.isConnected).toBe(false);
+    expect(document.getElementById('voicetype-pill')).toBeNull();
+  });
+});
+
 describe('orphan detection', () => {
   it('an "Extension context invalidated" rejection shows the terminal notice', async () => {
     const t = installChrome((message) => {

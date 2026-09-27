@@ -18,6 +18,8 @@ const TEARDOWN_EVENT = 'voicetype:teardown';
  *   whose dispatched events are all untrusted.
  */
 export function boot({ isTrusted = (event) => event.isTrusted === true } = {}) {
+  // Version 2.0 does not answer the teardown event below, so a page open during the update keeps its pill.
+  document.getElementById('voicetype-pill')?.remove();
   // A copy injected before an extension reload or update is still listening: remove it first.
   document.dispatchEvent(new CustomEvent(TEARDOWN_EVENT));
 
