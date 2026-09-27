@@ -417,6 +417,26 @@ describe('menu', () => {
     expect(h.onMode).toHaveBeenCalledWith('default');
   });
 
+  it('lists the built-in modes before custom modes, whatever the key order', () => {
+    const { pill } = makePill();
+    const custom = (name) => ({ name, icon: '🎯', prompt: 'p', builtIn: false });
+    // chrome.storage hands objects back with their keys sorted: custom_ before default.
+    pill.renderMenu(settings({
+      modes: {
+        custom_10: custom('Later'),
+        custom_9: custom('Earlier'),
+        default: { name: 'Default', icon: '🎤', prompt: '', builtIn: true },
+        email: { name: 'Email', icon: '📧', prompt: 'e', builtIn: true },
+        instruct: { name: 'Instruct', icon: '💡', prompt: 'i', builtIn: true },
+        translate: { name: 'Translate', icon: '🌐', prompt: 'x', builtIn: true, hasLanguageOption: true },
+      },
+    }), null);
+    pill.show(FIELD);
+    const items = [...pill.root.querySelectorAll('[data-mode]')];
+    expect(items.map((el) => el.dataset.mode)).toEqual(['default', 'email', 'translate', 'instruct', 'custom_9', 'custom_10']);
+    expect(items.map((el) => el.querySelector('.item-name').textContent)).toEqual(['Default', 'Email', 'Translate', 'Instruct', 'Earlier', 'Later']);
+  });
+
   it('shows the translate row only when the active mode has a language option', () => {
     const { pill, h } = makePill();
     pill.renderMenu(settings({ activeMode: 'default' }), null);

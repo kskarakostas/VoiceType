@@ -262,3 +262,28 @@ export function applySettingsPatch(settings, patch) {
   }
   return { ok: true, settings: next };
 }
+
+const CUSTOM_MODE_KEY = /^custom_(\d+)$/;
+
+/**
+ * Mode keys in display order: the built-ins present, in `BUILTIN_MODES` order; then custom
+ * modes (`custom_<n>`, n being the creation time) by ascending n; then any other own keys in
+ * ascending string order. chrome.storage hands objects back with their keys sorted, so the
+ * stored order would list `custom_...` above `default`.
+ * @param {Record<string, Mode>} modes
+ * @returns {string[]}
+ */
+export function orderedModeKeys(modes) {
+  const keys = isObject(modes) ? Object.keys(modes) : [];
+  const builtIn = Object.keys(BUILTIN_MODES).filter((key) => keys.includes(key));
+  const custom = [];
+  const other = [];
+  for (const key of keys) {
+    if (Object.hasOwn(BUILTIN_MODES, key)) continue;
+    const match = CUSTOM_MODE_KEY.exec(key);
+    if (match) custom.push({ key, n: Number(match[1]) });
+    else other.push(key);
+  }
+  custom.sort((a, b) => a.n - b.n || (a.key < b.key ? -1 : 1));
+  return [...builtIn, ...custom.map(({ key }) => key), ...other.sort()];
+}

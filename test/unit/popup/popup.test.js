@@ -628,6 +628,26 @@ describe('popup modes', () => {
     expect($('create-mode').hidden).toBe(false);
   });
 
+  it('custom modes render after the built-ins, oldest first', async () => {
+    // chrome.storage hands objects back with their keys sorted: custom_ before default.
+    const stored = storedSettings();
+    const { default: plain, email, instruct, translate } = stored.modes;
+    stored.modes = {
+      custom_10: { name: 'Second', icon: '2', prompt: '', builtIn: false },
+      custom_2: { name: 'First', icon: '1', prompt: '', builtIn: false },
+      default: plain, email, instruct, translate,
+    };
+    await start(fakeChrome(stored));
+    const names = () => [...document.querySelectorAll('#mode-list .mode-name')].map((n) => n.firstChild.textContent);
+    expect(names()).toEqual(['Default', 'Email', 'Translate', 'Instruct', 'First', 'Second']);
+
+    $('add-mode').click();
+    $('mode-name').value = 'Third';
+    $('create-mode').click();
+    await flush();
+    expect(names()).toEqual(['Default', 'Email', 'Translate', 'Instruct', 'First', 'Second', 'Third']);
+  });
+
   it('built-in modes have no delete button', async () => {
     await start(fakeChrome());
     document.querySelector('[data-focus-key="edit:email"]').click();

@@ -3,7 +3,7 @@
 import { MSG } from '../shared/messages.js';
 import { PROVIDERS } from '../shared/models.js';
 import { formatCost } from '../shared/pricing.js';
-import { freshSettings, AUTO_STOP_CHOICES } from '../shared/defaults.js';
+import { freshSettings, AUTO_STOP_CHOICES, orderedModeKeys } from '../shared/defaults.js';
 import { formatChord, chordFromEvent } from '../shared/chord.js';
 import {
   SPOKEN_LANGUAGES, MAX_KEYWORDS, parseKeywords, formatKeywords, toggleLanguage, createInlineConfirm,
@@ -205,7 +205,8 @@ export async function initPopup({ chrome, document, window }) {
   function renderModes() {
     const focused = el.modeList.contains(document.activeElement) ? document.activeElement.dataset.focusKey : null;
     el.modeList.replaceChildren();
-    for (const [key, mode] of Object.entries(settings.modes)) {
+    for (const key of orderedModeKeys(settings.modes)) {
+      const mode = settings.modes[key];
       const active = key === settings.activeMode;
       const item = document.createElement('li');
       item.className = 'mode';

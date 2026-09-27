@@ -5,6 +5,7 @@ import { computePillPosition, computeMenuPlacement, EDGE } from './position.js';
 import { formatChord } from '../shared/chord.js';
 import { formatCost } from '../shared/pricing.js';
 import { PROVIDERS } from '../shared/models.js';
+import { orderedModeKeys } from '../shared/defaults.js';
 
 /**
  * @typedef {import('./position.js').Box} Box
@@ -476,7 +477,8 @@ export class Pill {
   #modesSection(modes, active) {
     const section = this.#section('Mode');
     const list = this.#el('div', 'list', { role: 'radiogroup', 'aria-label': 'Mode' });
-    for (const [key, mode] of Object.entries(modes)) {
+    for (const key of orderedModeKeys(modes)) {
+      const mode = modes[key];
       if (!mode || typeof mode !== 'object') continue;
       const item = this.#el('button', 'item', { type: 'button', role: 'radio', 'aria-checked': String(key === active) });
       item.dataset.mode = key;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   SETTINGS_VERSION, BUILTIN_MODES, DEFAULT_SETTINGS, AUTO_STOP_CHOICES, CONTENT_PATCH_FIELDS,
-  freshSettings, recoverKey, migrateSettings, toPublicSettings, applySettingsPatch,
+  freshSettings, recoverKey, migrateSettings, toPublicSettings, applySettingsPatch, orderedModeKeys,
 } from '../../../src/shared/defaults.js';
 import { isValidChord } from '../../../src/shared/chord.js';
 
@@ -432,5 +432,42 @@ describe('applySettingsPatch', () => {
       expect(applySettingsPatch(fullSettings(), { translateTargetLang }), String(translateTargetLang)).toEqual(INVALID);
     }
     expect(applySettingsPatch(fullSettings(), { translateTargetLang: ` ${'x'.repeat(40)} ` }).settings.translateTargetLang).toBe('x'.repeat(40));
+  });
+});
+
+describe('orderedModeKeys', () => {
+  const custom = (name) => ({ name, icon: '🎯', prompt: '', builtIn: false });
+
+  it('lists the built-ins first in BUILTIN_MODES order, whatever the key order', () => {
+    // chrome.storage hands objects back with their keys sorted: custom_ before default.
+    const modes = { custom_1790000000000: custom('Notes'), ...structuredClone(BUILTIN_MODES) };
+    const sorted = Object.fromEntries(Object.keys(modes).sort().map((key) => [key, modes[key]]));
+    expect(Object.keys(sorted)).toEqual(['custom_1790000000000', 'default', 'email', 'instruct', 'translate']);
+    expect(orderedModeKeys(sorted)).toEqual(['default', 'email', 'translate', 'instruct', 'custom_1790000000000']);
+  });
+
+  it('skips built-ins that are missing', () => {
+    expect(orderedModeKeys({ translate: {}, custom_5: custom('Five'), default: {} })).toEqual(['default', 'translate', 'custom_5']);
+  });
+
+  it('orders custom modes by their number, not as strings', () => {
+    const modes = { custom_100: custom('C'), custom_10: custom('B'), default: {}, custom_9: custom('A') };
+    expect(orderedModeKeys(modes)).toEqual(['default', 'custom_9', 'custom_10', 'custom_100']);
+  });
+
+  it('puts any other keys last in ascending string order', () => {
+    const modes = { zeta: {}, custom_2: custom('Two'), beta: {}, custom_x: {}, default: {}, Alpha: {}, custom_1: custom('One') };
+    expect(orderedModeKeys(modes)).toEqual(['default', 'custom_1', 'custom_2', 'Alpha', 'beta', 'custom_x', 'zeta']);
+  });
+
+  it('ignores inherited keys', () => {
+    const modes = Object.create({ email: {}, custom_1: custom('Inherited') });
+    modes.default = {};
+    modes.custom_2 = custom('Own');
+    expect(orderedModeKeys(modes)).toEqual(['default', 'custom_2']);
+  });
+
+  it('returns an empty list for anything but an object', () => {
+    for (const value of [null, undefined, [], 'default', 7]) expect(orderedModeKeys(value), String(value)).toEqual([]);
   });
 });
