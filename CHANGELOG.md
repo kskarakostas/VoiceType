@@ -1,6 +1,18 @@
 # Changelog
 
-## 2.1.0 (unreleased)
+## 2.1.1 (unreleased)
+
+### Fixed
+- Single-line dictation into Slate editors, such as Discord's message box, now stays in the field. 2.1.0 showed "Done", but the text vanished at the next keystroke and was not on the clipboard either. One `Ctrl+Z` removes the dictated text (dictated at a fresh caret).
+- Dictating into a field inside an embedded frame (an iframe) and then clicking a field on the page while the text is processed no longer pulls the cursor out of the page field. The frame keeps the text with "Return to the field to insert, or click here to copy." and inserts it once when you click back into its field. A clipboard fallback never moves the cursor out of the field you are typing in.
+- The hotkey no longer records while a password field has focus. Nothing is recorded or sent, and the pill shows "VoiceType does not record in password fields." in the corner.
+- Pressing REC on the pill of an embedded frame that does not have keyboard focus now explains "Click into the field you want to dictate into, then press REC." instead of recording. This also closes a way to record while a password field in another frame had focus.
+- After VoiceType is disabled or updated, pages that stay open no longer swallow the hotkey (`Ctrl+Shift+Space` by default): the keys reach the page again, and the first press shows "VoiceType was updated. Reload this page."
+- The popup keeps the first click after typing: right after typing in the mode editor, one click on a mode selects it.
+- Built-in modes are listed first, then your own modes in the order you created them, in the popup and in the pill menu. 2.1.0 listed your modes above Default once the popup was reopened.
+- Pressing `Esc` right after pasting a key or typing vocabulary or a mode prompt in the popup saves it before the popup closes. 2.1.0 dropped anything entered less than about a second before the popup closed.
+
+## 2.1.0 (2026-09-27)
 
 ### Added
 - Hold to talk: hold the hotkey while you speak and let go to insert the text. A quick tap starts recording and a second tap stops it. Default `Ctrl+Shift+Space`. Only real key presses count: a web page cannot trigger the hotkey with synthetic key events.

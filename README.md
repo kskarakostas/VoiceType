@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.1.0-purple" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.1.1-purple" alt="Version">
   <img src="https://img.shields.io/badge/Chrome-140%2B-blue" alt="Chrome 140 or newer">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>

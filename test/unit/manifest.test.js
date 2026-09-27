@@ -33,7 +33,7 @@ describe('content script', () => {
   });
 });
 
-describe('release 2.1.0', () => {
+describe('release 2.1.1', () => {
   // Reads files itself so this block works whatever the imports at the top of the file are.
   async function readRoot(name) {
     const fs = await import('node:fs');
@@ -45,7 +45,7 @@ describe('release 2.1.0', () => {
     const { version } = JSON.parse(await readRoot('manifest.json'));
     const pkg = JSON.parse(await readRoot('package.json'));
     const lock = JSON.parse(await readRoot('package-lock.json'));
-    expect(version).toBe('2.1.0');
+    expect(version).toBe('2.1.1');
     expect(pkg.version).toBe(version);
     expect(lock.version).toBe(version);
     expect(lock.packages[''].version).toBe(version);
@@ -59,7 +59,10 @@ describe('release 2.1.0', () => {
 
   it('release docs carry no em or en dashes', async () => {
     const dashes = [0x2013, 0x2014].map((code) => String.fromCharCode(code));
-    const docs = ['README.md', 'CHANGELOG.md', 'PRIVACY.md', 'docs/superpowers/plans/2026-09-27-phase-1-smoke-checklist.md'];
+    const docs = [
+      'README.md', 'CHANGELOG.md', 'PRIVACY.md',
+      'docs/superpowers/plans/2026-09-27-phase-1-smoke-checklist.md', 'docs/superpowers/plans/2026-09-27-fix-2-1-1-smoke.md',
+    ];
     for (const name of docs) {
       const text = await readRoot(name);
       for (const dash of dashes) expect(text.includes(dash), `${name} contains U+${dash.charCodeAt(0).toString(16)}`).toBe(false);
