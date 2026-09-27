@@ -87,6 +87,8 @@ export async function initPopup({ chrome, document, window }) {
   let keywordTimer;
   let modeTimer;
   const keyTimers = {};
+  /** Mode list rows by mode key, reused across renders. */
+  const modeRows = new Map();
 
   async function send(message) {
     try {
@@ -202,44 +204,76 @@ export async function initPopup({ chrome, document, window }) {
     el.keywordCount.textContent = `${settings.keywords.length} of ${MAX_KEYWORDS} terms`;
   }
 
+  function setText(node, text) {
+    if (node.textContent !== text) node.textContent = text;
+  }
+
+  /** Put `child` in `parent` exactly when `present`, touching the DOM only on a change. */
+  function keepChild(parent, child, present) {
+    if (present && child.parentNode !== parent) parent.append(child);
+    else if (!present && child.parentNode === parent) child.remove();
+  }
+
+  function createModeRow(key) {
+    const item = document.createElement('li');
+    item.className = 'mode';
+
+    const select = document.createElement('button');
+    select.type = 'button';
+    select.className = 'mode-select';
+    select.dataset.focusKey = `select:${key}`;
+    const icon = span('mode-icon', '');
+    const label = document.createTextNode('');
+    const name = span('mode-name', '');
+    name.append(label);
+    const preview = span('mode-preview', '');
+    const text = span('mode-text', '');
+    text.append(name, preview);
+    select.append(icon, text);
+    select.addEventListener('click', () => selectMode(key));
+
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'icon-btn';
+    edit.dataset.focusKey = `edit:${key}`;
+    edit.append(svgIcon('edit'));
+    edit.addEventListener('click', () => openEditor(key));
+
+    item.append(select, edit);
+    return {
+      item, select, icon, name, label, preview, edit,
+      badge: span('mode-badge', 'Built-in'),
+      check: svgIcon('check', 'mode-check'),
+    };
+  }
+
+  function fillModeRow(row, key) {
+    const mode = settings.modes[key];
+    const active = key === settings.activeMode;
+    row.select.setAttribute('aria-pressed', String(active));
+    setText(row.icon, mode.icon || DEFAULT_MODE_ICON);
+    setText(row.label, mode.name);
+    keepChild(row.name, row.badge, Boolean(mode.builtIn));
+    setText(row.preview, mode.prompt?.trim() ? mode.prompt.trim() : 'Raw transcription');
+    keepChild(row.select, row.check, active);
+    row.edit.setAttribute('aria-label', `Edit ${mode.name}`);
+  }
+
+  // Rows are updated in place; the list is rebuilt only when modes are added, removed or
+  // reordered. A blur save renders between mousedown and mouseup, and a row replaced in
+  // between never receives its click.
   function renderModes() {
-    const focused = el.modeList.contains(document.activeElement) ? document.activeElement.dataset.focusKey : null;
-    el.modeList.replaceChildren();
-    for (const key of orderedModeKeys(settings.modes)) {
-      const mode = settings.modes[key];
-      const active = key === settings.activeMode;
-      const item = document.createElement('li');
-      item.className = 'mode';
-
-      const select = document.createElement('button');
-      select.type = 'button';
-      select.className = 'mode-select';
-      select.dataset.focusKey = `select:${key}`;
-      select.setAttribute('aria-pressed', String(active));
-      const name = span('mode-name', mode.name);
-      if (mode.builtIn) name.append(span('mode-badge', 'Built-in'));
-      const text = span('mode-text', '');
-      text.append(name, span('mode-preview', mode.prompt?.trim() ? mode.prompt.trim() : 'Raw transcription'));
-      select.append(span('mode-icon', mode.icon || DEFAULT_MODE_ICON), text);
-      if (active) select.append(svgIcon('check', 'mode-check'));
-      select.addEventListener('click', () => selectMode(key));
-
-      const edit = document.createElement('button');
-      edit.type = 'button';
-      edit.className = 'icon-btn';
-      edit.dataset.focusKey = `edit:${key}`;
-      edit.setAttribute('aria-label', `Edit ${mode.name}`);
-      edit.append(svgIcon('edit'));
-      edit.addEventListener('click', () => openEditor(key));
-
-      item.append(select, edit);
-      el.modeList.append(item);
+    const keys = orderedModeKeys(settings.modes);
+    for (const key of modeRows.keys()) if (!keys.includes(key)) modeRows.delete(key);
+    for (const key of keys) {
+      if (!modeRows.has(key)) modeRows.set(key, createModeRow(key));
+      fillModeRow(modeRows.get(key), key);
     }
-    if (focused) {
-      for (const button of el.modeList.querySelectorAll('button')) {
-        if (button.dataset.focusKey === focused) button.focus();
-      }
-    }
+    const items = keys.map((key) => modeRows.get(key).item);
+    if (sameList(items, [...el.modeList.children])) return;
+    const focused = el.modeList.contains(document.activeElement) ? document.activeElement : null;
+    el.modeList.replaceChildren(...items);
+    if (focused?.isConnected) focused.focus();
   }
 
   /** The editor shows the saved mode it edits; a new-mode draft is not in settings yet. */

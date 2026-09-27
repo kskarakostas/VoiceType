@@ -460,6 +460,59 @@ describe('popup modes', () => {
     expect(document.querySelector('[data-focus-key="select:default"]').getAttribute('aria-pressed')).toBe('false');
   });
 
+  it('the first click after typing in the mode editor selects the mode', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    const items = () => [...document.querySelectorAll('#mode-list .mode')];
+    const before = items();
+    const email = document.querySelector('[data-focus-key="select:email"]');
+    document.querySelector('[data-focus-key="edit:email"]').click();
+    const prompt = $('mode-prompt');
+    prompt.focus();
+    typeInto(prompt, 'Write it as a short email.');
+    // In Chrome the mousedown on a row blurs the prompt, whose save renders before mouseup;
+    // a row replaced in between never gets its click.
+    prompt.blur();
+    expect(chrome.saves()).toHaveLength(1);
+    expect(items()).toHaveLength(before.length);
+    items().forEach((item, i) => expect(item).toBe(before[i]));
+    expect(email.isConnected).toBe(true);
+    expect(email.querySelector('.mode-preview').textContent).toBe('Write it as a short email.');
+
+    email.click();
+    await flush();
+    expect(chrome.saves()).toHaveLength(2);
+    expect(chrome.saves()[1]).toMatchObject({ activeMode: 'email', modes: { email: { prompt: 'Write it as a short email.' } } });
+    expect($('toast').textContent).toBe('Mode: Email');
+    expect(document.querySelector('[data-focus-key="select:email"]')).toBe(email);
+    expect(email.getAttribute('aria-pressed')).toBe('true');
+    expect(email.querySelector('.mode-check')).not.toBeNull();
+    const plain = document.querySelector('[data-focus-key="select:default"]');
+    expect(plain.getAttribute('aria-pressed')).toBe('false');
+    expect(plain.querySelector('.mode-check')).toBeNull();
+  });
+
+  it('a saved mode edit updates its row in place', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    const item = document.querySelector('[data-focus-key="select:email"]').closest('li');
+    document.querySelector('[data-focus-key="edit:email"]').click();
+    for (const [id, value] of [['mode-name', 'Mail'], ['mode-icon', 'M']]) {
+      const field = $(id);
+      field.focus();
+      typeInto(field, value);
+      field.blur();
+    }
+    await flush();
+    expect(chrome.saves().at(-1).modes.email).toMatchObject({ name: 'Mail', icon: 'M', builtIn: true });
+    expect(document.querySelector('[data-focus-key="select:email"]').closest('li')).toBe(item);
+    expect(item.querySelector('.mode-icon').textContent).toBe('M');
+    expect(item.querySelector('.mode-name').firstChild.textContent).toBe('Mail');
+    expect(item.querySelector('.mode-badge').textContent).toBe('Built-in');
+    expect(item.querySelector('.icon-btn').getAttribute('aria-label')).toBe('Edit Mail');
+    expect($('mode-list').querySelectorAll('.mode')).toHaveLength(4);
+  });
+
   it('the editor creates and deletes a custom mode', async () => {
     const chrome = fakeChrome();
     await start(chrome);
