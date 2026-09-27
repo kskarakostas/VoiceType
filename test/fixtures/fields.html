@@ -4,15 +4,22 @@
   <meta charset="utf-8">
   <title>VoiceType fixtures</title>
   <style>
-    body { font: 16px system-ui, sans-serif; margin: 40px; max-width: 720px; }
-    label { display: block; margin: 18px 0 6px; font-weight: 600; }
+    body { font: 16px system-ui, sans-serif; margin: 40px; max-width: 720px; padding-bottom: 160px; }
+    label, .label { display: block; margin: 18px 0 6px; font-weight: 600; }
     input, textarea, [contenteditable] { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #999; border-radius: 4px; }
     [contenteditable] { min-height: 64px; }
     .left-flush { margin-left: -40px; width: 200px; }
+    .scroller { height: 140px; overflow: auto; border: 1px dashed #999; padding: 8px; }
+    .scroller-inner { height: 420px; padding-top: 180px; box-sizing: border-box; }
+    .bottom-edge { position: fixed; bottom: 4px; left: 40px; width: 320px; background: #fff; }
+    iframe { width: 100%; height: 170px; border: 1px solid #999; }
+    .note { color: #555; font-size: 14px; }
   </style>
 </head>
 <body>
   <h1>VoiceType fixtures</h1>
+  <p class="note">Serve with <code>node test/fixtures/serve.mjs</code> and open <code>http://localhost:8765/fields.html</code>. Other pages: <a href="hostile.html">hostile.html</a> (hostile page CSS), <a href="pp-denied.html">pp-denied.html</a> (microphone denied by Permissions-Policy).</p>
+
   <label for="text">input type=text</label>
   <input id="text" type="text" placeholder="text">
   <label for="email">input type=email</label>
@@ -25,7 +32,58 @@
   <div id="ce" contenteditable="true"></div>
   <label for="role">role=textbox</label>
   <div id="role" role="textbox" contenteditable="true"></div>
-  <label for="left">left-flush input (positioning check, Phase 1)</label>
+  <label for="left">left-flush input (pill expected on the right)</label>
   <input id="left" class="left-flush" type="text">
+
+  <label for="scrolled">input inside a scrolling container (the pill follows it)</label>
+  <div class="scroller" id="scroller">
+    <div class="scroller-inner">
+      <input id="scrolled" type="text" placeholder="scroll the box">
+    </div>
+  </div>
+
+  <span class="label">open shadow root (input and a contenteditable holding "Hello world")</span>
+  <div id="shadow-host"></div>
+
+  <span class="label">same-origin iframe</span>
+  <iframe id="same-frame" src="frame.html" title="Same-origin frame"></iframe>
+
+  <span class="label">cross-origin iframe</span>
+  <iframe id="cross-frame" title="Cross-origin frame"></iframe>
+  <p class="note" id="cross-note"></p>
+
+  <label for="bottom">bottom-edge field (the menu opens above)</label>
+  <textarea id="bottom" class="bottom-edge" rows="2" placeholder="bottom edge"></textarea>
+
+  <script>
+    // Open shadow root with its own fields; built with DOM calls so the markup stays static.
+    (function buildShadowFields() {
+      const root = document.getElementById('shadow-host').attachShadow({ mode: 'open' });
+      const style = document.createElement('style');
+      style.textContent = 'input, div { display: block; width: 100%; box-sizing: border-box; padding: 8px; margin: 0 0 8px; border: 1px solid #999; border-radius: 4px; font: inherit; } div { min-height: 48px; }';
+      const input = document.createElement('input');
+      input.id = 'shadow-input';
+      input.type = 'text';
+      input.placeholder = 'input in a shadow root';
+      const editable = document.createElement('div');
+      editable.id = 'shadow-ce';
+      editable.contentEditable = 'true';
+      editable.textContent = 'Hello world';
+      root.append(style, input, editable);
+    })();
+
+    // The same server answers on localhost and 127.0.0.1, so the other host name is another origin.
+    (function pointCrossOriginFrame() {
+      const frame = document.getElementById('cross-frame');
+      const note = document.getElementById('cross-note');
+      if (location.protocol !== 'http:' && location.protocol !== 'https:') {
+        note.textContent = 'Open this page through serve.mjs to load the cross-origin frame.';
+        return;
+      }
+      const other = location.hostname === '127.0.0.1' ? 'localhost' : '127.0.0.1';
+      frame.src = `${location.protocol}//${other}:${location.port}/frame.html`;
+      note.textContent = `Loaded from ${other}.`;
+    })();
+  </script>
 </body>
 </html>

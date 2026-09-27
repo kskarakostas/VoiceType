@@ -3,3 +3,5 @@ dist/
 *.zip
 .DS_Store
 .superpowers/
+test-results/
+playwright-report/

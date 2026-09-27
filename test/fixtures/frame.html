@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>VoiceType frame fixture</title>
+  <style>
+    body { font: 15px system-ui, sans-serif; margin: 12px; }
+    label { display: block; margin: 0 0 6px; font-weight: 600; }
+    textarea { width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #999; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <label for="frame-ta">textarea in a frame (<span id="origin"></span>)</label>
+  <textarea id="frame-ta" rows="3"></textarea>
+  <script>
+    document.getElementById('origin').textContent = location.origin;
+  </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>VoiceType Permissions-Policy fixture</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; margin: 40px; max-width: 720px; }
+    textarea { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #999; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Microphone denied by Permissions-Policy</h1>
+  <p>serve.mjs sends <code>Permissions-Policy: microphone=()</code> with this page. Dictation must still work: VoiceType records in its own extension document, not in the page.</p>
+  <p>Page microphone policy: <strong id="policy">unknown</strong></p>
+  <label for="pp-ta">textarea</label>
+  <textarea id="pp-ta" rows="4"></textarea>
+  <script>
+    const policy = document.featurePolicy;
+    if (policy) document.getElementById('policy').textContent = policy.allowsFeature('microphone') ? 'allowed (header missing?)' : 'blocked';
+  </script>
+</body>
+</html>
