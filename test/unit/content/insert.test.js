@@ -67,6 +67,8 @@ function deps(overrides = {}) {
   return {
     execCommand: vi.fn(() => false),
     writeClipboard: vi.fn(async () => {}),
+    // The copy fallback fails unless a test says otherwise, so a rejected write means no copy.
+    execCopy: vi.fn(() => false),
     settle: quickSettle,
     isTrusted,
     createPasteEvent: () => null,
@@ -556,10 +558,25 @@ describe('copyText', () => {
     expect(await copyText('hi', { execCopy: () => false })).toBe(false);
   });
 
-  it('a rejected clipboard write reports false without the fallback', async () => {
+  it('a rejected clipboard write falls back to execCopy (a frame without clipboard-write)', async () => {
     const execCopy = vi.fn(() => true);
-    expect(await copyText('hi', { writeClipboard: async () => { throw new Error('denied'); }, execCopy })).toBe(false);
-    expect(execCopy).not.toHaveBeenCalled();
+    expect(await copyText('hi', { writeClipboard: async () => { throw new Error('denied'); }, execCopy })).toBe(true);
+    expect(execCopy).toHaveBeenCalledWith('hi');
+  });
+
+  it('a rejected clipboard write whose fallback also fails reports false', async () => {
+    const denied = async () => { throw new Error('denied'); };
+    expect(await copyText('hi', { writeClipboard: denied, execCopy: () => false })).toBe(false);
+    expect(await copyText('hi', { writeClipboard: denied, execCopy: () => { throw new Error('no copy'); } })).toBe(false);
+  });
+
+  it('a rejected navigator.clipboard.writeText falls back too', async () => {
+    const writeText = vi.fn(async () => { throw new DOMException('Write permission denied.', 'NotAllowedError'); });
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const execCopy = vi.fn(() => true);
+    expect(await copyText('hi', { execCopy })).toBe(true);
+    expect(writeText).toHaveBeenCalledWith('hi');
+    expect(execCopy).toHaveBeenCalledWith('hi');
   });
 
   it('the default fallback copies from a hidden readonly textarea and restores focus', async () => {

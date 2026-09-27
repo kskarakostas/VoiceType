@@ -49,8 +49,9 @@ export function normalizeForCompare(s) {
 }
 
 /**
- * Copies text. Uses the Clipboard API when the page has one; plain http pages do not, so a
- * hidden textarea and `execCommand('copy')` stand in there.
+ * Copies text. Uses the Clipboard API when the page has one; plain http pages do not, and a
+ * cross-origin frame without clipboard-write rejects it, so a hidden textarea and
+ * `execCommand('copy')` stand in there.
  * @param {string} text
  * @param {{ writeClipboard?: (text: string) => Promise<void>, execCopy?: (text: string) => boolean }} [deps]
  * @returns {Promise<boolean>}
@@ -62,7 +63,7 @@ export async function copyText(text, deps = {}) {
       await write(text);
       return true;
     } catch {
-      return false;
+      // Refused (no clipboard-write in this frame): try the execCommand path before giving up.
     }
   }
   try {
