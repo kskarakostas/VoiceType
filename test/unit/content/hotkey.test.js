@@ -70,6 +70,45 @@ describe('createChordTracker', () => {
     expect(tracker.pressed).toBe(false);
   });
 
+  it('swallows the main key auto-repeat after a modifier is released first', () => {
+    const { tracker } = setup();
+    expect(pressChord(tracker)).toBe('press');
+    expect(tracker.keydown(key('Space', HELD, true))).toBe('repeat');
+    expect(tracker.keyup(key('ControlLeft', { shiftKey: true }))).toEqual({ held: false });
+    expect(tracker.keydown(key('Space', { shiftKey: true }, true))).toBe('repeat');
+    expect(tracker.keyup(key('ShiftLeft'))).toBeNull();
+    expect(tracker.keydown(key('Space', {}, true))).toBe('repeat');
+    expect(tracker.pressed).toBe(false);
+  });
+
+  it('stops swallowing once the main key goes up', () => {
+    const { tracker } = setup();
+    expect(pressChord(tracker)).toBe('press');
+    expect(tracker.keyup(key('ShiftLeft', { ctrlKey: true }))).toEqual({ held: false });
+    expect(tracker.keydown(key('Space', { ctrlKey: true }, true))).toBe('repeat');
+    expect(tracker.keyup(key('Space', { ctrlKey: true }))).toBeNull();
+    expect(tracker.keydown(key('Space', {}, true))).toBeNull();
+    expect(tracker.keydown(key('Space'))).toBeNull();
+  });
+
+  it('a fresh keydown of the main key ends the swallowing (its keyup was lost)', () => {
+    const { tracker } = setup();
+    expect(pressChord(tracker)).toBe('press');
+    expect(tracker.keyup(key('ControlLeft', { shiftKey: true }))).toEqual({ held: false });
+    expect(tracker.keydown(key('Space', { shiftKey: true }, true))).toBe('repeat');
+    expect(tracker.keydown(key('Space'))).toBeNull();
+    expect(tracker.keydown(key('Space', {}, true))).toBeNull();
+  });
+
+  it('blur ends the swallowing', () => {
+    const { tracker } = setup();
+    expect(pressChord(tracker)).toBe('press');
+    expect(tracker.keyup(key('ControlLeft', { shiftKey: true }))).toEqual({ held: false });
+    expect(tracker.keydown(key('Space', { shiftKey: true }, true))).toBe('repeat');
+    expect(tracker.blur()).toBeNull();
+    expect(tracker.keydown(key('Space', { shiftKey: true }, true))).toBeNull();
+  });
+
   it('the main key released first ends the press; later modifier keyups are ignored', () => {
     const { tracker, clock } = setup();
     expect(pressChord(tracker)).toBe('press');
