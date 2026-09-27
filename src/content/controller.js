@@ -2,6 +2,7 @@
 // sees it, and where a finished transcript goes. Side effects arrive through deps.
 import { MSG } from '../shared/messages.js';
 import { formatCost } from '../shared/pricing.js';
+import { isPasswordField } from './fields.js';
 import { STATUS_MS } from './pill.js';
 
 /**
@@ -34,6 +35,7 @@ const NO_REPLY = 'VoiceType could not reach its background service. Try again.';
 const NO_RESPONSE = 'No response from VoiceType. Try again.';
 const CLICK_TO_COPY = 'Could not insert. Click here to copy the text.';
 const HOLD_NOTICE = 'Return to the field to insert, or click here to copy.';
+const PASSWORD_NOTICE = 'VoiceType does not record in password fields.';
 const AUTO_STOP = Object.freeze({
   maxTime: { text: 'Max time reached', tone: 'info' },
   silence: { text: 'Stopped after silence', tone: 'info' },
@@ -212,6 +214,12 @@ export function createController(deps) {
     // REC while a result is held settles that result first; the next REC records.
     if (held) return deliverHeld();
     const active = deepActiveElement();
+    // The audio would go to a cloud API, so a password field never starts a recording.
+    if (isPasswordField(active)) {
+      pressStarted = false;
+      notify(PASSWORD_NOTICE, { tone: 'info' });
+      return;
+    }
     target = isValidInput(active) ? active : null;
     stopQueued = false;
     state = 'starting';

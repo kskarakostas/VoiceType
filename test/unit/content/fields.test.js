@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import {
-  isValidInput, isEditableElement, isFrameworkEditor, deepActiveElement, TEXT_INPUT_TYPES,
+  isValidInput, isPasswordField, isEditableElement, isFrameworkEditor, deepActiveElement, TEXT_INPUT_TYPES,
 } from '../../../src/content/fields.js';
 import { isPasteFirstEditor, PASTE_FIRST_EDITOR_SELECTOR } from '../../../src/content/fields.js';
 
@@ -41,6 +41,40 @@ describe('isValidInput', () => {
     expect(isValidInput(make('<div></div>'))).toBe(false);
     expect(isValidInput(null)).toBe(false);
     expect(isValidInput(document.createTextNode('x'))).toBe(false);
+  });
+});
+
+describe('isPasswordField', () => {
+  it('is true for password inputs, whatever the attribute case', () => {
+    expect(isPasswordField(make('<input type="password">'))).toBe(true);
+    expect(isPasswordField(make('<input type="PASSWORD">'))).toBe(true);
+  });
+  it('is true for inputs with an autocomplete token ending in -password (revealed password fields)', () => {
+    expect(isPasswordField(make('<input type="text" autocomplete="current-password">'))).toBe(true);
+    expect(isPasswordField(make('<input type="text" autocomplete="new-password">'))).toBe(true);
+    expect(isPasswordField(make('<input type="text" autocomplete="section-login current-password webauthn">'))).toBe(true);
+    expect(isPasswordField(make('<input autocomplete="NEW-PASSWORD">'))).toBe(true);
+  });
+  it('is false for other inputs, textareas, editables, text nodes and null', () => {
+    expect(isPasswordField(make('<input type="text">'))).toBe(false);
+    expect(isPasswordField(make('<input type="text" autocomplete="username">'))).toBe(false);
+    expect(isPasswordField(make('<input type="text" autocomplete="off">'))).toBe(false);
+    expect(isPasswordField(make('<textarea autocomplete="current-password"></textarea>'))).toBe(false);
+    expect(isPasswordField(make('<div contenteditable="true"></div>'))).toBe(false);
+    expect(isPasswordField(document.createTextNode('x'))).toBe(false);
+    expect(isPasswordField(null)).toBe(false);
+  });
+  it('isValidInput rejects every password field', () => {
+    const cases = [
+      '<input type="password">',
+      '<input type="text" autocomplete="current-password">',
+      '<input type="email" autocomplete="new-password">',
+    ];
+    for (const html of cases) {
+      const el = make(html);
+      expect(isPasswordField(el), html).toBe(true);
+      expect(isValidInput(el), html).toBe(false);
+    }
   });
 });
 

@@ -20,10 +20,9 @@ const FRAMEWORK_EDITOR_SELECTOR = [
 ].join(', ');
 
 /**
- * True for elements VoiceType may dictate into. Password fields are excluded on purpose:
- * their audio would otherwise be sent to a cloud API. `el.type` is used because browsers
- * report unknown type attributes as `text`; an `autocomplete` token ending in `-password`
- * marks a password field that a page has revealed as plain text.
+ * True for elements VoiceType may dictate into. Password fields (isPasswordField) are
+ * excluded on purpose: their audio would otherwise be sent to a cloud API. `el.type` is used
+ * because browsers report unknown type attributes as `text`.
  * @param {Element|null|undefined} el
  * @returns {boolean}
  */
@@ -33,15 +32,23 @@ export function isValidInput(el) {
   if (tag === 'textarea') return !el.disabled && !el.readOnly;
   if (tag === 'input') {
     const type = String(el.type || 'text').toLowerCase();
-    if (!TEXT_INPUT_TYPES.has(type) || hasPasswordAutocomplete(el)) return false;
+    if (!TEXT_INPUT_TYPES.has(type) || isPasswordField(el)) return false;
     return !el.disabled && !el.readOnly;
   }
   if (isEditableElement(el)) return true;
   return el.getAttribute('role') === 'textbox';
 }
 
-/** @param {Element} el */
-function hasPasswordAutocomplete(el) {
+/**
+ * True for password fields: an input of type `password`, or an input with an `autocomplete`
+ * token ending in `-password`, which marks a password field a page has revealed as plain
+ * text. VoiceType never dictates into one and never records while one has focus.
+ * @param {Element|null|undefined} el
+ * @returns {boolean}
+ */
+export function isPasswordField(el) {
+  if (!el || el.nodeType !== 1 || el.tagName.toLowerCase() !== 'input') return false;
+  if (String(el.type).toLowerCase() === 'password') return true;
   const tokens = (el.getAttribute('autocomplete') || '').toLowerCase().split(/\s+/);
   return tokens.some((token) => token.endsWith('-password'));
 }

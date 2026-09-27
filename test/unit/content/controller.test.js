@@ -274,6 +274,57 @@ describe('hotkey', () => {
   });
 });
 
+describe('password fields', () => {
+  const NOTICE = ['VoiceType does not record in password fields.', { tone: 'info', sticky: false, clickable: false }];
+
+  /** @param {Record<string, string>} attributes */
+  function focusInput(attributes) {
+    const input = document.createElement('input');
+    for (const [name, value] of Object.entries(attributes)) input.setAttribute(name, value);
+    document.body.append(input);
+    input.focus();
+    return input;
+  }
+
+  it('hotkey in a password field never starts a recording', async () => {
+    const t = setup();
+    const input = focusInput({ type: 'password' });
+    t.controller.focusIn(input);
+    await t.controller.press();
+    await t.controller.release({ held: true });
+    expect(t.send).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('idle');
+    expect(lastStatus(t.pill)).toEqual(NOTICE);
+    // The pill never showed at the password field, so the notice sits at the corner.
+    expect(t.pill.show).toHaveBeenCalledTimes(1);
+    expect(t.pill.show).toHaveBeenLastCalledWith(null, { gap: 8 });
+    expect(t.deps.watchAnchor).not.toHaveBeenCalled();
+  });
+
+  it('a revealed password field (autocomplete current-password) is refused too, from the hotkey and from REC', async () => {
+    const t = setup();
+    focusInput({ type: 'text', autocomplete: 'current-password' });
+    await t.controller.press();
+    await t.controller.toggle();
+    expect(t.send).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('idle');
+    expect(t.pill.setStatus.mock.calls).toEqual([NOTICE, NOTICE]);
+  });
+
+  it('the notice goes away and the next press in a text field records', async () => {
+    const t = setup();
+    focusInput({ type: 'password' });
+    await t.controller.press();
+    vi.advanceTimersByTime(2500);
+    expect(t.pill.hide).toHaveBeenCalledTimes(1);
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    await t.controller.press();
+    expect(t.actions()).toEqual([MSG.START_RECORDING]);
+    expect(t.controller.state).toBe('recording');
+  });
+});
+
 describe('service worker messages', () => {
   it.each([
     ['maxTime', 'Max time reached', 'info'],
