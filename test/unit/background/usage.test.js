@@ -83,10 +83,16 @@ describe('summarize', () => {
     expect(s.total.audioSeconds).toBe(150);
   });
 
+  it('runs where 29 March 2026 lasts 23 hours (vitest.config.js pins Europe/Athens)', () => {
+    expect(new Date(2026, 2, 30) - new Date(2026, 2, 29)).toBe(23 * 60 * 60 * 1000);
+  });
+
   it('counts seven distinct days across a DST-like boundary', () => {
-    const now = new Date(2026, 2, 29, 23, 30);
+    // Half past midnight on the first full day of summer time in Athens: stepping back
+    // 24 hours from here lands on 28 March and would skip the 23-hour 29 March.
+    const now = new Date(2026, 2, 30, 0, 30);
     let log = emptyLog();
-    for (let i = 0; i < 7; i++) log = applyUsage(log, entry('openai', 1, 0.001), new Date(2026, 2, 29 - i, 12));
+    for (let i = 0; i < 7; i++) log = applyUsage(log, entry('openai', 1, 0.001), new Date(2026, 2, 30 - i, 12));
     expect(summarize(log, now).last7Days.sessions).toBe(7);
   });
 

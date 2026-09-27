@@ -1,0 +1,4 @@
+/* Fixture for the css-text import tests. Quotes, backslashes and non-ASCII must survive. */
+:host { all: initial; }
+.pill::before { content: "\201C quoted \201D"; }
+.label::after { content: 'Ελληνικά'; }
