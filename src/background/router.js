@@ -21,7 +21,7 @@ export function userMessage(err, { context } = {}) {
 }
 
 /** Log a failure for debugging without ever writing a key to the console. */
-function warnFailure(err) {
+export function warnFailure(err) {
   const e = /** @type {{ name?: string, message?: string }} */ (err);
   console.warn('VoiceType: ' + redact(e?.name + ': ' + e?.message));
 }
