@@ -1,5 +1,5 @@
 import { MSG } from '../shared/messages.js';
-import { applySettingsPatch, migrateSettings, toPublicSettings, SETTINGS_VERSION } from '../shared/defaults.js';
+import { applySettingsPatch, migrateSettings, toPublicSettings, DEFAULT_SETTINGS, SETTINGS_VERSION } from '../shared/defaults.js';
 import { PROVIDERS } from '../shared/models.js';
 import { emptyLog } from './usage.js';
 import { ProviderError, redact } from './providers/errors.js';
@@ -95,6 +95,13 @@ const ACCESS = new Map([
 
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 
+/** Own payload fields that name a settings field; anything else is dropped, never stored. */
+function pickSettingsFields(settings) {
+  const out = {};
+  for (const field of Object.keys(DEFAULT_SETTINGS)) if (Object.hasOwn(settings, field)) out[field] = settings[field];
+  return out;
+}
+
 /** String keys for known providers only; anything else leaves the stored key alone. */
 function pickKeys(keys) {
   const out = {};
@@ -141,7 +148,7 @@ export function createRouter({ storage, validateKey, summarize, recorder, identi
         // Merge so a partial payload never drops custom modes or a key the popup did not send.
         await storage.updateSettings((current) => migrateSettings({
           ...current,
-          ...next,
+          ...pickSettingsFields(next),
           settingsVersion: SETTINGS_VERSION,
           keys: { ...current.keys, ...pickKeys(next.keys) },
         }));

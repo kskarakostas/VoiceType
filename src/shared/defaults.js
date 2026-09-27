@@ -212,17 +212,22 @@ export function migrateSettings(stored) {
   return Number(v.settingsVersion) >= SETTINGS_VERSION ? migrateV2(v) : migrateV1(v);
 }
 
+/** Settings fields a web page may see: every known field except `keys`. */
+const PUBLIC_FIELDS = Object.freeze(Object.keys(DEFAULT_SETTINGS).filter((field) => field !== 'keys'));
+
 /**
- * Settings safe to hand to a web page's content script: a deep copy without `keys`,
- * plus which providers have a non-blank key.
+ * Settings safe to hand to a web page's content script: a deep copy of the known fields
+ * except `keys` (an allowlist, so a stray stored field never reaches a page), plus which
+ * providers have a non-blank key.
  * @param {Settings} settings
  * @returns {PublicSettings}
  */
 export function toPublicSettings(settings) {
-  const { keys, ...rest } = settings;
+  const known = Object.fromEntries(PUBLIC_FIELDS.filter((field) => Object.hasOwn(settings, field))
+    .map((field) => [field, settings[field]]));
   const hasKey = /** @type {PublicSettings['hasKey']} */ (
-    Object.fromEntries(Object.keys(PROVIDERS).map((id) => [id, isNonBlank(keys?.[id])])));
-  return { ...structuredClone(rest), hasKey };
+    Object.fromEntries(Object.keys(PROVIDERS).map((id) => [id, isNonBlank(settings.keys?.[id])])));
+  return { ...structuredClone(known), hasKey };
 }
 
 /** Fields a content script may change through `updateSettings`. */

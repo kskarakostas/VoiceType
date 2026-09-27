@@ -161,6 +161,19 @@ describe('settings', () => {
     expect(stored.keys.openai).toBe('sk-test-123456');
   });
 
+  it('SAVE_SETTINGS drops fields that are not settings, so they never reach a page', async () => {
+    const settings = { provider: 'gemini', translateTargetLang: 'Greek', apiKey: 'sk-live-LEAK', draftKey: 'AQ.leak' };
+    expect(await handle({ action: MSG.SAVE_SETTINGS, settings }, POPUP)).toEqual({ success: true });
+    expect(stored.provider).toBe('gemini');
+    expect(stored.translateTargetLang).toBe('Greek');
+    expect(stored).not.toHaveProperty('apiKey');
+    expect(stored).not.toHaveProperty('draftKey');
+    const pub = await handle({ action: MSG.GET_SETTINGS }, CONTENT);
+    expect(pub).not.toHaveProperty('apiKey');
+    expect(pub).not.toHaveProperty('draftKey');
+    expect(JSON.stringify(pub)).not.toMatch(/sk-live-LEAK|AQ\.leak/);
+  });
+
   it('SAVE_SETTINGS rejects a missing or non-object payload without touching storage', async () => {
     for (const settings of [undefined, null, [], 'x']) {
       expect(await handle({ action: MSG.SAVE_SETTINGS, settings }, POPUP)).toEqual({ success: false, error: 'Invalid settings.' });

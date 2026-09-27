@@ -80,6 +80,16 @@ describe('service worker entry', () => {
     expect(JSON.stringify(fake.chrome.tabs.sendMessage.mock.calls)).not.toContain('sk-secret');
   });
 
+  it('never broadcasts a stray field of the stored settings', async () => {
+    fake.listeners.storageChanged({ settings: { newValue: { ...freshSettings(), apiKey: 'sk-live-LEAK' } } }, 'local');
+    await flush();
+    expect(fake.chrome.tabs.sendMessage).toHaveBeenCalledTimes(2);
+    const [, message] = fake.chrome.tabs.sendMessage.mock.calls[0];
+    expect(message.action).toBe(MSG.SETTINGS_CHANGED);
+    expect(message.settings).not.toHaveProperty('apiKey');
+    expect(JSON.stringify(fake.chrome.tabs.sendMessage.mock.calls)).not.toContain('sk-live-LEAK');
+  });
+
   it('ignores removed settings, usage writes and other areas', async () => {
     fake.listeners.storageChanged({ settings: { oldValue: freshSettings() } }, 'local');
     fake.listeners.storageChanged({ usageLog: { newValue: { version: 2 } } }, 'local');

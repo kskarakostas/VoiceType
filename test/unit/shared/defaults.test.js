@@ -351,6 +351,15 @@ describe('toPublicSettings', () => {
     expect(toPublicSettings(withKeys())).toEqual({ ...rest, hasKey: { openai: true, gemini: false } });
   });
 
+  it('drops an unknown field and still carries every known field plus hasKey', () => {
+    const pub = toPublicSettings({ ...withKeys(), apiKey: 'sk-live-LEAK', draftKey: 'AQ.leak' });
+    expect(pub).not.toHaveProperty('apiKey');
+    expect(pub).not.toHaveProperty('draftKey');
+    const { keys: _keys, ...known } = withKeys();
+    expect(pub).toEqual({ ...known, hasKey: { openai: true, gemini: false } });
+    expect(Object.keys(pub).sort()).toEqual([...Object.keys(DEFAULT_SETTINGS).filter((f) => f !== 'keys'), 'hasKey'].sort());
+  });
+
   it('returns a deep copy and leaves the input intact', () => {
     const settings = withKeys();
     const pub = toPublicSettings(settings);
