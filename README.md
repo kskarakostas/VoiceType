@@ -185,7 +185,7 @@ Blocked it by mistake? Open `chrome://settings/content/microphone`, remove Voice
 
 - Into the field that had focus when you started recording, at the caret.
 - If you clicked somewhere else before the text arrived, or the field disappeared, the text is copied to the clipboard and the pill says so. It never lands in a different field.
-- If the text arrives while you are in another window, tab or frame, it waits until you come back and is inserted then. Until then the pill says "Return to the field to insert, or click here to copy."
+- If the text arrives while you are in another window or tab, or after you dictated into a field inside an embedded frame (an iframe) and then clicked into the page, it waits until you come back to that field and is inserted then. Until then the pill says "Return to the field to insert, or click here to copy." If you dictated into a field on the page and then clicked into a field inside an embedded frame, the text is copied to the clipboard instead.
 - With no field focused (hotkey only), the text is copied to the clipboard.
 - Google Docs does not accept inserted text; VoiceType copies it and you paste with `Ctrl+V`.
 - In rich editors (Gmail, Notion, Slack, ChatGPT, Facebook, claude.ai and others), if VoiceType cannot confirm the insert, the text is also on the clipboard. It is never inserted twice.
