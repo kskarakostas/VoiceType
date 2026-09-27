@@ -60,7 +60,7 @@ Your use of these services is subject to their terms and privacy policies.
 
 ## Permissions
 
-- **Access to all sites** (`<all_urls>`): the in-page script that shows the pill runs on every site so you can dictate anywhere. VoiceType uses the host permission itself only to put that script back into tabs that are already open when VoiceType is installed or updated. The script looks only at the field you focus and dictate into; it does not read or send page content.
+- **Access to all sites** (`<all_urls>`): the in-page script that shows the pill runs on every site so you can dictate anywhere. VoiceType uses the host permission itself to put that script back into tabs that are already open when VoiceType is installed or updated. The same permission is what lets the background service worker call the OpenAI and Gemini APIs. The script looks only at the field you focus and dictate into; it does not read or send page content.
 - **scripting**: the re-injection described above.
 - **offscreen**: the extension document that records the microphone.
 - **storage**: settings, keys and usage statistics on this device.

@@ -48,7 +48,7 @@ Not just transcription: compose emails, translate languages, or ask AI questions
 <td width="50%">
 
 ### ⌨️ Hold to Talk
-Hold the hotkey while you speak and let go to insert, or tap to start and tap again to stop. Works in iframes and shadow DOM fields too.
+Hold the hotkey while you speak and let go to insert, or tap to start and tap again to stop. Works in iframes and fields in open shadow roots too.
 
 ### 📊 Usage Tracking
 Monitor your sessions, audio time, and estimated costs. Never get surprised by your bill.
@@ -161,6 +161,8 @@ Then in Chrome 140 or newer:
 
 To change it, open the popup, click the key under **Recording, Hotkey** and press the new combination. It needs Ctrl, Alt or Cmd plus a key; Esc cancels. Chrome keeps some shortcuts for itself (such as `Ctrl+T` or `Ctrl+W`) and never passes them to a page, so pick something else.
 
+On Windows, do not choose a combination with both Ctrl and Alt: AltGr reports as Ctrl+Alt, so typing characters such as `@` or `€` would trigger it.
+
 The hotkey works on web pages once they have loaded. Extensions cannot run on `chrome://` pages, the Chrome Web Store or the new tab page, so it does nothing there.
 
 Only real key presses count. A web page cannot trigger the hotkey with synthetic key events from its own scripts.
@@ -183,7 +185,7 @@ Blocked it by mistake? Open `chrome://settings/content/microphone`, remove Voice
 
 - Into the field that had focus when you started recording, at the caret.
 - If you clicked somewhere else before the text arrived, or the field disappeared, the text is copied to the clipboard and the pill says so. It never lands in a different field.
-- If the text arrives while you are in another window or tab, it waits until you come back and is inserted then. Until then the pill says "Return to the field to insert, or click here to copy."
+- If the text arrives while you are in another window, tab or frame, it waits until you come back and is inserted then. Until then the pill says "Return to the field to insert, or click here to copy."
 - With no field focused (hotkey only), the text is copied to the clipboard.
 - Google Docs does not accept inserted text; VoiceType copies it and you paste with `Ctrl+V`.
 - In rich editors (Gmail, Notion, Slack, ChatGPT, Facebook, claude.ai and others), if VoiceType cannot confirm the insert, the text is also on the clipboard. It is never inserted twice.

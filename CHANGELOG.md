@@ -16,18 +16,20 @@
 
 ### Changed
 - Minimum Chrome version is 140.
+- On a Mac the default hotkey is now `Control+Shift+Space` (2.0.0 used `Command+Shift+Space`). Change it in the popup under Recording, Hotkey.
 - The text goes to the field that had focus when you started recording. If focus moved or the field disappeared before the text arrived, the text is copied to the clipboard with a notice; it never lands in another field.
 - A result that arrives while you are in another window or tab waits until you come back, and is inserted then. Meanwhile the pill keeps the status "Return to the field to insert, or click here to copy."
 - Insertion rebuilt. One `Ctrl+Z` removes exactly the dictated text in text boxes. Rich editors (Gmail, Notion, Slack, ChatGPT, Lexical editors such as Facebook's, ProseMirror editors such as claude.ai) receive multi-line text. When an insert cannot be confirmed, the text is also put on the clipboard with a notice and is never inserted a second time. Google Docs goes straight to the clipboard.
 - Recording happens in an extension page instead of the website. The website no longer gets microphone access or shows a microphone prompt; Chrome shows its microphone indicator in the system tray or menu bar while recording, and the microphone is released after every recording.
 - The pill is isolated from page styles (closed Shadow DOM) and draws its own icons. It follows the field while you scroll, including fields inside scrolling web components, moves to the other side near the window edges, and opens its menu upward near the bottom. Its status and menu stay on screen near the window edges, and right-to-left pages do not change its layout.
 - Errors and warnings in the pill stay 6 seconds, other messages 2.5 seconds, and never sit under the open menu.
+- If VoiceType stops responding while processing, the pill resets after 75 seconds.
 - The popup is one column with Provider, Recording, Speech, Modes, Usage and About sections. Every control saves on change; a save that fails is undone on screen and explained. A key saves when you paste it and click away. Edits to an existing mode save automatically; a new mode is saved with "Create mode". Clear history and Reset ask for a second, separate click instead of a browser dialog (a double click or a held Enter does not confirm them), and Reset keeps your keys, provider, spoken languages and vocabulary.
 - One recording at a time across tabs: another tab gets "VoiceType is busy in another tab. Try again in a moment."
 - Settings changed in the popup reach open tabs at once.
 - After an install or update, open tabs get the new version without a page reload. A tab that cannot be switched over shows "VoiceType was updated. Reload this page."
 - API keys are readable only by the background service worker and the popup. Web pages and the in-page script never receive them.
-- Permissions: `offscreen` added; host access is `<all_urls>` again, used to put the in-page script back into open tabs after an install or update. The install warning is unchanged, because the in-page script already ran on all sites.
+- Permissions: `offscreen` added; host access is `<all_urls>` again, used to put the in-page script back into open tabs after an install or update. It is also what lets the background service worker call the OpenAI and Gemini APIs. The install warning is unchanged, because the in-page script already ran on all sites.
 - Changing the mode, provider or translate target from the pill saves only that field, so it no longer overwrites changes made in the popup.
 - Building from source needs Node 20.19+, 22.13+ or 24+.
 
