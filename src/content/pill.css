@@ -1,0 +1,565 @@
+/* VoiceType pill. Rendered in a closed shadow root on <voicetype-host>.
+   The :host rules are !important on purpose: across a shadow boundary, important
+   declarations from the inner tree beat the page's own important declarations. */
+
+:host {
+  all: initial !important;
+  display: block !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: visible !important;
+  z-index: 2147483647 !important;
+  pointer-events: none !important;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Tokens live on .vt, not :host, so page rules that target the host cannot change them. */
+.vt {
+  --vt-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --vt-emoji: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', system-ui, sans-serif;
+  --vt-surface: #ffffff;
+  --vt-hover: #f0f0f3;
+  --vt-selected: #eef0ff;
+  --vt-text: #18181b;
+  --vt-muted: #52525b;
+  --vt-border: #d4d4d8;
+  --vt-accent: #4f46e5;
+  --vt-accent-hover: #4338ca;
+  --vt-accent-text: #4338ca;
+  --vt-on-accent: #ffffff;
+  --vt-rec: #dc2626;
+  --vt-rec-hover: #b91c1c;
+  --vt-glow: 239 68 68;
+  --vt-success: #047857;
+  --vt-warning: #b45309;
+  --vt-error: #b91c1c;
+  --vt-focus: #4f46e5;
+  --vt-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 16px rgb(0 0 0 / 0.14);
+  --vt-dot-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 4px rgb(0 0 0 / 0.22);
+  --vt-ease: cubic-bezier(0.2, 0, 0, 1);
+  /* Collapse waits a little after the pointer leaves; expanding overrides this with a shorter delay. */
+  --vt-delay: 0.3s;
+
+  color-scheme: light;
+  font: 500 12px/1.35 var(--vt-font);
+  color: var(--vt-text);
+  font-style: normal;
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  .vt {
+    --vt-surface: #1f1f1f;
+    --vt-hover: #2d2d2d;
+    --vt-selected: #2b2d4a;
+    --vt-text: #f4f4f5;
+    --vt-muted: #b4b4bb;
+    --vt-border: #3f3f46;
+    --vt-accent-text: #a5b4fc;
+    --vt-success: #34d399;
+    --vt-warning: #fbbf24;
+    --vt-error: #f87171;
+    --vt-focus: #a5b4fc;
+    --vt-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.45);
+    --vt-dot-shadow: 0 0 0 1px rgb(255 255 255 / 0.12), 0 1px 4px rgb(0 0 0 / 0.5);
+
+    color-scheme: dark;
+  }
+}
+
+.vt *,
+.vt *::before,
+.vt *::after {
+  box-sizing: border-box;
+}
+
+svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 24px;
+  min-height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+button:focus {
+  outline: none;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--vt-focus);
+  outline-offset: 1px;
+}
+
+/* The menu scrolls, so its rings go inside the control. */
+.menu button:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The slot the expanded pill occupies (PILL_SIZE in pill.js). The visible body grows inside it:
+   away from the field or the viewport edge for the left, inside and corner placements. */
+.pill {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 140px;
+  height: 30px;
+}
+
+.pill[data-placement='left'],
+.pill[data-placement='inside'],
+.pill[data-placement='corner'] {
+  justify-content: flex-end;
+}
+
+.body {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  pointer-events: auto;
+  transition-property: height, padding, background-color, box-shadow;
+  transition-duration: 0.18s;
+  transition-timing-function: var(--vt-ease);
+  transition-delay: var(--vt-delay);
+}
+
+.body:is(:hover, :focus-within),
+.pill:is([data-state='recording'], [data-state='processing'], [data-menu='open']) .body {
+  --vt-delay: 0.1s;
+
+  height: 30px;
+  padding: 0 3px;
+  background: var(--vt-surface);
+  box-shadow: var(--vt-shadow);
+}
+
+/* Collapsed: a 16 px dot inside a 24 px target. No overflow clipping: it would cut the dot's shadow into a square. */
+.dot {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  transition: width 0.18s var(--vt-ease) var(--vt-delay), opacity 0.12s ease var(--vt-delay);
+}
+
+.dot::before,
+.dot::after {
+  content: '';
+  grid-area: 1 / 1;
+  border-radius: 50%;
+}
+
+.dot::before {
+  width: 16px;
+  height: 16px;
+  background: var(--vt-surface);
+  box-shadow: var(--vt-dot-shadow);
+}
+
+.dot::after {
+  width: 8px;
+  height: 8px;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+}
+
+.pill[data-state='done'] .dot::after {
+  background: var(--vt-success);
+}
+
+.pill[data-state='error'] .dot::after {
+  background: var(--vt-error);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  max-width: 0;
+  /* Clip for the width transition, but leave room for focus rings. */
+  overflow: clip;
+  overflow-clip-margin: 4px;
+  opacity: 0;
+  transition: max-width 0.18s var(--vt-ease) var(--vt-delay), opacity 0.12s ease var(--vt-delay);
+}
+
+.body:is(:hover, :focus-within) .dot,
+.pill:is([data-state='recording'], [data-state='processing'], [data-menu='open']) .dot {
+  width: 0;
+  opacity: 0;
+}
+
+.body:is(:hover, :focus-within) .bar,
+.pill:is([data-state='recording'], [data-state='processing'], [data-menu='open']) .bar {
+  max-width: 134px;
+  opacity: 1;
+}
+
+.sep {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  margin: 0 2px;
+  background: var(--vt-border);
+}
+
+.mode {
+  flex: none;
+  width: 28px;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 12px;
+  font: 14px/1 var(--vt-emoji);
+  white-space: nowrap;
+}
+
+.mode-icon {
+  max-width: 24px;
+  overflow: hidden;
+}
+
+.mode:hover,
+.more:hover {
+  background: var(--vt-hover);
+}
+
+.rec {
+  flex: none;
+  width: 72px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: var(--vt-accent);
+  color: var(--vt-on-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.rec:hover {
+  background: var(--vt-accent-hover);
+}
+
+.rec-label {
+  font-variant-numeric: tabular-nums;
+}
+
+.pill[data-state='recording'] .rec {
+  background: var(--vt-rec);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.pill[data-state='recording'] .rec:hover {
+  background: var(--vt-rec-hover);
+}
+
+.pill[data-state='processing'] .rec svg {
+  animation: vt-pulse 1s ease-in-out infinite;
+}
+
+.more {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  color: var(--vt-muted);
+}
+
+.more:hover,
+.more[aria-expanded='true'] {
+  color: var(--vt-text);
+}
+
+/* Level glow while recording. setLevel() clamps to [0, 1]; the clamp here caps it regardless. */
+.pill[data-state='recording'] .body {
+  --vt-l: clamp(0, var(--vt-level, 0), 1);
+
+  box-shadow:
+    var(--vt-shadow),
+    0 0 calc(6px + var(--vt-l) * 14px) calc(1px + var(--vt-l) * 3px) rgb(var(--vt-glow) / calc(0.45 + var(--vt-l) * 0.4));
+  transition: box-shadow 0.1s linear;
+}
+
+.status {
+  position: absolute;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 8px));
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--vt-surface);
+  color: var(--vt-text);
+  box-shadow: var(--vt-shadow);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  animation: vt-fade 0.15s ease-out;
+}
+
+.status[data-side='above'] {
+  transform: translateY(-100%);
+}
+
+.status[data-empty] {
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  animation: none;
+}
+
+.status-icon {
+  margin-top: 1px;
+}
+
+.status[data-tone='info'] .status-icon {
+  display: none;
+}
+
+.status[data-tone='success'] .status-icon {
+  color: var(--vt-success);
+}
+
+.status[data-tone='warning'] .status-icon {
+  color: var(--vt-warning);
+}
+
+.status[data-tone='error'] .status-icon {
+  color: var(--vt-error);
+}
+
+.status[data-clickable] {
+  cursor: pointer;
+}
+
+.status[data-clickable] .status-text {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.status[data-clickable]:hover {
+  background: var(--vt-hover);
+}
+
+.menu {
+  position: absolute;
+  width: 248px;
+  max-height: calc(100vh - 8px);
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 10px;
+  background: var(--vt-surface);
+  color: var(--vt-text);
+  box-shadow: var(--vt-shadow), 0 0 0 1px var(--vt-border);
+  pointer-events: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--vt-border) transparent;
+  animation: vt-fade 0.12s ease-out;
+}
+
+.section + .section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--vt-border);
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 6px 4px;
+  color: var(--vt-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.label svg {
+  width: 12px;
+  height: 12px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 196px;
+  overflow-y: auto;
+}
+
+.item {
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.item:hover {
+  background: var(--vt-hover);
+}
+
+.item[aria-checked='true'] {
+  background: var(--vt-selected);
+}
+
+.item-icon {
+  flex: none;
+  width: 20px;
+  overflow: hidden;
+  font: 15px/1 var(--vt-emoji);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-check {
+  color: var(--vt-accent-text);
+  visibility: hidden;
+}
+
+.item[aria-checked='true'] .item-check {
+  visibility: visible;
+}
+
+.seg {
+  display: flex;
+  gap: 4px;
+  padding: 0 2px;
+}
+
+.chip {
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  min-height: 30px;
+  padding: 3px 4px;
+  border: 1px solid var(--vt-border);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.chip:hover {
+  background: var(--vt-hover);
+}
+
+.chip[aria-checked='true'] {
+  border-color: var(--vt-accent);
+  background: var(--vt-accent);
+  color: var(--vt-on-accent);
+}
+
+.chip[aria-checked='true']:focus-visible {
+  outline-color: var(--vt-on-accent);
+}
+
+.chip-hint {
+  color: var(--vt-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.chip[aria-checked='true'] .chip-hint {
+  color: inherit;
+}
+
+.footer p {
+  margin: 0;
+  padding: 2px 6px;
+  color: var(--vt-muted);
+}
+
+.usage {
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+kbd {
+  padding: 3px 6px;
+  border: 1px solid var(--vt-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--vt-hover);
+  color: var(--vt-text);
+  font: 600 11px/1 var(--vt-font);
+}
+
+@keyframes vt-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes vt-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vt *,
+  .vt *::before,
+  .vt *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+
+  .pill[data-state='recording'] .body {
+    box-shadow: var(--vt-shadow), 0 0 0 2px rgb(var(--vt-glow) / 0.8);
+  }
+}
