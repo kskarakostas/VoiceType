@@ -57,6 +57,7 @@ function setup({ replies = {}, insert = 'inserted', copy = true } = {}) {
     deepActiveElement: () => deepActiveElement(document),
     rectOf: (el) => (el?.isConnected ? { ...RECT } : null),
     watchAnchor: vi.fn(() => unwatch),
+    hasFocus: vi.fn(() => true),
     setTimeout: (fn, ms) => setTimeout(fn, ms),
     clearTimeout: (id) => clearTimeout(id),
   };
@@ -451,6 +452,139 @@ describe('delivery', () => {
     await t.controller.copyLast();
     expect(t.deps.copyText).not.toHaveBeenCalled();
   });
+
+  it('a sticky status stays at the corner when its field leaves the page', async () => {
+    const t = setup({ copy: false });
+    await recordAndStop(t, 'a');
+    const onChange = t.deps.watchAnchor.mock.calls[0][1];
+    $('a').remove();
+    t.controller.handleMessage(result());
+    await flush();
+    expect(lastStatus(t.pill)).toEqual([CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true }]);
+    const clears = t.pill.clearStatus.mock.calls.length;
+    onChange();
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    expect(t.pill.reposition).toHaveBeenLastCalledWith(null);
+    expect(t.pill.visible).toBe(true);
+    expect(t.pill.clearStatus.mock.calls).toHaveLength(clears);
+    expect(lastStatus(t.pill)[0]).toBe(CLICK_TO_COPY);
+  });
+
+  it('shows a never-shown pill before a result status', async () => {
+    const t = setup();
+    t.controller.handleMessage(result());
+    await flush();
+    expect(t.pill.show).toHaveBeenCalledWith(null, { gap: 8 });
+    expect(t.pill.show.mock.invocationCallOrder[0]).toBeLessThan(t.pill.setStatus.mock.invocationCallOrder[0]);
+    expect(t.pill.visible).toBe(true);
+    expect(lastStatus(t.pill)).toEqual(['Copied to clipboard.', { tone: 'info', sticky: false, clickable: false }]);
+  });
+
+  it('shows a hidden pill at the focused field before a notice', () => {
+    const t = setup();
+    $('a').focus();
+    t.controller.handleMessage({
+      action: MSG.RECORDING_STATE, state: 'idle', reason: 'error',
+      notice: { text: 'Recording failed. Try again.', tone: 'error' },
+    });
+    expect(t.pill.show).toHaveBeenCalledWith(RECT, { gap: 8 });
+    expect(t.deps.watchAnchor).toHaveBeenCalledWith($('a'), expect.any(Function));
+    expect(t.pill.show.mock.invocationCallOrder[0]).toBeLessThan(t.pill.setStatus.mock.invocationCallOrder[0]);
+    expect(t.pill.visible).toBe(true);
+  });
+
+  it('an insert that throws leaves the click-to-copy status', async () => {
+    const t = setup();
+    await recordAndStop(t);
+    t.deps.insertText.mockRejectedValueOnce(new Error('boom'));
+    t.controller.handleMessage(result());
+    await flush();
+    expect(lastStatus(t.pill)).toEqual([CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true }]);
+    expect(t.pill.setState).toHaveBeenLastCalledWith('error');
+    expect(t.controller.state).toBe('idle');
+    await t.controller.copyLast();
+    expect(t.deps.copyText).toHaveBeenLastCalledWith('hello');
+  });
+});
+
+describe('another frame or window has focus', () => {
+  const HOLD = ['Return to the field to insert, or click here to copy.', { tone: 'info', sticky: true, clickable: true }];
+  const RESULT = { action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello raw', cost: 0.012, warning: null };
+
+  /** The bound field keeps this frame's focus, but the frame itself does not have it. */
+  async function holdResult(t) {
+    await recordAndStop(t);
+    t.deps.hasFocus.mockReturnValue(false);
+    t.controller.handleMessage(RESULT);
+    await flush();
+  }
+
+  it('holds the result instead of inserting it', async () => {
+    const t = setup();
+    await holdResult(t);
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.deps.copyText).not.toHaveBeenCalled();
+    expect(lastStatus(t.pill)).toEqual(HOLD);
+    expect(t.pill.setState).toHaveBeenLastCalledWith('idle');
+    expect(t.pill.visible).toBe(true);
+    expect(t.controller.state).toBe('idle');
+    vi.advanceTimersByTime(60000);
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+  });
+
+  it('inserts on the next window focus, once', async () => {
+    const t = setup();
+    await holdResult(t);
+    t.deps.hasFocus.mockReturnValue(true);
+    await t.controller.onWindowFocus();
+    expect(t.deps.insertText).toHaveBeenCalledWith($('a'), 'hello');
+    expect(lastStatus(t.pill)).toEqual(['Done $0.01', { tone: 'success', sticky: false, clickable: false }]);
+    await t.controller.onWindowFocus();
+    expect(t.deps.insertText).toHaveBeenCalledTimes(1);
+    expect(t.deps.copyText).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['focus moved to another field', () => $('b').focus()],
+    ['the field left the page', () => $('a').remove()],
+  ])('takes the clipboard on focus when %s', async (_name, change) => {
+    const t = setup();
+    await holdResult(t);
+    change();
+    t.deps.hasFocus.mockReturnValue(true);
+    await t.controller.onWindowFocus();
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    expect($('b').value).toBe('');
+    expect(lastStatus(t.pill)).toEqual(['The field lost focus. Text copied to clipboard.', { tone: 'warning', sticky: false, clickable: false }]);
+  });
+
+  it('a status click copies and drops the hold', async () => {
+    const t = setup();
+    await holdResult(t);
+    await t.controller.copyLast();
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    expect(lastStatus(t.pill)).toEqual(['Copied to clipboard.', { tone: 'success', sticky: false, clickable: false }]);
+    t.deps.hasFocus.mockReturnValue(true);
+    await t.controller.onWindowFocus();
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.deps.copyText).toHaveBeenCalledTimes(1);
+  });
+
+  it('REC while a result is held settles it before any new recording', async () => {
+    const t = setup();
+    await holdResult(t);
+    await t.controller.toggle();
+    expect(t.actions()).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING]);
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    await t.controller.toggle();
+    expect(t.actions()).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING, MSG.START_RECORDING]);
+    t.deps.hasFocus.mockReturnValue(true);
+    await t.controller.onWindowFocus();
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+  });
 });
 
 describe('focus', () => {
@@ -595,6 +729,7 @@ describe('lifecycle', () => {
     await t.controller.release({ held: true });
     await t.controller.choose({ provider: 'gemini' });
     await t.controller.copyLast();
+    await t.controller.onWindowFocus();
     t.controller.handleMessage({ action: MSG.DICTATION_RESULT, success: false, error: 'late', tone: 'error' });
     t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'idle', notice: { text: 'late', tone: 'info' } });
     t.controller.setSettings(settings());

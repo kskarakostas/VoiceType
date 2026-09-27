@@ -18,6 +18,7 @@ import { STATUS_MS } from './pill.js';
  *   deepActiveElement: () => Element|null,
  *   rectOf: (el: Element) => Box|null,
  *   watchAnchor: (el: Element, onChange: () => void) => () => void,
+ *   hasFocus: () => boolean,
  *   setTimeout: (fn: () => void, ms: number) => any,
  *   clearTimeout: (id: any) => void,
  * }} ControllerDeps
@@ -29,6 +30,7 @@ export const FOCUS_OUT_MS = 200;
 const ORPHAN_NOTICE = 'VoiceType was updated. Reload this page.';
 const NO_REPLY = 'VoiceType could not reach its background service. Try again.';
 const CLICK_TO_COPY = 'Could not insert. Click here to copy the text.';
+const HOLD_NOTICE = 'Return to the field to insert, or click here to copy.';
 const AUTO_STOP = Object.freeze({
   maxTime: { text: 'Max time reached', tone: 'info' },
   silence: { text: 'Stopped after silence', tone: 'info' },
@@ -58,6 +60,8 @@ export function createController(deps) {
   /** The current hotkey press started this recording, so a held release stops it. */
   let pressStarted = false;
   let lastResult = null;
+  /** A result for a field that kept this frame's focus while another frame or window had it. */
+  let held = null;
   /** A status is showing; the pill is not hidden under it. */
   let statusBusy = false;
   let statusTimer = null;
@@ -82,7 +86,8 @@ export function createController(deps) {
   function onAnchorChange() {
     if (dead || !anchorEl) return;
     const box = rectOf(anchorEl);
-    if (!box && state === 'idle' && !orphan) hide();
+    // A status (a sticky click-to-copy above all) moves to the corner instead of going away.
+    if (!box && state === 'idle' && !orphan && !statusBusy) hide();
     else pill.reposition(box);
   }
 
@@ -105,7 +110,15 @@ export function createController(deps) {
     if (pill.visible) hide();
   }
 
+  /** A status lives on the pill: show a hidden pill at the focused field, else at the corner. */
+  function ensureVisible() {
+    if (pill.visible) return;
+    const active = deepActiveElement();
+    anchorTo(isValidInput(active) ? active : null);
+  }
+
   function notify(text, { tone = 'info', sticky = false, clickable = false } = {}) {
+    ensureVisible();
     pill.setStatus(text, { tone, sticky, clickable });
     deps.clearTimeout(statusTimer);
     statusTimer = null;
@@ -163,6 +176,8 @@ export function createController(deps) {
   }
 
   async function start() {
+    // REC while a result is held settles that result first; the next REC records.
+    if (held) return deliverHeld();
     const active = deepActiveElement();
     target = isValidInput(active) ? active : null;
     stopQueued = false;
@@ -269,6 +284,7 @@ export function createController(deps) {
     target = null;
     stopQueued = false;
     pressStarted = false;
+    held = null;
     if (state === 'processing') state = 'idle';
     if (!message.success) {
       pill.setState('error');
@@ -277,14 +293,39 @@ export function createController(deps) {
     }
     const text = typeof message.text === 'string' ? message.text : '';
     lastResult = { text, raw: typeof message.raw === 'string' ? message.raw : text };
+    const result = { text, cost: finite(message.cost), warning: textOr(message.warning, null) };
 
-    if (bound && bound.isConnected && deepActiveElement() === bound) {
-      const outcome = await insertText(bound, text);
+    if (bound && bound.isConnected && deepActiveElement() === bound && !deps.hasFocus()) {
+      // The field kept this frame's focus, but another frame or window has the page's focus.
+      // Inserting would pull focus away from where the user is typing, so wait for it to return.
+      held = { bound, result };
+      pill.setState('idle');
+      notify(HOLD_NOTICE, { tone: 'info', sticky: true, clickable: true });
+      return;
+    }
+    await place(bound, result);
+  }
+
+  /**
+   * D12: the text goes into the field bound at REC start only while that field has focus,
+   * this frame included; otherwise to the clipboard.
+   * @param {Element|null} bound
+   * @param {{ text: string, cost: number, warning: string|null }} result
+   */
+  async function place(bound, { text, cost, warning }) {
+    if (bound && bound.isConnected && deepActiveElement() === bound && deps.hasFocus()) {
+      let outcome;
+      try {
+        outcome = await insertText(bound, text);
+      } catch {
+        // A paid transcript is never dropped: the click-to-copy status keeps it.
+        outcome = 'failed';
+      }
       if (inactive()) return;
       if (outcome === 'inserted') {
         pill.setState('done');
-        if (typeof message.warning === 'string' && message.warning) notify(message.warning, { tone: 'warning' });
-        else notify(`Done ${formatCost(finite(message.cost))}`, { tone: 'success' });
+        if (warning) notify(warning, { tone: 'warning' });
+        else notify(`Done ${formatCost(cost)}`, { tone: 'success' });
       } else if (outcome === 'unverified') {
         pill.setState('done');
         notify('Could not confirm the insert. The text is also on the clipboard.', { tone: 'warning' });
@@ -298,7 +339,6 @@ export function createController(deps) {
       return;
     }
 
-    // D12: never insert into a field other than the one bound at REC start.
     const copied = await copyText(text);
     if (inactive()) return;
     if (!copied) {
@@ -311,6 +351,19 @@ export function createController(deps) {
       pill.setState('done');
       notify('Copied to clipboard.', { tone: 'info' });
     }
+  }
+
+  /** Deliver the held result once: into its field if that has focus now, else the clipboard. */
+  async function deliverHeld() {
+    const { bound, result } = held;
+    held = null;
+    await place(bound, result);
+  }
+
+  /** This frame's window regained focus: a held result can go to its field now. */
+  async function onWindowFocus() {
+    if (inactive() || !held) return;
+    await deliverHeld();
   }
 
   /** @param {unknown} message a runtime message from the service worker */
@@ -338,6 +391,7 @@ export function createController(deps) {
   /** Click-to-copy: the click is a user gesture, so the clipboard write is allowed now. */
   async function copyLast() {
     if (inactive() || !lastResult) return;
+    held = null;
     const copied = await copyText(lastResult.text);
     if (inactive()) return;
     if (copied) {
@@ -372,11 +426,9 @@ export function createController(deps) {
     target = null;
     stopQueued = false;
     pressStarted = false;
+    held = null;
     pill.setState('idle');
-    if (!pill.visible) {
-      const active = deepActiveElement();
-      anchorTo(isValidInput(active) ? active : null);
-    }
+    ensureVisible();
     pill.setStatus(ORPHAN_NOTICE, { tone: 'error', sticky: true, terminal: true });
   }
 
@@ -393,6 +445,7 @@ export function createController(deps) {
     unwatch = null;
     anchorEl = null;
     target = null;
+    held = null;
     pill.destroy();
   }
 
@@ -406,6 +459,7 @@ export function createController(deps) {
     release,
     handleMessage,
     copyLast,
+    onWindowFocus,
     choose,
     orphaned,
     teardown,

@@ -62,8 +62,20 @@ function installChrome(respond = reply) {
   return { chrome, listeners, storageAccess, sent: () => chrome.runtime.sendMessage.mock.calls.map(([m]) => m.action) };
 }
 
-/** Evaluate a fresh copy of the entry, as Chrome does when it injects content.js again. */
+/**
+ * Evaluate a fresh copy of the content script, as Chrome does when it injects content.js again.
+ * Events a test dispatches are untrusted, so the instance is booted to accept them; the page
+ * isolation tests load the real entry, which does not.
+ */
 async function loadInstance() {
+  vi.resetModules();
+  const { boot } = await import('../../../src/content/boot.js');
+  boot({ isTrusted: () => true });
+  await flush();
+}
+
+/** Load the production entry, which boots with the real isTrusted check. */
+async function loadEntry() {
   vi.resetModules();
   await import('../../../src/content/index.js');
   await flush();
@@ -75,6 +87,18 @@ async function flush() {
 
 const hosts = () => document.documentElement.querySelectorAll('voicetype-host');
 const shadow = () => hosts()[0].shadowRoot;
+const statusText = () => shadow().querySelector('[role="status"]').textContent;
+const HOLD = 'Return to the field to insert, or click here to copy.';
+const RESULT = { action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null };
+
+/** REC, then REC again: the instance waits for the result of a session bound to the focused field. */
+async function recordAndStop() {
+  shadow().querySelector('.rec').click();
+  await flush();
+  shadow().querySelector('.rec').click();
+  await flush();
+  expect(shadow().querySelector('.rec').getAttribute('aria-label')).toBe('Start recording');
+}
 const hotkey = (type, extra = {}) => new KeyboardEvent(type, {
   code: 'Space', key: ' ', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true, ...extra,
 });
@@ -276,6 +300,25 @@ describe('wiring', () => {
     expect(newChord.defaultPrevented).toBe(true);
   });
 
+  it('holds a result while the page lacks focus and inserts it when the window regains focus', async () => {
+    const t = installChrome();
+    const field = document.getElementById('field');
+    field.focus();
+    await loadInstance();
+    await recordAndStop();
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    const [listener] = t.listeners;
+    listener(RESULT, {}, () => {});
+    await flush();
+    expect(statusText()).toBe(HOLD);
+    expect(field.value).toBe('');
+    hasFocus.mockReturnValue(true);
+    window.dispatchEvent(new Event('focus'));
+    await flush();
+    expect(field.value).toBe('hello');
+    expect(statusText()).toBe('Done $0.00');
+  });
+
   it('menu choices send a whitelisted patch', async () => {
     const t = installChrome();
     document.getElementById('field').focus();
@@ -302,7 +345,39 @@ describe('page and key isolation', () => {
     shadow().querySelector('.rec').click();
     await flush();
     expect(t.storageAccess).toEqual([]);
-    for (const name of ['index.js', 'controller.js', 'pill.js']) expect(readContent(name), name).not.toMatch(/chrome\.storage/);
+    for (const name of ['index.js', 'boot.js', 'controller.js', 'pill.js']) expect(readContent(name), name).not.toMatch(/chrome\.storage/);
+  });
+
+  it('the entry ignores untrusted focus and hotkey events from the page', async () => {
+    const t = installChrome();
+    await loadEntry();
+    const down = hotkey('keydown');
+    const up = hotkey('keyup');
+    window.dispatchEvent(down);
+    window.dispatchEvent(up);
+    await flush();
+    expect(t.sent()).toEqual([MSG.GET_SETTINGS]);
+    expect(down.defaultPrevented).toBe(false);
+    expect(up.defaultPrevented).toBe(false);
+    document.getElementById('field').dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
+    expect(hosts()).toHaveLength(0);
+  });
+
+  it('the entry ignores an untrusted window focus while a result is held', async () => {
+    const t = installChrome();
+    const field = document.getElementById('field');
+    field.focus();
+    await loadEntry();
+    await recordAndStop();
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    const [listener] = t.listeners;
+    listener(RESULT, {}, () => {});
+    await flush();
+    hasFocus.mockReturnValue(true);
+    window.dispatchEvent(new Event('focus'));
+    await flush();
+    expect(field.value).toBe('');
+    expect(statusText()).toBe(HOLD);
   });
 
   it('no file under src/content uses an HTML string sink', () => {
