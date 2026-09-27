@@ -24,11 +24,16 @@ function daysAgo(now, n) {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate() - n, 12);
 }
 
+/** @returns {ProviderBucket} */
+function emptyProviderBucket() {
+  return { sessions: 0, audioSeconds: 0, cost: 0 };
+}
+
 /** @returns {Bucket} */
 function emptyBucket() {
   return {
     sessions: 0, audioSeconds: 0, estimatedCost: 0,
-    byProvider: { openai: { sessions: 0, audioSeconds: 0, cost: 0 }, gemini: { sessions: 0, audioSeconds: 0, cost: 0 } },
+    byProvider: { openai: emptyProviderBucket(), gemini: emptyProviderBucket() },
     modes: {},
   };
 }
@@ -38,11 +43,52 @@ export function emptyLog() {
   return { version: 2, daily: {}, total: emptyBucket() };
 }
 
-function isV2(log) {
-  return Boolean(log) && log.version === 2 && typeof log.daily === 'object' && typeof log.total === 'object';
+const finite = (v) => (Number.isFinite(v) ? v : 0);
+const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+
+/** Add n to record[key], reading own properties only so a mode named 'constructor' counts from 0. */
+function bump(record, key, n) {
+  record[key] = (Object.hasOwn(record, key) ? record[key] : 0) + n;
 }
 
-const finite = (v) => (Number.isFinite(v) ? v : 0);
+/**
+ * @param {unknown} value
+ * @returns {Bucket}
+ */
+function normalizeBucket(value) {
+  const src = isObject(value) ? /** @type {any} */ (value) : {};
+  const bucket = emptyBucket();
+  bucket.sessions = finite(src.sessions);
+  bucket.audioSeconds = finite(src.audioSeconds);
+  bucket.estimatedCost = finite(src.estimatedCost);
+  const byProvider = isObject(src.byProvider) ? src.byProvider : {};
+  for (const p of PROVIDER_KEYS) {
+    const b = Object.hasOwn(byProvider, p) && isObject(byProvider[p]) ? byProvider[p] : {};
+    bucket.byProvider[p] = { sessions: finite(b.sessions), audioSeconds: finite(b.audioSeconds), cost: finite(b.cost) };
+  }
+  if (isObject(src.modes)) {
+    for (const [mode, n] of Object.entries(src.modes)) if (Number.isFinite(n)) bump(bucket.modes, mode, n);
+  }
+  return bucket;
+}
+
+/**
+ * The one validator for stored usage data. A v2 log keeps its data with every bucket field
+ * defaulted to 0 and only the openai and gemini provider buckets; anything else is an empty
+ * log. Always returns a fresh object.
+ * @param {unknown} value
+ * @returns {UsageLog}
+ */
+export function normalizeLog(value) {
+  if (!isObject(value) || /** @type {any} */ (value).version !== 2) return emptyLog();
+  const v = /** @type {any} */ (value);
+  const log = emptyLog();
+  if (isObject(v.daily)) {
+    for (const [day, bucket] of Object.entries(v.daily)) if (isObject(bucket)) log.daily[day] = normalizeBucket(bucket);
+  }
+  log.total = normalizeBucket(v.total);
+  return log;
+}
 
 function addTo(bucket, entry) {
   const audioSeconds = finite(entry.audioSeconds);
@@ -50,11 +96,13 @@ function addTo(bucket, entry) {
   bucket.sessions += 1;
   bucket.audioSeconds += audioSeconds;
   bucket.estimatedCost += cost;
-  const p = bucket.byProvider[entry.provider] || (bucket.byProvider[entry.provider] = { sessions: 0, audioSeconds: 0, cost: 0 });
-  p.sessions += 1;
-  p.audioSeconds += audioSeconds;
-  p.cost += cost;
-  bucket.modes[entry.mode] = (bucket.modes[entry.mode] || 0) + 1;
+  if (PROVIDER_KEYS.includes(entry.provider)) {
+    const p = bucket.byProvider[entry.provider];
+    p.sessions += 1;
+    p.audioSeconds += audioSeconds;
+    p.cost += cost;
+  }
+  bump(bucket.modes, String(entry.mode), 1);
 }
 
 /**
@@ -64,9 +112,9 @@ function addTo(bucket, entry) {
  * @returns {UsageLog}
  */
 export function applyUsage(log, entry, now = new Date()) {
-  const next = isV2(log) ? structuredClone(log) : emptyLog();
+  const next = normalizeLog(log);
   const key = localDateKey(now);
-  const day = next.daily[key] || (next.daily[key] = emptyBucket());
+  const day = Object.hasOwn(next.daily, key) ? next.daily[key] : (next.daily[key] = emptyBucket());
   addTo(day, entry);
   addTo(next.total, entry);
 
@@ -78,17 +126,17 @@ export function applyUsage(log, entry, now = new Date()) {
 function sumDays(log, keys) {
   const acc = emptyBucket();
   for (const k of keys) {
+    if (!Object.hasOwn(log.daily, k)) continue;
     const d = log.daily[k];
-    if (!d) continue;
     acc.sessions += d.sessions;
     acc.audioSeconds += d.audioSeconds;
     acc.estimatedCost += d.estimatedCost;
     for (const p of PROVIDER_KEYS) {
-      acc.byProvider[p].sessions += d.byProvider?.[p]?.sessions || 0;
-      acc.byProvider[p].audioSeconds += d.byProvider?.[p]?.audioSeconds || 0;
-      acc.byProvider[p].cost += d.byProvider?.[p]?.cost || 0;
+      acc.byProvider[p].sessions += d.byProvider[p].sessions;
+      acc.byProvider[p].audioSeconds += d.byProvider[p].audioSeconds;
+      acc.byProvider[p].cost += d.byProvider[p].cost;
     }
-    for (const [mode, n] of Object.entries(d.modes || {})) acc.modes[mode] = (acc.modes[mode] || 0) + n;
+    for (const [mode, n] of Object.entries(d.modes)) bump(acc.modes, mode, n);
   }
   return acc;
 }
@@ -99,7 +147,7 @@ function sumDays(log, keys) {
  * @returns {{ today: Bucket, last7Days: Bucket, total: Bucket }}
  */
 export function summarize(log, now = new Date()) {
-  const src = isV2(log) ? log : emptyLog();
+  const src = normalizeLog(log);
   const keys = (n) => Array.from({ length: n }, (_, i) => localDateKey(daysAgo(now, i)));
-  return { today: sumDays(src, keys(1)), last7Days: sumDays(src, keys(7)), total: structuredClone(src.total) };
+  return { today: sumDays(src, keys(1)), last7Days: sumDays(src, keys(7)), total: src.total };
 }
