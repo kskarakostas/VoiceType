@@ -87,7 +87,8 @@ export class Pill {
   #statusClickable = false;
   #terminal = false;
   #menuOpen = false;
-  #menuPlacement = 'below';
+  /** The open menu as rendered: its side of the pill and its vertical extent. */
+  #menuBox = { placement: 'below', top: 0, bottom: 0 };
 
   /**
    * @param {PillHandlers} handlers
@@ -357,17 +358,19 @@ export class Pill {
       viewport: this.#viewport(),
       gap: MENU_GAP,
     });
-    this.#menuPlacement = pos.placement;
+    const top = Math.round(pos.top);
+    const maxHeight = Math.floor(pos.maxHeight);
+    this.#menuBox = { placement: pos.placement, top, bottom: top + Math.min(rect.height, maxHeight) };
     menu.dataset.placement = pos.placement;
-    menu.style.top = `${Math.round(pos.top)}px`;
+    menu.style.top = `${top}px`;
     menu.style.left = `${Math.round(pos.left)}px`;
-    menu.style.maxHeight = `${Math.floor(pos.maxHeight)}px`;
+    menu.style.maxHeight = `${maxHeight}px`;
   }
 
   /**
    * The status prefers the side opposite an open menu, else above for the above and corner
-   * placements and below otherwise. It takes the other side when the preferred one has no
-   * room, and is clamped into the viewport when neither has.
+   * placements and below otherwise. Without room there it takes the other side, or past the
+   * menu's far edge while the menu is open; failing that it is clamped into the viewport.
    */
   #placeStatus() {
     const box = this.#box;
@@ -377,13 +380,27 @@ export class Pill {
     const { width, height: measured } = status.getBoundingClientRect();
     const height = Math.max(measured, STATUS_ROOM);
     const tops = { below: box.top + box.height + STATUS_GAP, above: box.top - STATUS_GAP - height };
-    const fits = (side) => tops[side] >= EDGE && tops[side] + height <= viewport.height - EDGE;
+    const fits = (top) => top >= EDGE && top + height <= viewport.height - EDGE;
     let preferred;
-    if (this.#menuOpen) preferred = this.#menuPlacement === 'below' ? 'above' : 'below';
-    else preferred = box.placement === 'above' || box.placement === 'corner' ? 'above' : 'below';
-    const other = preferred === 'below' ? 'above' : 'below';
-    const side = fits(preferred) || !fits(other) ? preferred : other;
-    const top = fits(side) ? tops[side] : Math.max(EDGE, Math.min(tops[side], viewport.height - height - EDGE));
+    let fallback;
+    if (this.#menuOpen) {
+      const menu = this.#menuBox;
+      preferred = menu.placement === 'below' ? 'above' : 'below';
+      // The other side holds the menu, so the fallback is past its far edge.
+      fallback = menu.placement === 'below'
+        ? { side: 'below', top: menu.bottom + STATUS_GAP }
+        : { side: 'above', top: menu.top - STATUS_GAP - height };
+    } else {
+      preferred = box.placement === 'above' || box.placement === 'corner' ? 'above' : 'below';
+      const other = preferred === 'below' ? 'above' : 'below';
+      fallback = { side: other, top: tops[other] };
+    }
+    let side = preferred;
+    let top = tops[preferred];
+    if (!fits(top)) {
+      if (fits(fallback.top)) ({ side, top } = fallback);
+      else top = Math.max(EDGE, Math.min(top, viewport.height - height - EDGE));
+    }
     status.dataset.side = side;
     const wanted = GROWS_LEFT.has(box.placement) ? box.left + box.width - width : box.left;
     const left = Math.max(EDGE, Math.min(wanted, viewport.width - width - EDGE));

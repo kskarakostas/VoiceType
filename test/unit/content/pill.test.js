@@ -46,14 +46,44 @@ function settings(overrides = {}) {
 const q = (pill, selector) => pill.root.querySelector(selector);
 const statusEl = (pill) => q(pill, '[role="status"]');
 const rect = (width, height) => () => ({ top: 0, left: 0, right: width, bottom: height, width, height });
+const STATUS_SIZE = { width: 120, height: 29 };
+const MENU_SIZE = { width: 248, height: 300 };
+const pxValue = (value) => parseInt(value, 10);
 
-/** Asserts the status, `height` px tall, lies fully inside the viewport. "above" is lifted by its own height in CSS. */
-function expectStatusOnScreen(pill, height) {
+/** The status as rendered at its mocked size; "above" is lifted by its own height in CSS. */
+function statusRect(pill, { width, height } = STATUS_SIZE) {
   const el = statusEl(pill);
-  const top = parseInt(el.style.top, 10) - (el.dataset.side === 'above' ? height : 0);
-  const label = `status ${el.dataset.side} at ${top}`;
+  const top = pxValue(el.style.top) - (el.dataset.side === 'above' ? height : 0);
+  return { top, left: pxValue(el.style.left), width, height };
+}
+
+/** The open menu as rendered at its mocked size, capped by its max-height. */
+function menuRect(pill, { width, height } = MENU_SIZE) {
+  const el = q(pill, '.menu');
+  return { top: pxValue(el.style.top), left: pxValue(el.style.left), width, height: Math.min(height, pxValue(el.style.maxHeight)) };
+}
+
+function pillRect(pill) {
+  const el = q(pill, '.pill');
+  return { top: pxValue(el.style.top), left: pxValue(el.style.left), ...PILL_SIZE };
+}
+
+const overlaps = (a, b) => a.top < b.top + b.height && b.top < a.top + a.height
+  && a.left < b.left + b.width && b.left < a.left + a.width;
+
+/** Asserts the status, at `size`, lies fully inside the viewport. */
+function expectStatusOnScreen(pill, size = STATUS_SIZE) {
+  const { top, height } = statusRect(pill, size);
+  const label = `status ${statusEl(pill).dataset.side} at ${top}`;
   expect(top, label).toBeGreaterThanOrEqual(EDGE);
   expect(top + height, label).toBeLessThanOrEqual(VIEWPORT.height - EDGE);
+}
+
+/** Asserts the status covers neither the pill nor, while it is open, the menu. */
+function expectStatusClear(pill) {
+  const status = statusRect(pill);
+  expect(overlaps(status, pillRect(pill)), 'status over the pill').toBe(false);
+  if (pill.menuOpen) expect(overlaps(status, menuRect(pill)), 'status over the menu').toBe(false);
 }
 
 beforeEach(() => {
@@ -308,41 +338,46 @@ describe('status', () => {
     pill.closeMenu();
     expect(statusEl(pill).dataset.side).toBe('below');
 
-    q(pill, '.menu').getBoundingClientRect = rect(248, 300);
-    statusEl(pill).getBoundingClientRect = rect(120, 29);
+    q(pill, '.menu').getBoundingClientRect = rect(MENU_SIZE.width, MENU_SIZE.height);
+    statusEl(pill).getBoundingClientRect = rect(STATUS_SIZE.width, STATUS_SIZE.height);
     pill.show(BOTTOM_FIELD);
     pill.openMenu();
     expect(q(pill, '.menu').dataset.placement).toBe('above');
-    expectStatusOnScreen(pill, 29);
+    expectStatusOnScreen(pill);
+    expectStatusClear(pill);
   });
 
   it('keeps the status on screen for an above pill near the top', () => {
     const { pill } = makePill();
     pill.renderMenu(settings(), null);
     pill.show({ top: 50, left: 100, width: 800, height: 30 });
-    statusEl(pill).getBoundingClientRect = rect(120, 29);
-    q(pill, '.menu').getBoundingClientRect = rect(248, 300);
+    statusEl(pill).getBoundingClientRect = rect(STATUS_SIZE.width, STATUS_SIZE.height);
+    q(pill, '.menu').getBoundingClientRect = rect(MENU_SIZE.width, MENU_SIZE.height);
     pill.setStatus('Hello');
     expect(q(pill, '.pill').dataset.placement).toBe('above');
-    expect(parseInt(q(pill, '.pill').style.top, 10)).toBeLessThan(35);
-    expectStatusOnScreen(pill, 29);
+    expect(pxValue(q(pill, '.pill').style.top)).toBeLessThan(35);
+    expectStatusOnScreen(pill);
+    expectStatusClear(pill);
     pill.openMenu();
     expect(q(pill, '.menu').dataset.placement).toBe('below');
-    expectStatusOnScreen(pill, 29);
+    expectStatusOnScreen(pill);
+    expectStatusClear(pill);
   });
 
   it('keeps the status on screen in the corner, with and without the menu', () => {
     const { pill } = makePill();
     pill.renderMenu(settings(), null);
     pill.show(null);
-    statusEl(pill).getBoundingClientRect = rect(120, 29);
-    q(pill, '.menu').getBoundingClientRect = rect(248, 300);
+    statusEl(pill).getBoundingClientRect = rect(STATUS_SIZE.width, STATUS_SIZE.height);
+    q(pill, '.menu').getBoundingClientRect = rect(MENU_SIZE.width, MENU_SIZE.height);
     pill.setStatus('Hello');
     expect(q(pill, '.pill').dataset.placement).toBe('corner');
-    expectStatusOnScreen(pill, 29);
+    expectStatusOnScreen(pill);
+    expectStatusClear(pill);
     pill.openMenu();
     expect(q(pill, '.menu').dataset.placement).toBe('above');
-    expectStatusOnScreen(pill, 29);
+    expectStatusOnScreen(pill);
+    expectStatusClear(pill);
   });
 
   it('clamps a status that fits on neither side into the viewport', () => {
@@ -350,7 +385,7 @@ describe('status', () => {
     pill.show(FIELD);
     statusEl(pill).getBoundingClientRect = rect(300, 740);
     pill.setStatus('A very long message');
-    expectStatusOnScreen(pill, 740);
+    expectStatusOnScreen(pill, { width: 300, height: 740 });
   });
 });
 
