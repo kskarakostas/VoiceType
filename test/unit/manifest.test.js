@@ -20,3 +20,15 @@ describe('manifest', () => {
     expect(manifest).not.toHaveProperty('commands');
   });
 });
+
+describe('content script', () => {
+  it('runs content.js in every frame, about:blank frames included, with no stylesheet', () => {
+    expect(manifest.content_scripts).toEqual([
+      { matches: ['<all_urls>'], js: ['content.js'], run_at: 'document_idle', all_frames: true, match_about_blank: true },
+    ]);
+  });
+
+  it('exposes no web accessible resources to pages', () => {
+    expect(manifest).not.toHaveProperty('web_accessible_resources');
+  });
+});

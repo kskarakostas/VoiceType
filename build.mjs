@@ -26,7 +26,6 @@ const STATICS = [
   ['src/popup/popup.css', 'popup.css'],
   ['src/offscreen/offscreen.html', 'offscreen.html'],
   ['src/offscreen/permission.html', 'permission.html'],
-  ['src/content/content.css', 'content.css'],
   ['icons/icon16.png', 'icons/icon16.png'],
   ['icons/icon48.png', 'icons/icon48.png'],
   ['icons/icon128.png', 'icons/icon128.png'],

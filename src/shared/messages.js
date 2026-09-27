@@ -20,10 +20,6 @@ export const MSG = Object.freeze({
   OFFSCREEN_DONE: 'offscreenDone',
   OFFSCREEN_ERROR: 'offscreenError',
   PERMISSION_RESULT: 'permissionResult',
-  // Legacy v2.0 content path; removed in Task 11.
-  CHECK_KEY: 'checkApiKey',
-  TRANSCRIBE: 'transcribe',
-  TOGGLE_RECORDING: 'toggle-recording',
 });
 
 /**

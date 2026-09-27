@@ -37,4 +37,9 @@ describe('MSG', () => {
   it('is frozen', () => {
     expect(Object.isFrozen(MSG)).toBe(true);
   });
+
+  it('holds exactly the contract: the legacy v2.0 content actions are gone', () => {
+    expect(MSG).toEqual(CONTRACT);
+    for (const legacy of ['checkApiKey', 'transcribe', 'toggle-recording']) expect(Object.values(MSG)).not.toContain(legacy);
+  });
 });
