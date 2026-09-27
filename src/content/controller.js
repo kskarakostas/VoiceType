@@ -105,6 +105,12 @@ export function createController(deps) {
   /** After focus or a status changes: follow the focused field, or hide an idle pill with nothing to show. */
   function settle() {
     if (inactive() || state !== 'idle' || statusBusy) return;
+    // Another frame or window has the focus. This frame keeps its active field, but only the
+    // frame the user is in shows an idle pill (spec 6.4); focusIn shows it again.
+    if (!deps.hasFocus()) {
+      if (pill.visible) hide();
+      return;
+    }
     const active = deepActiveElement();
     if (isValidInput(active)) {
       if (active !== anchorEl) anchorTo(active);

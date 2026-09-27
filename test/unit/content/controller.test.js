@@ -780,6 +780,36 @@ describe('focus', () => {
     expect(t.pill.hide).not.toHaveBeenCalled();
   });
 
+  it('focusOut hides an idle pill once another frame or window has the focus, and focusIn brings it back', () => {
+    const t = setup();
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    expect(t.pill.visible).toBe(true);
+    t.deps.hasFocus.mockReturnValue(false);
+    t.controller.focusOut();
+    vi.advanceTimersByTime(FOCUS_OUT_MS);
+    expect(document.activeElement).toBe($('a'));
+    expect(t.pill.hide).toHaveBeenCalledTimes(1);
+    expect(t.pill.visible).toBe(false);
+    t.deps.hasFocus.mockReturnValue(true);
+    t.controller.focusIn($('a'));
+    expect(t.pill.visible).toBe(true);
+    expect(t.pill.show).toHaveBeenLastCalledWith(RECT, { gap: 8 });
+  });
+
+  it('a held result keeps its pill when the frame loses focus', async () => {
+    const t = setup();
+    await recordAndStop(t);
+    t.deps.hasFocus.mockReturnValue(false);
+    t.controller.handleMessage({ action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null });
+    await flush();
+    expect(lastStatus(t.pill)[0]).toBe('Return to the field to insert, or click here to copy.');
+    t.controller.focusOut();
+    vi.advanceTimersByTime(60_000);
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    expect(t.pill.visible).toBe(true);
+  });
+
   it('focusOut keeps the pill while focus is inside it', () => {
     const t = setup();
     $('a').focus();

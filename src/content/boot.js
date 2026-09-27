@@ -116,6 +116,8 @@ export function boot({ isTrusted = (event) => event.isTrusted === true } = {}) {
     if (!isTrusted(event)) return;
     const released = tracker.blur();
     if (released) controller.release(released);
+    // Focus left this frame for another frame or window: settle so an idle pill hides (spec 6.4).
+    controller.focusOut();
   }
 
   function onWindowFocus(event) {

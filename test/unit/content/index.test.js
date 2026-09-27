@@ -267,6 +267,18 @@ describe('wiring', () => {
     expect(t.sent()).toEqual([MSG.GET_SETTINGS, MSG.START_RECORDING, MSG.STOP_RECORDING]);
   });
 
+  it('a window blur hides the idle pill once another frame has the focus', async () => {
+    installChrome();
+    const field = document.getElementById('field');
+    field.focus();
+    await loadInstance();
+    expect(shadow().querySelector('.vt').hidden).toBe(false);
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    window.dispatchEvent(new Event('blur'));
+    await vi.waitFor(() => expect(shadow().querySelector('.vt').hidden).toBe(true));
+    expect(document.activeElement).toBe(field);
+  });
+
   it('pagehide while recording cancels the session', async () => {
     const t = installChrome();
     const field = document.getElementById('field');
