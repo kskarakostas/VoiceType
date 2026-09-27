@@ -26,9 +26,12 @@ import { STATUS_MS } from './pill.js';
 
 /** Delay before a focus-out hides the pill, so a click that moves focus can land first. */
 export const FOCUS_OUT_MS = 200;
+/** Processing with no word from the service worker for this long: it stopped or restarted. */
+export const PROCESSING_TIMEOUT_MS = 75_000;
 
 const ORPHAN_NOTICE = 'VoiceType was updated. Reload this page.';
 const NO_REPLY = 'VoiceType could not reach its background service. Try again.';
+const NO_RESPONSE = 'No response from VoiceType. Try again.';
 const CLICK_TO_COPY = 'Could not insert. Click here to copy the text.';
 const HOLD_NOTICE = 'Return to the field to insert, or click here to copy.';
 const AUTO_STOP = Object.freeze({
@@ -66,6 +69,7 @@ export function createController(deps) {
   let statusBusy = false;
   let statusTimer = null;
   let focusTimer = null;
+  let watchdog = null;
   let orphan = false;
   let dead = false;
 
@@ -130,6 +134,26 @@ export function createController(deps) {
       if (state === 'idle') pill.setState('idle');
       settle();
     }, STATUS_MS[tone] ?? STATUS_MS.info);
+  }
+
+  /** Processing: (re)start the wait for the service worker's next word. */
+  function armWatchdog() {
+    deps.clearTimeout(watchdog);
+    watchdog = deps.setTimeout(() => {
+      watchdog = null;
+      if (inactive() || state !== 'processing') return;
+      // target stays bound, so a result that still arrives goes to the field under D12.
+      state = 'idle';
+      stopQueued = false;
+      pressStarted = false;
+      pill.setState('error');
+      notify(NO_RESPONSE, { tone: 'error' });
+    }, PROCESSING_TIMEOUT_MS);
+  }
+
+  function clearWatchdog() {
+    deps.clearTimeout(watchdog);
+    watchdog = null;
   }
 
   function clearNotice() {
@@ -210,11 +234,13 @@ export function createController(deps) {
     stopQueued = false;
     state = 'processing';
     pill.setState('processing');
+    armWatchdog();
     const reply = await send({ action: MSG.STOP_RECORDING });
     if (inactive() || state !== 'processing' || reply?.ok === true) return;
     // The service worker holds no session for this frame, so no result is coming for a stop.
     // A result that does arrive is still delivered: target stays bound until then.
     state = 'idle';
+    clearWatchdog();
     pill.setState('idle');
     if (!reply) notify(NO_REPLY, { tone: 'error' });
     else settle();
@@ -257,6 +283,7 @@ export function createController(deps) {
       state = 'processing';
       stopQueued = false;
       pill.setState('processing');
+      armWatchdog();
       const notice = Object.hasOwn(AUTO_STOP, message.reason) ? AUTO_STOP[message.reason] : null;
       if (notice) notify(notice.text, { tone: notice.tone });
       return;
@@ -265,6 +292,7 @@ export function createController(deps) {
     // A permission result only concerns a frame that is not recording again already.
     if (message.reason === 'permission' && state !== 'idle') return;
     state = 'idle';
+    clearWatchdog();
     target = null;
     stopQueued = false;
     pressStarted = false;
@@ -280,6 +308,7 @@ export function createController(deps) {
   }
 
   async function deliver(message) {
+    clearWatchdog();
     const bound = target;
     target = null;
     stopQueued = false;
@@ -427,6 +456,7 @@ export function createController(deps) {
     deps.clearTimeout(statusTimer);
     focusTimer = null;
     statusTimer = null;
+    clearWatchdog();
     state = 'idle';
     target = null;
     stopQueued = false;
@@ -446,6 +476,7 @@ export function createController(deps) {
     deps.clearTimeout(statusTimer);
     focusTimer = null;
     statusTimer = null;
+    clearWatchdog();
     unwatch?.();
     unwatch = null;
     anchorEl = null;

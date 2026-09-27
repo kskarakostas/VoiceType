@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createController, FOCUS_OUT_MS } from '../../../src/content/controller.js';
+import { createController, FOCUS_OUT_MS, PROCESSING_TIMEOUT_MS } from '../../../src/content/controller.js';
 import { isValidInput, deepActiveElement } from '../../../src/content/fields.js';
 import { MSG } from '../../../src/shared/messages.js';
 
@@ -608,6 +608,81 @@ describe('another frame or window has focus', () => {
     t.deps.hasFocus.mockReturnValue(true);
     await t.controller.onWindowFocus();
     expect(t.deps.insertText).not.toHaveBeenCalled();
+  });
+});
+
+describe('processing watchdog', () => {
+  const NO_RESPONSE = ['No response from VoiceType. Try again.', { tone: 'error', sticky: false, clickable: false }];
+  const RESULT = { action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0.012, warning: null };
+  const DONE = ['Done $0.01', { tone: 'success', sticky: false, clickable: false }];
+  const texts = (t) => t.pill.setStatus.mock.calls.map(([text]) => text);
+
+  it('returns to idle with a notice after 75 s without a reply', async () => {
+    const t = setup();
+    await recordAndStop(t);
+    expect(PROCESSING_TIMEOUT_MS).toBe(75_000);
+    vi.advanceTimersByTime(PROCESSING_TIMEOUT_MS - 1);
+    expect(t.controller.state).toBe('processing');
+    vi.advanceTimersByTime(1);
+    expect(t.controller.state).toBe('idle');
+    expect(t.pill.setState).toHaveBeenLastCalledWith('error');
+    expect(lastStatus(t.pill)).toEqual(NO_RESPONSE);
+    await t.controller.toggle();
+    expect(t.actions()).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING, MSG.START_RECORDING]);
+  });
+
+  it('an auto-stop enters processing with the watchdog, and every RECORDING_STATE re-arms it', async () => {
+    const t = setup();
+    $('a').focus();
+    await t.controller.toggle();
+    t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'processing', reason: 'silence' });
+    vi.advanceTimersByTime(70_000);
+    t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'processing' });
+    vi.advanceTimersByTime(PROCESSING_TIMEOUT_MS - 1);
+    expect(t.controller.state).toBe('processing');
+    expect(texts(t)).not.toContain(NO_RESPONSE[0]);
+    vi.advanceTimersByTime(1);
+    expect(t.controller.state).toBe('idle');
+    expect(lastStatus(t.pill)).toEqual(NO_RESPONSE);
+  });
+
+  it('a result, an idle state, teardown or the orphan notice clears it', async () => {
+    const byResult = setup();
+    await recordAndStop(byResult);
+    vi.advanceTimersByTime(70_000);
+    byResult.controller.handleMessage(RESULT);
+    await flush();
+    expect(lastStatus(byResult.pill)).toEqual(DONE);
+
+    const byIdle = setup();
+    await recordAndStop(byIdle);
+    byIdle.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'idle' });
+
+    const byTeardown = setup();
+    await recordAndStop(byTeardown);
+    byTeardown.controller.teardown();
+
+    const byOrphan = setup();
+    await recordAndStop(byOrphan);
+    byOrphan.controller.orphaned();
+
+    vi.advanceTimersByTime(PROCESSING_TIMEOUT_MS * 2);
+    for (const t of [byResult, byIdle, byTeardown, byOrphan]) {
+      expect(texts(t)).not.toContain(NO_RESPONSE[0]);
+      expect(t.pill.setState).not.toHaveBeenCalledWith('error');
+    }
+  });
+
+  it('a late result after expiry still goes into the bound field while it has focus', async () => {
+    const t = setup();
+    await recordAndStop(t);
+    vi.advanceTimersByTime(PROCESSING_TIMEOUT_MS);
+    expect(t.controller.state).toBe('idle');
+    t.controller.handleMessage(RESULT);
+    await flush();
+    expect(t.deps.insertText).toHaveBeenCalledWith($('a'), 'hello');
+    expect(t.deps.copyText).not.toHaveBeenCalled();
+    expect(lastStatus(t.pill)).toEqual(DONE);
   });
 });
 
