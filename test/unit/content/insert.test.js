@@ -70,6 +70,7 @@ function deps(overrides = {}) {
     // The copy fallback fails unless a test says otherwise, so a rejected write means no copy.
     execCopy: vi.fn(() => false),
     settle: quickSettle,
+    confirm: vi.fn(() => new Promise((resolve) => setTimeout(resolve, 0))),
     isTrusted,
     createPasteEvent: () => null,
     hostname: 'example.com',
@@ -376,6 +377,51 @@ describe('insertText in contenteditable', () => {
     expect(seen.length).toBeGreaterThan(0);
     expect(el.innerHTML).toBe('<p>Hi</p>');
     expect(d.writeClipboard).toHaveBeenCalledWith(' there');
+  });
+
+  /** A page that rewrites the editor `ms` after VoiceType's raw insert, as a re-rendering editor does. */
+  function rewriteAfterRawInsert(el, html, ms) {
+    el.addEventListener('input', () => setTimeout(() => { el.innerHTML = html; }, ms), { once: true });
+  }
+
+  it('a raw insert that the page reverts a task later ends at the clipboard', async () => {
+    const el = editable('<p>Hi</p>');
+    rewriteAfterRawInsert(el, '<p>Hi</p>', 10);
+    const d = deps({ confirm: vi.fn(() => new Promise((resolve) => setTimeout(resolve, 30))) });
+    expect(await insertText(el, ' there', d)).toBe('clipboard');
+    expect(d.confirm).toHaveBeenCalledTimes(1);
+    expect(el.innerHTML).toBe('<p>Hi</p>');
+    expect(d.writeClipboard).toHaveBeenCalledWith(' there');
+  });
+
+  it('the default confirmation window outlasts a revert a task after the read-back', async () => {
+    const el = editable('<p>Hi</p>');
+    rewriteAfterRawInsert(el, '<p>Hi</p>', 20);
+    const d = deps({ settle: undefined, confirm: undefined });
+    expect(await insertText(el, ' there', d)).toBe('clipboard');
+    expect(d.writeClipboard).toHaveBeenCalledWith(' there');
+  });
+
+  it('a raw insert the page turns into something else is unverified and copied', async () => {
+    const el = editable('<p>Hi</p>');
+    rewriteAfterRawInsert(el, '<p>Hi th</p>', 10);
+    const d = deps({ confirm: vi.fn(() => new Promise((resolve) => setTimeout(resolve, 30))) });
+    expect(await insertText(el, ' there', d)).toBe('unverified');
+    expect(d.writeClipboard).toHaveBeenCalledWith(' there');
+  });
+
+  it('a raw insert that stays through the confirmation window is inserted; other rungs skip the window', async () => {
+    const raw = editable('<p>Hi</p>');
+    const d = deps();
+    expect(await insertText(raw, ' there', d)).toBe('inserted');
+    expect(d.confirm).toHaveBeenCalledTimes(1);
+    expect(raw.innerHTML).toBe('<p>Hi there</p>');
+    expect(d.writeClipboard).not.toHaveBeenCalled();
+
+    const viaExec = editable('Hi');
+    const e = deps({ execCommand: vi.fn(editableExec) });
+    expect(await insertText(viaExec, ' there', e)).toBe('inserted');
+    expect(e.confirm).not.toHaveBeenCalled();
   });
 
   it('the caret at the end lands inside the last text node, not at the editor root', async () => {

@@ -10,6 +10,7 @@ export const CLIPBOARD_ONLY_HOSTS = new Set(['docs.google.com']);
 const FRAME_WAIT_MS = 50;
 const POLL_MS = 16;
 const SETTLE_MS = 100;
+const CONFIRM_MS = 100;
 
 /**
  * @typedef {'inserted'|'unverified'|'clipboard'|'failed'} InsertOutcome
@@ -19,6 +20,7 @@ const SETTLE_MS = 100;
  *   writeClipboard?: (text: string) => Promise<void>,
  *   execCopy?: (text: string) => boolean,
  *   settle?: (check: () => boolean) => Promise<boolean>,
+ *   confirm?: () => Promise<void>,
  *   hostname?: string,
  *   createPasteEvent?: (text: string) => Event|null,
  *   isTrusted?: (event: Event) => boolean,
@@ -157,6 +159,7 @@ function prepare(target, text, deps) {
     exec: deps.execCommand ?? ((t) => target.ownerDocument.execCommand('insertText', false, t)),
     dispatch: deps.dispatch ?? ((el, event) => el.dispatchEvent(event)),
     settle: deps.settle ?? defaultSettle,
+    confirm: deps.confirm ?? defaultConfirm,
     createPasteEvent: deps.createPasteEvent ?? createPasteEvent,
     isTrusted: deps.isTrusted ?? ((event) => event.isTrusted === true),
   };
@@ -213,7 +216,7 @@ async function editableLadder(run) {
     return true;
   }));
   // Framework editors revert foreign DOM writes one microtask later (the Lexical bug).
-  if (isEditableElement(el) && !isFrameworkEditor(el)) rungs.push(() => attempt(run, () => rawInsert(run)));
+  if (isEditableElement(el) && !isFrameworkEditor(el)) rungs.push(() => rawRung(run));
 
   for (const rung of rungs) {
     const verdict = await rung();
@@ -231,6 +234,21 @@ async function attempt(run, act) {
   run.prevented = false;
   if (act()) await run.settle(() => judge(run) === 'inserted');
   return judge(run);
+}
+
+/**
+ * The raw DOM write. Other editors can re-render a task or more later and throw a foreign write
+ * away, so a positive read-back is judged again after a confirmation window: still there is
+ * 'inserted', back to the value before is 'reverted' (the clipboard takes the text), anything
+ * else is 'ambiguous'.
+ */
+async function rawRung(run) {
+  const verdict = await attempt(run, () => rawInsert(run));
+  if (verdict !== 'inserted') return verdict;
+  await run.confirm();
+  if (judge(run) === 'inserted') return 'inserted';
+  const reverted = run.target.isConnected && normalizeForCompare(readValue(run.target)) === run.nBefore;
+  return reverted ? 'reverted' : 'ambiguous';
 }
 
 /**
@@ -430,6 +448,12 @@ async function defaultSettle(check) {
     if (check()) return true;
   }
   return false;
+}
+
+/** The raw rung's confirmation window: one animation frame raced with 50 ms, then 100 ms. */
+async function defaultConfirm() {
+  await nextFrame();
+  await new Promise((resolve) => setTimeout(resolve, CONFIRM_MS));
 }
 
 function nextMacrotask() {
