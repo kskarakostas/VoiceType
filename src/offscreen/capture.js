@@ -140,7 +140,8 @@ export function createCapture(deps) {
     session = s;
     for (const track of stream.getTracks()) track.addEventListener('ended', s.onEnded);
     // setInterval, not requestAnimationFrame: an offscreen document is never rendered.
-    if (analyser) s.levelTimer = deps.setInterval(() => tick(s), LEVEL_INTERVAL_MS);
+    // Runs even without an analyser: this heartbeat keeps the service worker alive.
+    s.levelTimer = deps.setInterval(() => tick(s), LEVEL_INTERVAL_MS);
     if (Number.isFinite(maxSec) && maxSec > 0) {
       s.maxTimer = deps.setTimeout(() => { void finish(s, 'maxTime'); }, maxSec * 1000);
     }
@@ -148,6 +149,10 @@ export function createCapture(deps) {
 
   function tick(s) {
     if (s !== session || s.finishing) return;
+    if (!s.analyser) {
+      send({ action: MSG.OFFSCREEN_LEVEL, level: 0 });
+      return;
+    }
     let value = 0;
     try { value = rms(s.analyser.read()); } catch { value = 0; }
     send({ action: MSG.OFFSCREEN_LEVEL, level: levelFromRms(value) });

@@ -241,15 +241,21 @@ describe('recording', () => {
     expect(h.of(MSG.OFFSCREEN_LEVEL)).toHaveLength(2);
   });
 
-  it('records without levels when the analyser cannot be created', async () => {
+  it('sends a level-0 heartbeat and never silence-stops when the analyser cannot be created', async () => {
     const h = setup({ createAnalyser: vi.fn(async () => { throw new Error('no audio context'); }) });
+    const heartbeat = { action: MSG.OFFSCREEN_LEVEL, level: 0 };
     await expect(h.capture.start({ maxSec: 60, silenceSec: 2 })).resolves.toEqual({ ok: true });
-    await vi.advanceTimersByTimeAsync(5000);
     expect(h.of(MSG.OFFSCREEN_LEVEL)).toEqual([]);
+    await vi.advanceTimersByTimeAsync(LEVEL_INTERVAL_MS);
+    expect(h.of(MSG.OFFSCREEN_LEVEL)).toEqual([heartbeat]);
+    await vi.advanceTimersByTimeAsync(5000 - LEVEL_INTERVAL_MS);
+    expect(h.of(MSG.OFFSCREEN_LEVEL)).toEqual(Array(5000 / LEVEL_INTERVAL_MS).fill(heartbeat));
+    expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([]);
     expect(h.capture.active).toBe(true);
     await h.capture.stop({ discard: false });
     expect(h.of(MSG.OFFSCREEN_DONE)).toHaveLength(1);
     expect(h.stream.track.stop).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
