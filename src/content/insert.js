@@ -2,7 +2,7 @@
 // because editors such as Lexical and ProseMirror commit in a microtask or later. The ladder
 // advances only when a rung provably did nothing; any other result ends at the clipboard,
 // so the text is never inserted twice.
-import { deepActiveElement, isEditableElement, isFrameworkEditor, isPasteFirstEditor } from './fields.js';
+import { isEditableElement, isFrameworkEditor, isPasteFirstEditor } from './fields.js';
 
 /** Hosts whose editors ignore synthetic input (Google Docs types into a hidden iframe). */
 export const CLIPBOARD_ONLY_HOSTS = new Set(['docs.google.com']);
@@ -52,8 +52,8 @@ export function normalizeForCompare(s) {
 
 /**
  * Copies text. Uses the Clipboard API when the page has one; plain http pages do not, and a
- * cross-origin frame without clipboard-write rejects it, so a hidden textarea and
- * `execCommand('copy')` stand in there.
+ * frame without focus or without clipboard-write rejects it, so `execCommand('copy')` stands
+ * in there. Neither path moves focus or the selection.
  * @param {string} text
  * @param {{ writeClipboard?: (text: string) => Promise<void>, execCopy?: (text: string) => boolean }} [deps]
  * @returns {Promise<boolean>}
@@ -80,31 +80,29 @@ function clipboardWriter() {
   return typeof clipboard?.writeText === 'function' ? (text) => clipboard.writeText(text) : null;
 }
 
+/**
+ * `execCommand('copy')` with the text supplied by a one-shot `copy` listener instead of a
+ * selection, so nothing is focused or selected: a frame without focus copies without pulling
+ * keyboard focus out of the page the user is typing in. Chrome runs the command only during a
+ * user gesture, such as the click on the pill.
+ * @param {string} text
+ * @returns {boolean} true only when the command ran and the listener supplied the text
+ */
 function execCopy(text) {
   const doc = globalThis.document;
-  const active = deepActiveElement(doc);
-  const selection = active && !isFormField(active) ? selectionFor(active) : null;
-  const range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
-  const area = doc.createElement('textarea');
-  area.value = text;
-  // readonly keeps the helper out of isValidInput, so the pill never moves to it.
-  area.setAttribute('readonly', '');
-  area.setAttribute('aria-hidden', 'true');
-  area.style.cssText = 'position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0;';
-  doc.documentElement.append(area);
+  let supplied = false;
+  const onCopy = (event) => {
+    // Cancelled first, so a failed setData never lets the page's selection reach the clipboard.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    event.clipboardData.setData('text/plain', text);
+    supplied = true;
+  };
+  doc.addEventListener('copy', onCopy, true);
   try {
-    area.focus({ preventScroll: true });
-    area.select();
-    return doc.execCommand('copy') === true;
+    return doc.execCommand('copy') === true && supplied;
   } finally {
-    area.remove();
-    try {
-      active?.focus?.({ preventScroll: true });
-      if (range) {
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-    } catch { /* restoring focus is best effort */ }
+    doc.removeEventListener('copy', onCopy, true);
   }
 }
 

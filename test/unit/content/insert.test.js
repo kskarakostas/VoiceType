@@ -626,6 +626,25 @@ describe('insertText with the default settle under fake timers', () => {
 });
 
 describe('copyText', () => {
+  const denied = async () => { throw new Error('Document is not focused.'); };
+
+  /**
+   * execCommand('copy') as Chrome runs it: without a user gesture it refuses and fires nothing;
+   * otherwise a cancelable copy event goes to the focused element (or the body), and the
+   * clipboard receives the event's clipboardData when the event was prevented, else the selection.
+   */
+  function chromeCopy(clipboard, { allowed = true } = {}) {
+    return vi.fn((command) => {
+      if (command !== 'copy' || !allowed) return false;
+      const data = new Map();
+      const event = new Event('copy', { bubbles: true, cancelable: true, composed: true });
+      event.clipboardData = { setData: (type, value) => data.set(type, value), getData: (type) => data.get(type) ?? '' };
+      (document.activeElement ?? document.body).dispatchEvent(event);
+      clipboard.text = event.defaultPrevented ? (data.get('text/plain') ?? '') : String(document.getSelection());
+      return true;
+    });
+  }
+
   it('uses navigator.clipboard.writeText when available', async () => {
     const writeText = vi.fn(async () => {});
     vi.stubGlobal('navigator', { clipboard: { writeText } });
@@ -645,12 +664,11 @@ describe('copyText', () => {
 
   it('a rejected clipboard write falls back to execCopy (a frame without clipboard-write)', async () => {
     const execCopy = vi.fn(() => true);
-    expect(await copyText('hi', { writeClipboard: async () => { throw new Error('denied'); }, execCopy })).toBe(true);
+    expect(await copyText('hi', { writeClipboard: denied, execCopy })).toBe(true);
     expect(execCopy).toHaveBeenCalledWith('hi');
   });
 
   it('a rejected clipboard write whose fallback also fails reports false', async () => {
-    const denied = async () => { throw new Error('denied'); };
     expect(await copyText('hi', { writeClipboard: denied, execCopy: () => false })).toBe(false);
     expect(await copyText('hi', { writeClipboard: denied, execCopy: () => { throw new Error('no copy'); } })).toBe(false);
   });
@@ -664,20 +682,73 @@ describe('copyText', () => {
     expect(execCopy).toHaveBeenCalledWith('hi');
   });
 
-  it('the default fallback copies from a hidden readonly textarea and restores focus', async () => {
-    document.body.innerHTML = '<input id="field">';
-    const field = document.getElementById('field');
-    field.focus();
-    let seen = null;
-    document.execCommand = vi.fn((command) => {
-      const helper = document.activeElement;
-      seen = { command, tag: helper.tagName, value: helper.value, readOnly: helper.readOnly, selected: [helper.selectionStart, helper.selectionEnd] };
-      return true;
+  it('the copy fallback never moves focus', async () => {
+    const el = editable('Hello world');
+    el.focus();
+    setCaret(el.firstChild, 0);
+    document.getSelection().extend(el.firstChild, 5);
+    const clipboard = {};
+    document.execCommand = chromeCopy(clipboard);
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    const added = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) added.push(...record.addedNodes);
     });
-    expect(await copyText('copied text')).toBe(true);
-    expect(seen).toEqual({ command: 'copy', tag: 'TEXTAREA', value: 'copied text', readOnly: true, selected: [0, 11] });
-    expect(document.querySelector('textarea')).toBeNull();
-    expect(document.activeElement).toBe(field);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+
+    expect(await copyText('copied text', { writeClipboard: denied })).toBe(true);
+    for (const record of observer.takeRecords()) added.push(...record.addedNodes);
+    observer.disconnect();
+
+    expect(document.execCommand).toHaveBeenCalledWith('copy');
+    expect(clipboard.text).toBe('copied text');
+    expect(document.activeElement).toBe(el);
+    const sel = document.getSelection();
+    expect([sel.anchorNode, sel.anchorOffset, sel.focusNode, sel.focusOffset]).toEqual([el.firstChild, 0, el.firstChild, 5]);
+    expect(focus).not.toHaveBeenCalled();
+    expect(added).toEqual([]);
+  });
+
+  it('the fallback copies through the copy event when the Clipboard API is missing', async () => {
+    expect(navigator.clipboard).toBeUndefined();
+    const clipboard = {};
+    document.execCommand = chromeCopy(clipboard);
+    expect(await copyText('hi')).toBe(true);
+    expect(clipboard.text).toBe('hi');
+  });
+
+  it('the fallback returns false when the copy listener never ran or execCommand refused', async () => {
+    document.execCommand = vi.fn(() => true);
+    expect(await copyText('hi', { writeClipboard: denied })).toBe(false);
+
+    document.execCommand = chromeCopy({}, { allowed: false });
+    expect(await copyText('hi', { writeClipboard: denied })).toBe(false);
+
+    const clipboard = {};
+    const copyThenRefuse = chromeCopy(clipboard);
+    document.execCommand = vi.fn((command) => {
+      copyThenRefuse(command);
+      return false;
+    });
+    expect(await copyText('hi', { writeClipboard: denied })).toBe(false);
+  });
+
+  it('the copy event reaches no page listener, and the listener is gone afterwards', async () => {
+    const page = vi.fn();
+    document.addEventListener('copy', page);
+    document.execCommand = chromeCopy({});
+    expect(await copyText('hi', { writeClipboard: denied })).toBe(true);
+    expect(page).not.toHaveBeenCalled();
+
+    document.execCommand = vi.fn(() => { throw new Error('refused'); });
+    expect(await copyText('hi', { writeClipboard: denied })).toBe(false);
+
+    // The user's own copy afterwards is untouched.
+    const later = new Event('copy', { bubbles: true, cancelable: true });
+    document.body.dispatchEvent(later);
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(later.defaultPrevented).toBe(false);
+    document.removeEventListener('copy', page);
   });
 
   it('insertText copies through the fallback when the page has no Clipboard API', async () => {
