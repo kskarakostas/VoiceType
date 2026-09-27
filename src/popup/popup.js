@@ -9,7 +9,8 @@ import {
   SPOKEN_LANGUAGES, MAX_KEYWORDS, parseKeywords, formatKeywords, toggleLanguage, createInlineConfirm,
 } from './form.js';
 
-// Typing pauses this long before a key or the vocabulary saves; blur and change save at once.
+// Typing pauses this long before a key, the vocabulary or a mode saves; blur, change, Esc and
+// the page being hidden or unloaded save at once.
 const TYPING_SAVE_MS = 800;
 const LOAD_ERROR = 'Could not load settings. Close and reopen the popup.';
 const NOT_LOADED = 'Settings are not loaded. Nothing was saved.';
@@ -84,9 +85,9 @@ export async function initPopup({ chrome, document, window }) {
   let editing = null;
   let hotkeyArmed = false;
   let toastTimer;
-  let keywordTimer;
-  let modeTimer;
-  const keyTimers = {};
+  const keySaves = Object.fromEntries(providerIds.map((id) => [id, typingSave(() => saveKey(id))]));
+  const keywordSave = typingSave(saveKeywords);
+  const modeSave = typingSave(saveModeEdits);
   /** Mode list rows by mode key, reused across renders. */
   const modeRows = new Map();
 
@@ -104,6 +105,37 @@ export async function initPopup({ chrome, document, window }) {
     el.toast.hidden = false;
     clearTimer(toastTimer);
     toastTimer = setTimer(() => { el.toast.hidden = true; }, tone === 'error' ? 6000 : 2500);
+  }
+
+  /**
+   * A save that waits for a pause in typing. `flush` runs it at once, but only while it waits,
+   * and returns the save's promise.
+   * @param {() => unknown} save
+   */
+  function typingSave(save) {
+    let timer = null;
+    const cancel = () => {
+      clearTimer(timer);
+      timer = null;
+    };
+    return {
+      get pending() {
+        return timer !== null;
+      },
+      schedule() {
+        cancel();
+        timer = setTimer(() => {
+          timer = null;
+          save();
+        }, TYPING_SAVE_MS);
+      },
+      cancel,
+      flush() {
+        if (timer === null) return undefined;
+        cancel();
+        return save();
+      },
+    };
   }
 
   /**
@@ -288,7 +320,7 @@ export async function initPopup({ chrome, document, window }) {
   // Provider and keys.
 
   async function saveKey(id) {
-    clearTimer(keyTimers[id]);
+    keySaves[id].cancel();
     const value = el.keyInput[id].value.trim();
     if (!value || value === settings.keys[id]) {
       renderProvider();
@@ -321,15 +353,12 @@ export async function initPopup({ chrome, document, window }) {
 
   for (const id of providerIds) {
     const input = el.keyInput[id];
-    input.addEventListener('input', () => {
-      clearTimer(keyTimers[id]);
-      keyTimers[id] = setTimer(() => saveKey(id), TYPING_SAVE_MS);
-    });
+    input.addEventListener('input', () => keySaves[id].schedule());
     input.addEventListener('change', () => saveKey(id));
     input.addEventListener('blur', () => saveKey(id));
     el.testKey[id].addEventListener('click', () => testKey(id));
     el.clearKey[id].addEventListener('click', () => {
-      clearTimer(keyTimers[id]);
+      keySaves[id].cancel();
       input.value = '';
       commit((s) => { s.keys[id] = ''; }, 'Key cleared');
     });
@@ -406,7 +435,7 @@ export async function initPopup({ chrome, document, window }) {
   }
 
   async function saveKeywords() {
-    clearTimer(keywordTimer);
+    keywordSave.cancel();
     const next = parseKeywords(el.keywords.value);
     if (sameList(next, settings.keywords)) {
       renderSpeech();
@@ -415,10 +444,7 @@ export async function initPopup({ chrome, document, window }) {
     await commit((s) => { s.keywords = next; });
   }
 
-  el.keywords.addEventListener('input', () => {
-    clearTimer(keywordTimer);
-    keywordTimer = setTimer(saveKeywords, TYPING_SAVE_MS);
-  });
+  el.keywords.addEventListener('input', () => keywordSave.schedule());
   el.keywords.addEventListener('change', saveKeywords);
   el.keywords.addEventListener('blur', saveKeywords);
 
@@ -446,7 +472,7 @@ export async function initPopup({ chrome, document, window }) {
   }
 
   async function saveModeEdits() {
-    clearTimer(modeTimer);
+    modeSave.cancel();
     const key = editing?.key;
     const mode = key ? settings.modes[key] : null;
     if (!mode) return;
@@ -511,9 +537,7 @@ export async function initPopup({ chrome, document, window }) {
   el.deleteMode.addEventListener('click', deleteEditingMode);
   for (const field of [el.modeName, el.modeIcon, el.modePrompt]) {
     field.addEventListener('input', () => {
-      if (!editing?.key) return;
-      clearTimer(modeTimer);
-      modeTimer = setTimer(saveModeEdits, TYPING_SAVE_MS);
+      if (editing?.key) modeSave.schedule();
     });
     field.addEventListener('change', saveModeEdits);
     field.addEventListener('blur', saveModeEdits);
@@ -577,6 +601,28 @@ export async function initPopup({ chrome, document, window }) {
         Object.assign(s, freshSettings(), kept);
       }, 'Settings reset');
     },
+  });
+
+  // Closing. Chrome drops the extension messages a closing popup sends (from pagehide,
+  // visibilitychange and blur alike), so Esc with a typing save still waiting keeps the popup
+  // open until the saves are sent, then closes it. The pagehide and visibilitychange flush is
+  // a best effort that works for the popup opened as a tab.
+
+  const typingSaves = () => [...providerIds.map((id) => keySaves[id]), keywordSave, modeSave];
+
+  function flushTypingSaves() {
+    return Promise.all(typingSaves().map((save) => save.flush()));
+  }
+
+  document.addEventListener('keydown', async (event) => {
+    if (event.key !== 'Escape' || event.defaultPrevented || !typingSaves().some((save) => save.pending)) return;
+    event.preventDefault();
+    await flushTypingSaves();
+    window.close();
+  });
+  window.addEventListener('pagehide', flushTypingSaves);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushTypingSaves();
   });
 
   // Load.

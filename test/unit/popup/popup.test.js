@@ -710,6 +710,132 @@ describe('popup modes', () => {
   });
 });
 
+describe('popup close', () => {
+  const escape = (target) => keydown(target, { key: 'Escape', code: 'Escape' });
+  const pagehide = () => window.dispatchEvent(new Event('pagehide'));
+  let close;
+
+  beforeEach(() => {
+    // Every popup this file starts shares window and document: flush any save an earlier
+    // test left waiting, so no earlier popup reacts to the Esc dispatched here.
+    pagehide();
+    close = vi.spyOn(window, 'close').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    close.mockRestore();
+  });
+
+  /**
+   * Esc 300 ms after typing into `field`: prevented, one SAVE_SETTINGS at once, and
+   * window.close() only once that save has resolved. Returns the saved settings.
+   */
+  async function escapeSaves(chrome, field) {
+    let resolveSave;
+    chrome.script(MSG.SAVE_SETTINGS, new Promise((resolve) => { resolveSave = resolve; }));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(chrome.saves()).toHaveLength(0);
+    expect(escape(field).defaultPrevented).toBe(true);
+    expect(chrome.saves()).toHaveLength(1);
+    await flush();
+    expect(close).not.toHaveBeenCalled();
+    resolveSave({ success: true });
+    await flush();
+    expect(close).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(chrome.saves()).toHaveLength(1);
+    return chrome.saves()[0];
+  }
+
+  it('Esc within 800 ms of pasting a key saves it, then closes the popup', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome(storedSettings({ openai: '' }));
+    await start(chrome);
+    const input = $('key-openai');
+    input.focus();
+    typeInto(input, 'sk-proj-pasted-4321');
+    expect((await escapeSaves(chrome, input)).keys.openai).toBe('sk-proj-pasted-4321');
+  });
+
+  it('Esc within 800 ms of typing vocabulary saves it, then closes the popup', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome();
+    await start(chrome);
+    const area = $('keywords');
+    area.focus();
+    typeInto(area, 'Palowise\nCommetric');
+    expect((await escapeSaves(chrome, area)).keywords).toEqual(['Palowise', 'Commetric']);
+  });
+
+  it('Esc within 800 ms of typing a mode prompt saves it, then closes the popup', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome();
+    await start(chrome);
+    document.querySelector('[data-focus-key="edit:email"]').click();
+    const prompt = $('mode-prompt');
+    prompt.focus();
+    typeInto(prompt, 'Short email.');
+    expect((await escapeSaves(chrome, prompt)).modes.email.prompt).toBe('Short email.');
+  });
+
+  it('Esc with nothing waiting is not prevented and does not close the popup', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome();
+    await start(chrome);
+    const input = $('key-openai');
+    input.focus();
+    expect(escape(input).defaultPrevented).toBe(false);
+    typeInto(input, 'sk-proj-typed-5678');
+    await vi.advanceTimersByTimeAsync(800);
+    expect(chrome.saves()).toHaveLength(1);
+    expect(escape(input).defaultPrevented).toBe(false);
+    await flush();
+    expect(close).not.toHaveBeenCalled();
+    expect(chrome.saves()).toHaveLength(1);
+  });
+
+  it('pagehide within 800 ms of pasting a key saves it', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome(storedSettings({ openai: '' }));
+    await start(chrome);
+    const input = $('key-openai');
+    input.focus();
+    typeInto(input, 'sk-proj-pasted-4321');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(chrome.saves()).toHaveLength(0);
+    pagehide();
+    expect(chrome.saves()).toHaveLength(1);
+    expect(chrome.saves()[0].keys.openai).toBe('sk-proj-pasted-4321');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(chrome.saves()).toHaveLength(1);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('hiding the page saves pending typing once, and pagehide after it sends nothing more', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome(storedSettings({ openai: '' }));
+    await start(chrome);
+    pagehide();
+    expect(chrome.saves()).toHaveLength(0);
+    const input = $('key-openai');
+    input.focus();
+    typeInto(input, 'sk-proj-pasted-4321');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(chrome.saves()).toHaveLength(0);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(chrome.saves()).toHaveLength(1);
+      pagehide();
+      await vi.advanceTimersByTimeAsync(1000);
+    } finally {
+      delete document.visibilityState;
+    }
+    expect(document.visibilityState).toBe('visible');
+    expect(chrome.saves()).toHaveLength(1);
+    expect(chrome.saves()[0].keys.openai).toBe('sk-proj-pasted-4321');
+  });
+});
+
 describe('popup stylesheet and markup', () => {
   function tokens(block) {
     return Object.fromEntries([...block.matchAll(/--([\w-]+):\s*(#[0-9a-fA-F]{6})\s*;/g)].map((m) => [m[1], m[2]]));
