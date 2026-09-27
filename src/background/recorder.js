@@ -14,6 +14,8 @@ const FAILED_NOTICE = Object.freeze({ text: 'Recording failed. Try again.', tone
 /**
  * @typedef {{ tabId: number, frameId: number }} Endpoint
  * @typedef {{ endpoint: Endpoint, state: 'starting'|'recording'|'processing', modeKey: string, minSec: number }} Session
+ * Internally a session also holds the id of its offscreen capture: reports that name any other
+ * capture are stale (a cancelled recording finishing late) and are dropped.
  * @typedef {import('../shared/messages.js').StartResponse} StartResponse
  */
 
@@ -28,7 +30,7 @@ const FAILED_NOTICE = Object.freeze({ text: 'Recording failed. Try again.', tone
  * }} deps
  */
 export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermissionPage, getSettings, dictate }) {
-  /** @type {null | (Session & { stopRequested: boolean, starting: Promise<StartResponse>|null })} */
+  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null })} */
   let session = null;
   /** @type {Endpoint|null} */
   let pendingPermission = null;
@@ -36,11 +38,13 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   const fail = (reason, error) => ({ ok: false, reason, error });
   const owns = (endpoint) => session !== null
     && session.endpoint.tabId === endpoint.tabId && session.endpoint.frameId === endpoint.frameId;
+  /** The current session, when this offscreen report came from its capture. */
+  const reporter = (captureId) => (session !== null && captureId === session.captureId ? session : null);
 
-  /** Stop the capture without a result. The microphone is released; errors are irrelevant here. */
-  async function discard() {
+  /** Stop a capture without a result. The microphone is released; errors are irrelevant here. */
+  async function discard(captureId) {
     try {
-      await toOffscreen({ action: MSG.OFFSCREEN_STOP, discard: true });
+      await toOffscreen({ action: MSG.OFFSCREEN_STOP, discard: true, captureId });
     } catch {
       // No offscreen document means no capture to stop.
     }
@@ -53,7 +57,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   async function drop(s) {
     if (session !== s) return;
     session = null;
-    await discard();
+    await discard(s.captureId);
   }
 
   /** Free the session and tell its frame that the recording failed. */
@@ -67,7 +71,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   async function finish(s) {
     s.state = 'processing';
     try {
-      await toOffscreen({ action: MSG.OFFSCREEN_STOP, discard: false });
+      await toOffscreen({ action: MSG.OFFSCREEN_STOP, discard: false, captureId: s.captureId });
     } catch {
       // The offscreen document is gone, so no audio will ever arrive.
       await failSession(s);
@@ -99,14 +103,20 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     try {
       await ensureOffscreen();
       if (session === s) {
-        reply = await toOffscreen({ action: MSG.OFFSCREEN_START, maxSec: settings.maxRecordingTime, silenceSec: settings.autoStopSilenceSec });
+        reply = await toOffscreen({
+          action: MSG.OFFSCREEN_START, maxSec: settings.maxRecordingTime, silenceSec: settings.autoStopSilenceSec, captureId: s.captureId,
+        });
       }
     } catch {
       reply = null;
     }
-    // Freed while starting (CANCEL, tab closed): drop() already stopped the capture, and this late
-    // reply must not touch a newer session, open the permission page or send anything.
-    if (session !== s) return fail('micError', CANCELLED);
+    // Freed while starting (CANCEL, tab closed). This late reply must not touch a newer session or
+    // open the permission page. drop() may have reached the offscreen document before the capture
+    // came up, so a capture that did come up is stopped by its id: nothing keeps the microphone.
+    if (session !== s) {
+      if (reply?.ok) await discard(s.captureId);
+      return fail('micError', CANCELLED);
+    }
     if (reply?.ok) {
       s.state = 'recording';
       if (s.stopRequested) await finish(s);
@@ -138,7 +148,10 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
         return session.state === 'recording' ? { ok: true } : session.starting;
       }
       // Reserve synchronously so a start from another frame during the awaits below is busy.
-      const s = { endpoint: { ...endpoint }, state: 'starting', modeKey: 'default', minSec: 0, stopRequested: false, starting: null };
+      const s = {
+        endpoint: { ...endpoint }, state: 'starting', modeKey: 'default', minSec: 0,
+        captureId: crypto.randomUUID(), stopRequested: false, starting: null,
+      };
       session = s;
       s.starting = begin(s);
       return s.starting;
@@ -166,9 +179,12 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       return { ok: true };
     },
 
-    /** @param {number} level */
-    onLevel(level) {
-      const s = session;
+    /**
+     * @param {number} level
+     * @param {string} captureId
+     */
+    onLevel(level, captureId) {
+      const s = reporter(captureId);
       if (!s || s.state !== 'recording') return;
       toTab(s.endpoint, { action: MSG.AUDIO_LEVEL, level }).then((delivered) => {
         // No receiver: the frame navigated or closed, so nobody is left to stop this recording.
@@ -178,7 +194,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
 
     /** @param {import('../shared/messages.js').OffscreenDone} payload */
     async onDone(payload) {
-      const s = session;
+      const s = reporter(payload?.captureId);
       if (!s) return;
       if (payload?.reason !== 'user') {
         s.state = 'processing';
@@ -203,9 +219,10 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       await toTab(s.endpoint, { action: MSG.DICTATION_RESULT, ...message });
     },
 
-    /** @param {{ error?: string }} _payload */
-    async onOffscreenError(_payload) {
-      if (session) await failSession(session);
+    /** @param {{ error?: string, captureId?: string }} payload */
+    async onOffscreenError(payload) {
+      const s = reporter(payload?.captureId);
+      if (s) await failSession(s);
     },
 
     /** @param {{ granted: boolean }} payload */

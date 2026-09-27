@@ -75,11 +75,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Content scripts broadcast to every extension context; only the service worker drives capture.
   if (sender.tab) return false;
   if (message?.action === MSG.OFFSCREEN_START) {
-    capture.start({ maxSec: Number(message.maxSec), silenceSec: Number(message.silenceSec) || 0 }).then(sendResponse);
+    capture.start({ maxSec: Number(message.maxSec), silenceSec: Number(message.silenceSec) || 0, captureId: message.captureId }).then(sendResponse);
     return true;
   }
   if (message?.action === MSG.OFFSCREEN_STOP) {
-    capture.stop({ discard: message.discard === true }).then(sendResponse);
+    capture.stop({ discard: message.discard === true, captureId: message.captureId }).then(sendResponse);
     return true;
   }
   return false;

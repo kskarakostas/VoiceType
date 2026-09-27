@@ -11,9 +11,9 @@ import { ProviderError, redact } from './providers/errors.js';
  *   start: (endpoint: Endpoint) => Promise<import('../shared/messages.js').StartResponse>,
  *   stop: (endpoint: Endpoint) => Promise<{ ok: boolean }>,
  *   cancel: (endpoint: Endpoint) => Promise<{ ok: boolean }>,
- *   onLevel: (level: number) => void,
+ *   onLevel: (level: number, captureId: string) => void,
  *   onDone: (payload: import('../shared/messages.js').OffscreenDone) => Promise<void>,
- *   onOffscreenError: (payload: { error: string }) => Promise<void>,
+ *   onOffscreenError: (payload: import('../shared/messages.js').OffscreenError) => Promise<void>,
  *   onPermissionResult: (payload: { granted: boolean }) => Promise<void>,
  * }} RecorderPort
  */
@@ -192,17 +192,17 @@ export function createRouter({ storage, validateKey, summarize, recorder, identi
         return recorder.cancel(endpointOf(sender));
 
       case MSG.OFFSCREEN_LEVEL:
-        recorder.onLevel(Number(request.level));
+        recorder.onLevel(Number(request.level), request.captureId);
         return { ok: true };
 
       case MSG.OFFSCREEN_DONE: {
-        const { audioBase64, mimeType, durationSec, reason } = request;
-        await recorder.onDone({ audioBase64, mimeType, durationSec, reason });
+        const { audioBase64, mimeType, durationSec, reason, captureId } = request;
+        await recorder.onDone({ audioBase64, mimeType, durationSec, reason, captureId });
         return { ok: true };
       }
 
       case MSG.OFFSCREEN_ERROR:
-        await recorder.onOffscreenError({ error: request.error });
+        await recorder.onOffscreenError({ error: request.error, captureId: request.captureId });
         return { ok: true };
 
       case MSG.PERMISSION_RESULT:

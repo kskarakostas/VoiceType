@@ -139,16 +139,17 @@ describe('recording wiring', () => {
     expect(fake.chrome.offscreen.createDocument).toHaveBeenCalledWith(expect.objectContaining({
       url: 'chrome-extension://abc/offscreen.html', reasons: ['USER_MEDIA'],
     }));
-    expect(fake.chrome.runtime.sendMessage).toHaveBeenCalledWith({ action: MSG.OFFSCREEN_START, maxSec: 120, silenceSec: 0 });
+    expect(fake.chrome.runtime.sendMessage).toHaveBeenCalledWith({ action: MSG.OFFSCREEN_START, maxSec: 120, silenceSec: 0, captureId: expect.any(String) });
     expect(JSON.stringify(fake.chrome.runtime.sendMessage.mock.calls)).not.toContain('sk-secret');
-    expect(await send(fake.listeners, { action: MSG.OFFSCREEN_LEVEL, level: 0.5 }, OFFSCREEN)).toEqual({ ok: true });
+    const [{ captureId }] = fake.chrome.runtime.sendMessage.mock.calls.map(([m]) => m).filter((m) => m.action === MSG.OFFSCREEN_START);
+    expect(await send(fake.listeners, { action: MSG.OFFSCREEN_LEVEL, level: 0.5, captureId }, OFFSCREEN)).toEqual({ ok: true });
     await vi.waitFor(() => expect(fake.chrome.tabs.sendMessage).toHaveBeenCalledWith(1, { action: MSG.AUDIO_LEVEL, level: 0.5 }, { frameId: 0 }));
   });
 
   it('a removed tab frees its recording for the next tab', async () => {
     await send(fake.listeners, { action: MSG.START_RECORDING }, PAGE);
     await fake.listeners.tabRemoved(1);
-    await vi.waitFor(() => expect(fake.chrome.runtime.sendMessage).toHaveBeenCalledWith({ action: MSG.OFFSCREEN_STOP, discard: true }));
+    await vi.waitFor(() => expect(fake.chrome.runtime.sendMessage).toHaveBeenCalledWith({ action: MSG.OFFSCREEN_STOP, discard: true, captureId: expect.any(String) }));
     expect(await send(fake.listeners, { action: MSG.START_RECORDING }, OTHER_PAGE)).toEqual({ ok: true });
   });
 

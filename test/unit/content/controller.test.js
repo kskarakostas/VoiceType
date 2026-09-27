@@ -318,6 +318,30 @@ describe('service worker messages', () => {
     expect(t.pill.setStatus.mock.calls).toHaveLength(calls);
   });
 
+  it('ignores a result, and a processing notice while starting, from an earlier recording', async () => {
+    const start = deferred();
+    const t = setup({ replies: { [MSG.START_RECORDING]: () => start.promise } });
+    const stale = { action: MSG.DICTATION_RESULT, success: true, text: 'stale', raw: 'stale', cost: 0, warning: null };
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    const pending = t.controller.toggle();
+    expect(t.controller.state).toBe('starting');
+    t.controller.handleMessage(stale);
+    t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'processing', reason: 'silence' });
+    await flush();
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('starting');
+    start.resolve({ ok: true });
+    await pending;
+    expect(t.controller.state).toBe('recording');
+    t.controller.handleMessage(stale);
+    await flush();
+    expect(t.deps.insertText).not.toHaveBeenCalled();
+    expect(t.deps.copyText).not.toHaveBeenCalled();
+    expect(t.pill.setStatus).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('recording');
+  });
+
   it('passes AUDIO_LEVEL to the pill only while recording', async () => {
     const t = setup();
     t.controller.handleMessage({ action: MSG.AUDIO_LEVEL, level: 0.4 });

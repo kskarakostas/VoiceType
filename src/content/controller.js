@@ -378,9 +378,14 @@ export function createController(deps) {
         if (state === 'recording') pill.setLevel(Number(m.level));
         break;
       case MSG.RECORDING_STATE:
+        // An auto-stop turns this frame's recording into processing, but no report of a
+        // recording that has not started yet can be current: it belongs to an earlier one.
+        if (m.state === 'processing' && state === 'starting') break;
         onRecordingState(m);
         break;
       case MSG.DICTATION_RESULT:
+        // A new recording is starting or running here, so this result belongs to an earlier one.
+        if (state === 'starting' || state === 'recording') break;
         deliver(m);
         break;
       default:

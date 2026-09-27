@@ -1,5 +1,6 @@
 // Message action names shared by background, offscreen, content and popup.
 // Every message is { action: MSG.X, ...payload }; the plan's Message contract lists who sends what.
+// For the offscreen messages the typedefs below are the contract and supersede the plan's table.
 export const MSG = Object.freeze({
   GET_SETTINGS: 'getSettings',
   SAVE_SETTINGS: 'saveSettings',
@@ -30,5 +31,11 @@ export const MSG = Object.freeze({
  * @typedef {{ success: true, text: string, raw: string, cost: number, warning: string|null }
  *   | { success: false, error: string, tone: 'warning'|'error' }} DictationMessage
  * @typedef {{ ok: true } | { ok: false, reason: 'needsPermission'|'denied'|'micError', error: string }} OffscreenStartResponse
- * @typedef {{ audioBase64: string, mimeType: string, durationSec: number, reason: 'user'|'maxTime'|'silence'|'ended' }} OffscreenDone
+ * Offscreen messages carry the service worker's id for one capture: a stop names the capture it
+ * stops, and every report names the capture it came from, so a late report never reaches a newer session.
+ * @typedef {{ maxSec: number, silenceSec: number, captureId: string }} OffscreenStart
+ * @typedef {{ discard: boolean, captureId: string }} OffscreenStop
+ * @typedef {{ level: number, captureId: string }} OffscreenLevel
+ * @typedef {{ audioBase64: string, mimeType: string, durationSec: number, reason: 'user'|'maxTime'|'silence'|'ended', captureId: string }} OffscreenDone
+ * @typedef {{ error: string, captureId: string }} OffscreenError
  */

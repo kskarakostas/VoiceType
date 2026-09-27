@@ -58,23 +58,28 @@ async function closeAnalyser(analyser) {
 
 /**
  * One recording at a time: permission check, MediaRecorder, levels, max time, silence stop.
+ * Every report carries the service worker's capture id, so a late report never reaches a newer
+ * session, and the capture stays busy until its report is sent.
  * @param {CaptureDeps} deps
  */
 export function createCapture(deps) {
   const { send, now } = deps;
   let starting = false;
   let cancelStart = false;
+  /** @type {string|undefined} */
+  let startingId;
   /** @type {any} */
   let session = null;
 
   /**
-   * @param {{ maxSec: number, silenceSec: number }} options
+   * @param {import('../shared/messages.js').OffscreenStart} options
    * @returns {Promise<import('../shared/messages.js').OffscreenStartResponse>}
    */
-  async function start({ maxSec, silenceSec } = {}) {
+  async function start({ maxSec, silenceSec, captureId } = {}) {
     if (starting || session) return failure('micError', 'Already recording.');
     starting = true;
     cancelStart = false;
+    startingId = captureId;
     let stream = null;
     let analyser = null;
     try {
@@ -95,7 +100,7 @@ export function createCapture(deps) {
         await closeAnalyser(analyser);
         return failure('micError', 'Recording cancelled.');
       }
-      begin(stream, analyser, { maxSec, silenceSec });
+      begin(stream, analyser, { maxSec, silenceSec, captureId });
       return { ok: true };
     } catch {
       stopTracks(stream);
@@ -106,9 +111,10 @@ export function createCapture(deps) {
     }
   }
 
-  function begin(stream, analyser, { maxSec, silenceSec }) {
+  function begin(stream, analyser, { maxSec, silenceSec, captureId }) {
     const recorder = deps.createMediaRecorder(stream, { mimeType: RECORDING_MIME, audioBitsPerSecond: AUDIO_BITS_PER_SECOND });
     const s = {
+      captureId,
       stream,
       analyser,
       recorder,
@@ -150,12 +156,12 @@ export function createCapture(deps) {
   function tick(s) {
     if (s !== session || s.finishing) return;
     if (!s.analyser) {
-      send({ action: MSG.OFFSCREEN_LEVEL, level: 0 });
+      send({ action: MSG.OFFSCREEN_LEVEL, level: 0, captureId: s.captureId });
       return;
     }
     let value = 0;
     try { value = rms(s.analyser.read()); } catch { value = 0; }
-    send({ action: MSG.OFFSCREEN_LEVEL, level: levelFromRms(value) });
+    send({ action: MSG.OFFSCREEN_LEVEL, level: levelFromRms(value), captureId: s.captureId });
     if (s.detector.push(value)) void finish(s, 'silence');
   }
 
@@ -172,7 +178,8 @@ export function createCapture(deps) {
   }
 
   /**
-   * Stop timers, the recorder, the tracks and the analyser, then report. Idempotent.
+   * Stop timers, the recorder, the tracks and the analyser, then report. Idempotent. The capture
+   * stays busy until the report is sent (or the discard is done), so a new start cannot overlap it.
    * @param {any} s
    * @param {FinishReason|null} reason null after a recorder error (the report is an error)
    * @param {boolean} [discard]
@@ -194,33 +201,37 @@ export function createCapture(deps) {
       await Promise.race([s.stopped, new Promise((resolve) => { timer = deps.setTimeout(resolve, STOP_TIMEOUT_MS); })]);
       deps.clearTimeout(timer);
       await closeAnalyser(s.analyser);
-      if (session === s) session = null;
       if (s.discard) return;
+      const { captureId } = s;
       if (s.errored || s.chunks.length === 0) {
-        send({ action: MSG.OFFSCREEN_ERROR, error: FAILED });
+        send({ action: MSG.OFFSCREEN_ERROR, error: FAILED, captureId });
         return;
       }
       try {
         const buffer = await new Blob(s.chunks, { type: 'audio/webm' }).arrayBuffer();
-        send({ action: MSG.OFFSCREEN_DONE, audioBase64: bytesToBase64(new Uint8Array(buffer)), mimeType: 'audio/webm', durationSec, reason });
+        send({ action: MSG.OFFSCREEN_DONE, audioBase64: bytesToBase64(new Uint8Array(buffer)), mimeType: 'audio/webm', durationSec, reason, captureId });
       } catch {
-        send({ action: MSG.OFFSCREEN_ERROR, error: FAILED });
+        send({ action: MSG.OFFSCREEN_ERROR, error: FAILED, captureId });
       }
-    })();
+    })().finally(() => {
+      if (session === s) session = null;
+    });
     return s.finishing;
   }
 
   /**
-   * @param {{ discard?: boolean }} [options]
+   * Stops the capture the service worker names; a stop for any other capture changes nothing.
+   * @param {{ discard?: boolean, captureId?: string }} [options]
    * @returns {Promise<{ ok: boolean }>}
    */
-  async function stop({ discard = false } = {}) {
+  async function stop({ discard = false, captureId } = {}) {
     if (starting) {
+      if (captureId !== startingId) return { ok: false };
       // The service worker cancelled while the microphone was still opening.
       cancelStart = true;
       return { ok: true };
     }
-    if (!session) return { ok: false };
+    if (!session || session.captureId !== captureId) return { ok: false };
     await finish(session, 'user', discard === true);
     return { ok: true };
   }

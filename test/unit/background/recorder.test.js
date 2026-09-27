@@ -11,8 +11,8 @@ const BUSY = { ok: false, reason: 'busy', error: 'VoiceType is busy in another t
 const NEEDS_PERMISSION = { ok: false, reason: 'needsPermission', error: 'Allow the microphone in the VoiceType tab that just opened, then press REC again.' };
 const DENIED = { ok: false, reason: 'denied', error: 'Microphone blocked for VoiceType. Allow it at chrome://settings/content/microphone.' };
 const DICTATION = { success: true, text: 'final', raw: 'raw', cost: 0.001, warning: null };
-const STOP = { action: MSG.OFFSCREEN_STOP, discard: false };
-const DISCARD = { action: MSG.OFFSCREEN_STOP, discard: true };
+const stopOf = (captureId) => ({ action: MSG.OFFSCREEN_STOP, discard: false, captureId });
+const discardOf = (captureId) => ({ action: MSG.OFFSCREEN_STOP, discard: true, captureId });
 const done = (over = {}) => ({ audioBase64: 'QUJD', mimeType: 'audio/webm', durationSec: 4.2, reason: 'user', ...over });
 
 function deferred() {
@@ -41,7 +41,10 @@ function setup({ startReply = { ok: true }, settings: patch = {} } = {}) {
   const recorder = createRecorder(deps);
   const offscreenMessages = () => deps.toOffscreen.mock.calls.map(([message]) => message);
   const tabMessages = () => deps.toTab.mock.calls.map(([endpoint, message]) => ({ endpoint, ...message }));
-  return { deps, recorder, settings, offscreenMessages, tabMessages };
+  /** Capture ids of the offscreen starts so far; id() is the latest. */
+  const ids = () => offscreenMessages().filter((m) => m.action === MSG.OFFSCREEN_START).map((m) => m.captureId);
+  const id = () => ids().at(-1);
+  return { deps, recorder, settings, offscreenMessages, tabMessages, ids, id };
 }
 
 describe('start', () => {
@@ -49,8 +52,20 @@ describe('start', () => {
     const { deps, recorder } = setup();
     expect(await recorder.start(A)).toEqual({ ok: true });
     expect(deps.ensureOffscreen.mock.invocationCallOrder[0]).toBeLessThan(deps.toOffscreen.mock.invocationCallOrder[0]);
-    expect(deps.toOffscreen).toHaveBeenCalledWith({ action: MSG.OFFSCREEN_START, maxSec: 120, silenceSec: 3 });
+    expect(deps.toOffscreen).toHaveBeenCalledWith({ action: MSG.OFFSCREEN_START, maxSec: 120, silenceSec: 3, captureId: expect.any(String) });
     expect(recorder.session).toEqual({ endpoint: A, state: 'recording', modeKey: 'email', minSec: 1 });
+  });
+
+  it('gives every session its own capture id', async () => {
+    const { recorder, ids } = setup();
+    await recorder.start(A);
+    await recorder.cancel(A);
+    await recorder.start(B);
+    const [first, second] = ids();
+    expect(first).toEqual(expect.any(String));
+    expect(first).not.toBe('');
+    expect(second).toEqual(expect.any(String));
+    expect(second).not.toBe(first);
   });
 
   it('busy from another endpoint', async () => {
@@ -148,26 +163,26 @@ describe('start', () => {
 
   it('stop while starting stops as soon as the capture is up', async () => {
     const pending = deferred();
-    const { recorder, offscreenMessages } = setup({ startReply: () => pending.promise });
+    const { recorder, offscreenMessages, id } = setup({ startReply: () => pending.promise });
     const started = recorder.start(A);
     await vi.waitFor(() => expect(offscreenMessages()).toHaveLength(1));
     expect(await recorder.stop(A)).toEqual({ ok: true });
     expect(recorder.session.state).toBe('starting');
     pending.resolve({ ok: true });
     expect(await started).toEqual({ ok: true });
-    expect(offscreenMessages()).toContainEqual(STOP);
+    expect(offscreenMessages()).toContainEqual(stopOf(id()));
     expect(recorder.session.state).toBe('processing');
   });
 
   it('cancel while starting ignores the late start response', async () => {
     const replies = [deferred(), deferred()];
     let calls = 0;
-    const { deps, recorder, offscreenMessages } = setup({ startReply: () => replies[calls++].promise });
+    const { deps, recorder, offscreenMessages, ids } = setup({ startReply: () => replies[calls++].promise });
     const startedA = recorder.start(A);
     await vi.waitFor(() => expect(offscreenMessages()).toHaveLength(1));
     expect(await recorder.cancel(A)).toEqual({ ok: true });
     expect(recorder.session).toBeNull();
-    expect(offscreenMessages()).toEqual([expect.objectContaining({ action: MSG.OFFSCREEN_START }), DISCARD]);
+    expect(offscreenMessages()).toEqual([expect.objectContaining({ action: MSG.OFFSCREEN_START }), discardOf(ids()[0])]);
     const startedB = recorder.start(B);
     await vi.waitFor(() => expect(offscreenMessages()).toHaveLength(3));
     replies[1].resolve({ ok: true });
@@ -188,16 +203,16 @@ describe('start', () => {
     expect(await recorder.cancel(A)).toEqual({ ok: true });
     pending.resolve();
     expect(await started).toEqual({ ok: false, reason: 'micError', error: 'Recording cancelled.' });
-    expect(offscreenMessages()).toEqual([DISCARD]);
+    expect(offscreenMessages()).toEqual([discardOf(expect.any(String))]);
   });
 });
 
 describe('stop and cancel', () => {
   it('stop sends the offscreen stop and moves to processing', async () => {
-    const { recorder, offscreenMessages } = setup();
+    const { recorder, offscreenMessages, id } = setup();
     await recorder.start(A);
     expect(await recorder.stop(A)).toEqual({ ok: true });
-    expect(offscreenMessages()).toContainEqual(STOP);
+    expect(offscreenMessages()).toContainEqual(stopOf(id()));
     expect(recorder.session.state).toBe('processing');
     expect(await recorder.stop(A)).toEqual({ ok: true });
     expect(offscreenMessages().filter((m) => m.action === MSG.OFFSCREEN_STOP)).toHaveLength(1);
@@ -214,10 +229,10 @@ describe('stop and cancel', () => {
   });
 
   it('cancel discards the capture and frees the session', async () => {
-    const { deps, recorder, offscreenMessages } = setup();
+    const { deps, recorder, offscreenMessages, id } = setup();
     await recorder.start(A);
     expect(await recorder.cancel(A)).toEqual({ ok: true });
-    expect(offscreenMessages()).toContainEqual(DISCARD);
+    expect(offscreenMessages()).toContainEqual(discardOf(id()));
     expect(recorder.session).toBeNull();
     expect(await recorder.start(B)).toEqual({ ok: true });
     expect(deps.dictate).not.toHaveBeenCalled();
@@ -246,25 +261,25 @@ describe('stop and cancel', () => {
 
 describe('levels', () => {
   it('relays levels to the session frame only while recording', async () => {
-    const { deps, recorder, tabMessages } = setup();
-    recorder.onLevel(0.3);
+    const { deps, recorder, tabMessages, id } = setup();
+    recorder.onLevel(0.3, undefined);
     await recorder.start(A_CHILD);
-    recorder.onLevel(0.4);
+    recorder.onLevel(0.4, id());
     await flush();
     expect(tabMessages()).toEqual([{ endpoint: A_CHILD, action: MSG.AUDIO_LEVEL, level: 0.4 }]);
     await recorder.stop(A_CHILD);
-    recorder.onLevel(0.5);
+    recorder.onLevel(0.5, id());
     await flush();
     expect(deps.toTab).toHaveBeenCalledTimes(1);
   });
 
   it('undeliverable level cancels the session', async () => {
-    const { deps, recorder, offscreenMessages } = setup();
+    const { deps, recorder, offscreenMessages, id } = setup();
     await recorder.start(A);
     deps.toTab.mockResolvedValueOnce(false);
-    recorder.onLevel(0.2);
+    recorder.onLevel(0.2, id());
     await vi.waitFor(() => expect(recorder.session).toBeNull());
-    await vi.waitFor(() => expect(offscreenMessages()).toContainEqual(DISCARD));
+    await vi.waitFor(() => expect(offscreenMessages()).toContainEqual(discardOf(id())));
     expect(deps.dictate).not.toHaveBeenCalled();
     expect(await recorder.start(B)).toEqual({ ok: true });
   });
@@ -272,12 +287,12 @@ describe('levels', () => {
 
 describe('results', () => {
   it('delivers the dictation to the session frame after freeing the session', async () => {
-    const { deps, recorder, tabMessages } = setup();
+    const { deps, recorder, tabMessages, id } = setup();
     await recorder.start(A_CHILD);
     await recorder.stop(A_CHILD);
     let sessionAtDelivery = 'unset';
     deps.toTab.mockImplementation(async () => { sessionAtDelivery = recorder.session; return true; });
-    await recorder.onDone(done());
+    await recorder.onDone(done({ captureId: id() }));
     expect(deps.dictate).toHaveBeenCalledWith({ audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 4.2 });
     expect(tabMessages()).toEqual([{ endpoint: A_CHILD, action: MSG.DICTATION_RESULT, ...DICTATION }]);
     expect(sessionAtDelivery).toBeNull();
@@ -285,10 +300,10 @@ describe('results', () => {
   });
 
   it('too-short without a provider call', async () => {
-    const { deps, recorder, tabMessages } = setup();
+    const { deps, recorder, tabMessages, id } = setup();
     await recorder.start(A);
     await recorder.stop(A);
-    await recorder.onDone(done({ durationSec: 0.4 }));
+    await recorder.onDone(done({ durationSec: 0.4, captureId: id() }));
     expect(deps.dictate).not.toHaveBeenCalled();
     expect(tabMessages()).toEqual([{ endpoint: A, action: MSG.DICTATION_RESULT, success: false, error: 'Too short, ignored', tone: 'warning' }]);
     expect(recorder.session).toBeNull();
@@ -296,9 +311,9 @@ describe('results', () => {
 
   for (const reason of ['maxTime', 'silence', 'ended']) {
     it(`auto-stop reason ${reason} sends RECORDING_STATE processing before the result`, async () => {
-      const { deps, recorder, tabMessages } = setup();
+      const { deps, recorder, tabMessages, id } = setup();
       await recorder.start(A);
-      await recorder.onDone(done({ reason }));
+      await recorder.onDone(done({ reason, captureId: id() }));
       expect(tabMessages()).toEqual([
         { endpoint: A, action: MSG.RECORDING_STATE, state: 'processing', reason },
         { endpoint: A, action: MSG.DICTATION_RESULT, ...DICTATION },
@@ -309,10 +324,10 @@ describe('results', () => {
   }
 
   it('an undeliverable auto-stop notice drops the audio without a provider call', async () => {
-    const { deps, recorder } = setup();
+    const { deps, recorder, id } = setup();
     await recorder.start(A);
     deps.toTab.mockResolvedValueOnce(false);
-    await recorder.onDone(done({ reason: 'silence' }));
+    await recorder.onDone(done({ reason: 'silence', captureId: id() }));
     expect(deps.dictate).not.toHaveBeenCalled();
     expect(recorder.session).toBeNull();
   });
@@ -325,27 +340,105 @@ describe('results', () => {
   });
 
   it('a throwing dictate still frees the session and reports an error', async () => {
-    const { deps, recorder, tabMessages } = setup();
+    const { deps, recorder, tabMessages, id } = setup();
     await recorder.start(A);
     await recorder.stop(A);
     deps.dictate.mockRejectedValueOnce(new Error('bug'));
-    await recorder.onDone(done());
+    await recorder.onDone(done({ captureId: id() }));
     expect(tabMessages()).toEqual([{ endpoint: A, action: MSG.DICTATION_RESULT, success: false, error: 'Something went wrong. Try again.', tone: 'error' }]);
     expect(recorder.session).toBeNull();
   });
 
   it('offscreen error frees the session and tells the frame', async () => {
-    const { recorder, tabMessages } = setup();
+    const { recorder, tabMessages, id } = setup();
     await recorder.onOffscreenError({ error: 'Recording failed.' });
     expect(tabMessages()).toEqual([]);
     await recorder.start(A);
-    await recorder.onOffscreenError({ error: 'Recording failed.' });
+    await recorder.onOffscreenError({ error: 'Recording failed.', captureId: id() });
     expect(tabMessages()).toEqual([{
       endpoint: A, action: MSG.RECORDING_STATE, state: 'idle', reason: 'error',
       notice: { text: 'Recording failed. Try again.', tone: 'error' },
     }]);
     expect(recorder.session).toBeNull();
     expect(await recorder.start(B)).toEqual({ ok: true });
+  });
+});
+
+describe('stale captures', () => {
+  it('reports from a cancelled capture while the next session starts are ignored', async () => {
+    const pendingB = deferred();
+    let calls = 0;
+    const { deps, recorder, tabMessages, ids } = setup({ startReply: () => (calls++ === 0 ? { ok: true } : pendingB.promise) });
+    await recorder.start(A);
+    await recorder.cancel(A);
+    const startedB = recorder.start(B);
+    await vi.waitFor(() => expect(ids()).toHaveLength(2));
+    const [idA] = ids();
+    await recorder.onDone(done({ reason: 'silence', audioBase64: 'U1RBTEU=', captureId: idA }));
+    await recorder.onOffscreenError({ error: 'Recording failed.', captureId: idA });
+    recorder.onLevel(0.5, idA);
+    await flush();
+    expect(deps.dictate).not.toHaveBeenCalled();
+    expect(tabMessages()).toEqual([]);
+    expect(recorder.session.state).toBe('starting');
+    pendingB.resolve({ ok: true });
+    expect(await startedB).toEqual({ ok: true });
+    expect(recorder.session).toEqual({ endpoint: B, state: 'recording', modeKey: 'email', minSec: 1 });
+  });
+
+  it('a result from a cancelled capture while the next session records is ignored', async () => {
+    const { deps, recorder, tabMessages, offscreenMessages, ids } = setup();
+    await recorder.start(A);
+    await recorder.cancel(A);
+    await recorder.start(B);
+    const [idA, idB] = ids();
+    await recorder.onDone(done({ audioBase64: 'U1RBTEU=', captureId: idA }));
+    await recorder.onDone(done({ audioBase64: 'U1RBTEU=' }));
+    expect(deps.dictate).not.toHaveBeenCalled();
+    expect(tabMessages()).toEqual([]);
+    expect(recorder.session.state).toBe('recording');
+    await recorder.stop(B);
+    expect(offscreenMessages()).toContainEqual(stopOf(idB));
+    await recorder.onDone(done({ captureId: idB }));
+    expect(deps.dictate).toHaveBeenCalledTimes(1);
+    expect(deps.dictate).toHaveBeenCalledWith(expect.objectContaining({ audioBase64: 'QUJD' }));
+    expect(tabMessages()).toEqual([{ endpoint: B, action: MSG.DICTATION_RESULT, ...DICTATION }]);
+  });
+
+  it('an error or level with a stale or missing id is ignored', async () => {
+    const { recorder, tabMessages, ids } = setup();
+    await recorder.start(A);
+    await recorder.cancel(A);
+    await recorder.start(B);
+    const [idA, idB] = ids();
+    recorder.onLevel(0.7, idA);
+    recorder.onLevel(0.7, undefined);
+    await recorder.onOffscreenError({ error: 'Recording failed.', captureId: idA });
+    await recorder.onOffscreenError({ error: 'Recording failed.' });
+    await flush();
+    expect(tabMessages()).toEqual([]);
+    expect(recorder.session.state).toBe('recording');
+    recorder.onLevel(0.3, idB);
+    await flush();
+    expect(tabMessages()).toEqual([{ endpoint: B, action: MSG.AUDIO_LEVEL, level: 0.3 }]);
+  });
+
+  it('an ok start reply for a session replaced meanwhile discards only that capture', async () => {
+    const replies = [deferred(), deferred()];
+    let calls = 0;
+    const { recorder, offscreenMessages, ids } = setup({ startReply: () => replies[calls++].promise });
+    const startedA = recorder.start(A);
+    await vi.waitFor(() => expect(ids()).toHaveLength(1));
+    await recorder.cancel(A);
+    const startedB = recorder.start(B);
+    await vi.waitFor(() => expect(ids()).toHaveLength(2));
+    const [idA] = ids();
+    replies[0].resolve({ ok: true });
+    expect(await startedA).toEqual({ ok: false, reason: 'micError', error: 'Recording cancelled.' });
+    expect(offscreenMessages().filter((m) => m.action === MSG.OFFSCREEN_STOP)).toEqual([discardOf(idA), discardOf(idA)]);
+    replies[1].resolve({ ok: true });
+    expect(await startedB).toEqual({ ok: true });
+    expect(recorder.session).toEqual({ endpoint: B, state: 'recording', modeKey: 'email', minSec: 1 });
   });
 });
 
@@ -374,39 +467,39 @@ describe('permission and tabs', () => {
   });
 
   it('tab removed while recording frees the session', async () => {
-    const { deps, recorder, offscreenMessages } = setup();
+    const { deps, recorder, offscreenMessages, id } = setup();
     await recorder.start(A);
     await recorder.onTabRemoved(2);
     expect(recorder.session.state).toBe('recording');
     await recorder.onTabRemoved(1);
     expect(recorder.session).toBeNull();
-    expect(offscreenMessages()).toContainEqual(DISCARD);
-    await recorder.onDone(done());
+    expect(offscreenMessages()).toContainEqual(discardOf(id()));
+    await recorder.onDone(done({ captureId: id() }));
     expect(deps.dictate).not.toHaveBeenCalled();
     expect(await recorder.start(B)).toEqual({ ok: true });
   });
 
-  it('tab removed while starting stops the capture and ignores the late start response', async () => {
+  it('tab removed while starting stops the capture, again when it comes up late', async () => {
     const pending = deferred();
-    const { recorder, offscreenMessages } = setup({ startReply: () => pending.promise });
+    const { recorder, offscreenMessages, id } = setup({ startReply: () => pending.promise });
     const started = recorder.start(A);
     await vi.waitFor(() => expect(offscreenMessages()).toHaveLength(1));
     await recorder.onTabRemoved(1);
     expect(recorder.session).toBeNull();
-    expect(offscreenMessages()).toEqual([expect.objectContaining({ action: MSG.OFFSCREEN_START }), DISCARD]);
+    expect(offscreenMessages()).toEqual([expect.objectContaining({ action: MSG.OFFSCREEN_START }), discardOf(id())]);
     pending.resolve({ ok: true });
     expect(await started).toEqual({ ok: false, reason: 'micError', error: 'Recording cancelled.' });
-    expect(offscreenMessages()).toHaveLength(2);
+    expect(offscreenMessages()).toEqual([expect.objectContaining({ action: MSG.OFFSCREEN_START }), discardOf(id()), discardOf(id())]);
     expect(recorder.session).toBeNull();
   });
 
   it('tab removed while processing lets the dictation finish', async () => {
-    const { deps, recorder } = setup();
+    const { deps, recorder, id } = setup();
     await recorder.start(A);
     await recorder.stop(A);
     await recorder.onTabRemoved(1);
     expect(recorder.session.state).toBe('processing');
-    await recorder.onDone(done());
+    await recorder.onDone(done({ captureId: id() }));
     expect(deps.dictate).toHaveBeenCalledTimes(1);
   });
 

@@ -253,14 +253,14 @@ describe('recorder delegation', () => {
     expect(deps.recorder.cancel).toHaveBeenCalledWith({ tabId: 7, frameId: 3 });
   });
 
-  it('offscreen events go to the recorder and are acknowledged', async () => {
-    expect(await handle({ action: MSG.OFFSCREEN_LEVEL, level: 0.5 }, OFFSCREEN)).toEqual({ ok: true });
-    expect(deps.recorder.onLevel).toHaveBeenCalledWith(0.5);
-    const done = { audioBase64: 'QUJD', mimeType: 'audio/webm', durationSec: 2.5, reason: 'silence' };
+  it('offscreen events go to the recorder with their capture id and are acknowledged', async () => {
+    expect(await handle({ action: MSG.OFFSCREEN_LEVEL, level: 0.5, captureId: 'c1' }, OFFSCREEN)).toEqual({ ok: true });
+    expect(deps.recorder.onLevel).toHaveBeenCalledWith(0.5, 'c1');
+    const done = { audioBase64: 'QUJD', mimeType: 'audio/webm', durationSec: 2.5, reason: 'silence', captureId: 'c1' };
     expect(await handle({ action: MSG.OFFSCREEN_DONE, ...done }, OFFSCREEN)).toEqual({ ok: true });
     expect(deps.recorder.onDone).toHaveBeenCalledWith(done);
-    expect(await handle({ action: MSG.OFFSCREEN_ERROR, error: 'Recording failed.' }, OFFSCREEN)).toEqual({ ok: true });
-    expect(deps.recorder.onOffscreenError).toHaveBeenCalledWith({ error: 'Recording failed.' });
+    expect(await handle({ action: MSG.OFFSCREEN_ERROR, error: 'Recording failed.', captureId: 'c1' }, OFFSCREEN)).toEqual({ ok: true });
+    expect(deps.recorder.onOffscreenError).toHaveBeenCalledWith({ error: 'Recording failed.', captureId: 'c1' });
   });
 
   it('the permission page result goes to the recorder as a boolean', async () => {

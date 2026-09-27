@@ -6,7 +6,7 @@ import { MSG } from '../../../src/shared/messages.js';
 const LOUD = Float32Array.from([0.5, -0.5, 0.5, -0.5]); // rms 0.5, level 1
 const MID = Float32Array.from([0.0625, -0.0625]); // rms 1/16, level 0.625
 const QUIET = new Float32Array(4); // rms 0, level 0
-const OPTS = { maxSec: 60, silenceSec: 0 };
+const OPTS = { maxSec: 60, silenceSec: 0, captureId: 'c1' };
 const GENERIC = { ok: false, reason: 'micError', error: 'Could not start the microphone.' };
 
 class FakeRecorder {
@@ -167,7 +167,7 @@ describe('start failures', () => {
     const gum = deferred();
     h = setup({ getUserMedia: vi.fn(() => gum.promise) });
     const starting = h.capture.start(OPTS);
-    await h.capture.stop({ discard: true });
+    await h.capture.stop({ discard: true, captureId: 'c1' });
     gum.resolve(h.stream);
     await expect(starting).resolves.toEqual({ ok: false, reason: 'micError', error: 'Recording cancelled.' });
     expect(h.stream.track.stop).toHaveBeenCalledTimes(1);
@@ -188,7 +188,7 @@ describe('start failures', () => {
     const h = setup({ getUserMedia: vi.fn(() => gum.promise) });
     const starting = h.capture.start(OPTS);
     expect(h.capture.active).toBe(true);
-    await expect(h.capture.stop({ discard: true })).resolves.toEqual({ ok: true });
+    await expect(h.capture.stop({ discard: true, captureId: 'c1' })).resolves.toEqual({ ok: true });
     gum.resolve(h.stream);
     await expect(starting).resolves.toEqual({ ok: false, reason: 'micError', error: 'Recording cancelled.' });
     expect(h.deps.createMediaRecorder).not.toHaveBeenCalled();
@@ -218,9 +218,9 @@ describe('recording', () => {
     await h.capture.start(OPTS);
     expect(h.of(MSG.OFFSCREEN_LEVEL)).toEqual([]);
     await vi.advanceTimersByTimeAsync(LEVEL_INTERVAL_MS);
-    expect(h.of(MSG.OFFSCREEN_LEVEL)).toEqual([{ action: MSG.OFFSCREEN_LEVEL, level: 1 }]);
+    expect(h.of(MSG.OFFSCREEN_LEVEL)).toEqual([{ action: MSG.OFFSCREEN_LEVEL, level: 1, captureId: 'c1' }]);
     await vi.advanceTimersByTimeAsync(LEVEL_INTERVAL_MS);
-    expect(h.of(MSG.OFFSCREEN_LEVEL)[1]).toEqual({ action: MSG.OFFSCREEN_LEVEL, level: 0.625 });
+    expect(h.of(MSG.OFFSCREEN_LEVEL)[1]).toEqual({ action: MSG.OFFSCREEN_LEVEL, level: 0.625, captureId: 'c1' });
     await vi.advanceTimersByTimeAsync(LEVEL_INTERVAL_MS * 3);
     expect(h.of(MSG.OFFSCREEN_LEVEL)).toHaveLength(5);
     expect(h.of(MSG.OFFSCREEN_LEVEL)[4].level).toBe(0);
@@ -243,8 +243,8 @@ describe('recording', () => {
 
   it('sends a level-0 heartbeat and never silence-stops when the analyser cannot be created', async () => {
     const h = setup({ createAnalyser: vi.fn(async () => { throw new Error('no audio context'); }) });
-    const heartbeat = { action: MSG.OFFSCREEN_LEVEL, level: 0 };
-    await expect(h.capture.start({ maxSec: 60, silenceSec: 2 })).resolves.toEqual({ ok: true });
+    const heartbeat = { action: MSG.OFFSCREEN_LEVEL, level: 0, captureId: 'c1' };
+    await expect(h.capture.start({ maxSec: 60, silenceSec: 2, captureId: 'c1' })).resolves.toEqual({ ok: true });
     expect(h.of(MSG.OFFSCREEN_LEVEL)).toEqual([]);
     await vi.advanceTimersByTimeAsync(LEVEL_INTERVAL_MS);
     expect(h.of(MSG.OFFSCREEN_LEVEL)).toEqual([heartbeat]);
@@ -252,7 +252,7 @@ describe('recording', () => {
     expect(h.of(MSG.OFFSCREEN_LEVEL)).toEqual(Array(5000 / LEVEL_INTERVAL_MS).fill(heartbeat));
     expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([]);
     expect(h.capture.active).toBe(true);
-    await h.capture.stop({ discard: false });
+    await h.capture.stop({ discard: false, captureId: 'c1' });
     expect(h.of(MSG.OFFSCREEN_DONE)).toHaveLength(1);
     expect(h.stream.track.stop).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
@@ -265,13 +265,14 @@ describe('finishing', () => {
     await h.capture.start(OPTS);
     h.recorder().emit(Uint8Array.of(1, 2, 3));
     await vi.advanceTimersByTimeAsync(1500);
-    await expect(h.capture.stop({ discard: false })).resolves.toEqual({ ok: true });
+    await expect(h.capture.stop({ discard: false, captureId: 'c1' })).resolves.toEqual({ ok: true });
     expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([{
       action: MSG.OFFSCREEN_DONE,
       audioBase64: 'AQIDBAU=', // bytes 1 to 5: the chunk above plus the final chunk
       mimeType: 'audio/webm',
       durationSec: 1.5,
       reason: 'user',
+      captureId: 'c1',
     }]);
     expect(h.log.filter((entry) => entry !== MSG.OFFSCREEN_LEVEL))
       .toEqual(['recorder.stop', 'track.stop', 'analyser.close', MSG.OFFSCREEN_DONE]);
@@ -287,7 +288,7 @@ describe('finishing', () => {
 
   it('max time finishes with reason maxTime', async () => {
     const h = setup();
-    await h.capture.start({ maxSec: 5, silenceSec: 0 });
+    await h.capture.start({ maxSec: 5, silenceSec: 0, captureId: 'c1' });
     await vi.advanceTimersByTimeAsync(4999);
     expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
@@ -300,7 +301,7 @@ describe('finishing', () => {
 
   it('silence detector stops with reason silence only after speech', async () => {
     const h = setup();
-    await h.capture.start({ maxSec: 60, silenceSec: 2 });
+    await h.capture.start({ maxSec: 60, silenceSec: 2, captureId: 'c1' });
     await vi.advanceTimersByTimeAsync(3000); // 3 s of silence before any speech
     expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([]);
     expect(h.capture.active).toBe(true);
@@ -317,7 +318,7 @@ describe('finishing', () => {
 
   it('silenceSec 0 never auto-stops', async () => {
     const h = setup();
-    await h.capture.start({ maxSec: 600, silenceSec: 0 });
+    await h.capture.start({ maxSec: 600, silenceSec: 0, captureId: 'c1' });
     h.samples.push(LOUD);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([]);
@@ -340,7 +341,7 @@ describe('finishing', () => {
     await h.capture.start(OPTS);
     h.recorder().emit(Uint8Array.of(1, 2, 3));
     await vi.advanceTimersByTimeAsync(1000);
-    await expect(h.capture.stop({ discard: true })).resolves.toEqual({ ok: true });
+    await expect(h.capture.stop({ discard: true, captureId: 'c1' })).resolves.toEqual({ ok: true });
     expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([]);
     expect(h.of(MSG.OFFSCREEN_ERROR)).toEqual([]);
     expect(h.stream.track.stop).toHaveBeenCalledTimes(1);
@@ -354,7 +355,7 @@ describe('finishing', () => {
     await vi.advanceTimersByTimeAsync(300);
     h.recorder().fail();
     await h.until(MSG.OFFSCREEN_ERROR);
-    expect(h.of(MSG.OFFSCREEN_ERROR)).toEqual([{ action: MSG.OFFSCREEN_ERROR, error: 'Recording failed.' }]);
+    expect(h.of(MSG.OFFSCREEN_ERROR)).toEqual([{ action: MSG.OFFSCREEN_ERROR, error: 'Recording failed.', captureId: 'c1' }]);
     expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([]);
     expect(h.stream.track.stop).toHaveBeenCalledTimes(1);
     expect(h.analyser.close).toHaveBeenCalledTimes(1);
@@ -371,11 +372,11 @@ describe('finishing', () => {
     h.recorder().emit(Uint8Array.of(1, 2, 3));
     h.recorder().stopsItself = false;
     await vi.advanceTimersByTimeAsync(2000);
-    const stopping = h.capture.stop({ discard: false });
+    const stopping = h.capture.stop({ discard: false, captureId: 'c1' });
     await vi.advanceTimersByTimeAsync(STOP_TIMEOUT_MS);
     await expect(stopping).resolves.toEqual({ ok: true });
     expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([{
-      action: MSG.OFFSCREEN_DONE, audioBase64: 'AQID', mimeType: 'audio/webm', durationSec: 2, reason: 'user',
+      action: MSG.OFFSCREEN_DONE, audioBase64: 'AQID', mimeType: 'audio/webm', durationSec: 2, reason: 'user', captureId: 'c1',
     }]);
     expect(h.stream.track.stop).toHaveBeenCalledTimes(1);
     expect(h.capture.active).toBe(false);
@@ -385,17 +386,79 @@ describe('finishing', () => {
     const h = setup();
     await h.capture.start(OPTS);
     h.recorder().stopsItself = false;
-    const stopping = h.capture.stop({ discard: false });
+    const stopping = h.capture.stop({ discard: false, captureId: 'c1' });
     await vi.advanceTimersByTimeAsync(STOP_TIMEOUT_MS);
     await stopping;
     expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([]);
-    expect(h.of(MSG.OFFSCREEN_ERROR)).toEqual([{ action: MSG.OFFSCREEN_ERROR, error: 'Recording failed.' }]);
+    expect(h.of(MSG.OFFSCREEN_ERROR)).toEqual([{ action: MSG.OFFSCREEN_ERROR, error: 'Recording failed.', captureId: 'c1' }]);
   });
 
   it('stop without a recording answers ok false', async () => {
     const h = setup();
-    await expect(h.capture.stop({ discard: false })).resolves.toEqual({ ok: false });
-    await expect(h.capture.stop({ discard: true })).resolves.toEqual({ ok: false });
+    await expect(h.capture.stop({ discard: false, captureId: 'c1' })).resolves.toEqual({ ok: false });
+    await expect(h.capture.stop({ discard: true, captureId: 'c1' })).resolves.toEqual({ ok: false });
     expect(h.sent).toEqual([]);
+  });
+});
+
+describe('capture ids', () => {
+  it('echoes the capture id in every level, result and error report', async () => {
+    const h = setup();
+    h.samples.push(MID);
+    await h.capture.start({ maxSec: 60, silenceSec: 0, captureId: 'first' });
+    await vi.advanceTimersByTimeAsync(LEVEL_INTERVAL_MS);
+    h.recorder().emit(Uint8Array.of(1, 2, 3));
+    await h.capture.stop({ discard: false, captureId: 'first' });
+    expect(h.of(MSG.OFFSCREEN_LEVEL)).toEqual([{ action: MSG.OFFSCREEN_LEVEL, level: 0.625, captureId: 'first' }]);
+    expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([expect.objectContaining({ reason: 'user', captureId: 'first' })]);
+
+    await h.capture.start({ maxSec: 60, silenceSec: 0, captureId: 'second' });
+    h.recorder().fail();
+    await h.until(MSG.OFFSCREEN_ERROR);
+    expect(h.of(MSG.OFFSCREEN_ERROR)).toEqual([{ action: MSG.OFFSCREEN_ERROR, error: 'Recording failed.', captureId: 'second' }]);
+  });
+
+  it('stays busy until the finished capture has been reported', async () => {
+    const h = setup();
+    const read = deferred();
+    vi.spyOn(Blob.prototype, 'arrayBuffer').mockImplementation(() => read.promise);
+    await h.capture.start(OPTS);
+    h.recorder().emit(Uint8Array.of(1, 2, 3));
+    const stopping = h.capture.stop({ discard: false, captureId: 'c1' });
+    await vi.waitFor(() => expect(Blob.prototype.arrayBuffer).toHaveBeenCalled());
+    await expect(h.capture.start({ ...OPTS, captureId: 'c2' })).resolves.toEqual({ ok: false, reason: 'micError', error: 'Already recording.' });
+    expect(h.capture.active).toBe(true);
+    read.resolve(Uint8Array.of(1, 2, 3).buffer);
+    await expect(stopping).resolves.toEqual({ ok: true });
+    expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([expect.objectContaining({ captureId: 'c1' })]);
+    expect(h.capture.active).toBe(false);
+    await expect(h.capture.start({ ...OPTS, captureId: 'c2' })).resolves.toEqual({ ok: true });
+    expect(h.deps.getUserMedia).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays busy while a discarded capture is still releasing the microphone', async () => {
+    const h = setup();
+    await h.capture.start(OPTS);
+    h.recorder().stopsItself = false;
+    const discarding = h.capture.stop({ discard: true, captureId: 'c1' });
+    await expect(h.capture.start({ ...OPTS, captureId: 'c2' })).resolves.toEqual({ ok: false, reason: 'micError', error: 'Already recording.' });
+    await vi.advanceTimersByTimeAsync(STOP_TIMEOUT_MS);
+    await discarding;
+    expect(h.sent.filter((m) => m.action !== MSG.OFFSCREEN_LEVEL)).toEqual([]);
+    await expect(h.capture.start({ ...OPTS, captureId: 'c2' })).resolves.toEqual({ ok: true });
+  });
+
+  it('a stop for another capture id leaves the capture alone', async () => {
+    const gum = deferred();
+    const h = setup({ getUserMedia: vi.fn(() => gum.promise) });
+    const starting = h.capture.start(OPTS);
+    await expect(h.capture.stop({ discard: true, captureId: 'old' })).resolves.toEqual({ ok: false });
+    gum.resolve(h.stream);
+    await expect(starting).resolves.toEqual({ ok: true });
+    await expect(h.capture.stop({ discard: true, captureId: 'old' })).resolves.toEqual({ ok: false });
+    expect(h.stream.track.stop).not.toHaveBeenCalled();
+    expect(h.capture.active).toBe(true);
+    await expect(h.capture.stop({ discard: true, captureId: 'c1' })).resolves.toEqual({ ok: true });
+    expect(h.capture.active).toBe(false);
   });
 });
