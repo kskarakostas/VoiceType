@@ -22,10 +22,13 @@
 ---
 
 <p align="center">
-  <img src="screenshots/in_use.png" alt="VoiceType Recording" width="280">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/in-use.png">
+  <img src="screenshots/light/in-use.png" alt="VoiceType recording next to a message field" width="560">
+</picture>
 </p>
 
-<p align="center"><em>Compact, unobtrusive interface that appears next to any text field</em></p>
+<p align="center"><em>Compact, unobtrusive interface that appears next to any text field; the glow follows your voice</em></p>
 
 ---
 
@@ -67,26 +70,38 @@ Keys stay in your browser's local extension storage, readable only by VoiceType'
 <table>
 <tr>
 <td align="center" width="50%">
-<img src="screenshots/floating_expand.png" alt="Quick Settings" width="240"><br>
-<strong>Quick Settings</strong><br>
-<em>Change mode and provider without leaving the page</em>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/menu.png">
+  <img src="screenshots/light/menu.png" alt="Pill menu" width="260">
+</picture><br>
+<strong>Pill Menu</strong><br>
+<em>Switch mode and provider, see today's cost and the hotkey</em>
 </td>
 <td align="center" width="50%">
-<img src="screenshots/settings.png" alt="Settings Panel" width="280"><br>
-<strong>Settings Panel</strong><br>
-<em>Configure your API keys and preferences</em>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/popup-settings.png">
+  <img src="screenshots/light/popup-settings.png" alt="Popup settings" width="300">
+</picture><br>
+<strong>Settings</strong><br>
+<em>Provider, API key, recording limits and hotkey</em>
 </td>
 </tr>
 <tr>
 <td align="center" width="50%">
-<img src="screenshots/modes.png" alt="Transcription Modes" width="280"><br>
-<strong>Transcription Modes</strong><br>
-<em>Choose how AI processes your speech</em>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/popup-modes.png">
+  <img src="screenshots/light/popup-modes.png" alt="Popup modes" width="300">
+</picture><br>
+<strong>Modes</strong><br>
+<em>Built-in modes plus your own, each with its own instructions</em>
 </td>
 <td align="center" width="50%">
-<img src="screenshots/usage.png" alt="Usage Statistics" width="280"><br>
-<strong>Usage Statistics</strong><br>
-<em>Track sessions, time, and costs by provider</em>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/popup-usage.png">
+  <img src="screenshots/light/popup-usage.png" alt="Popup usage" width="300">
+</picture><br>
+<strong>Usage</strong><br>
+<em>Sessions, audio time and estimated cost by period and provider</em>
 </td>
 </tr>
 </table>
@@ -290,9 +305,10 @@ npm test            # unit tests (Vitest)
 npm run build       # bundle into dist/
 npm run watch       # rebuild on change
 npm run test:e2e    # build, then the Playwright smoke in Chromium
+npm run screenshots # build, then retake screenshots/light and screenshots/dark
 ```
 
-The end-to-end smoke loads `dist/` into Playwright's Chromium with a fake microphone, stubs the provider endpoints and blocks every other https request, so it needs no API key. Install its browser once with `npx playwright install --no-shell chromium` (add `--with-deps` on a fresh Linux machine).
+The end-to-end smoke loads `dist/` into Playwright's Chromium with a fake microphone, stubs the provider endpoints and blocks every other https request, so it needs no API key. Install its browser once with `npx playwright install --no-shell chromium` (add `--with-deps` on a fresh Linux machine). `npm run screenshots` uses the same setup with `test/fixtures/demo.html`, a sample key and sample usage history.
 
 ---
 

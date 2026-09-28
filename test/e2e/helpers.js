@@ -17,7 +17,7 @@ const TRANSCRIPTION_URL = 'https://api.openai.com/v1/audio/transcriptions';
 export const TRANSCRIPT = 'stubbed transcript';
 export const DUMMY_KEY = 'sk-e2e-dummy-key';
 export const START = 'button[aria-label="Start recording"]';
-const STOP = 'button[aria-label="Stop recording"]';
+export const STOP = 'button[aria-label="Stop recording"]';
 export const STATUS = '[role="status"]';
 /** Longer than minRecordingTime (1 s), so the recorder does not drop the clip as too short. */
 const RECORD_MS = 1500;
@@ -26,7 +26,8 @@ const isExtensionWorker = (worker) => worker.url().startsWith('chrome-extension:
 
 /**
  * Launches Chromium with the built extension, a fake microphone and the provider stubbed.
- * @param {{ transcriptDelayMs?: number }} [options] how long the stub waits before it answers
+ * @param {{ transcriptDelayMs?: number, contextOptions?: object }} [options] how long the stub waits
+ *   before it answers; extra launchPersistentContext options (color scheme, scale factor)
  * @returns {Promise<{
  *   context: import('@playwright/test').BrowserContext,
  *   serviceWorker: import('@playwright/test').Worker,
@@ -35,7 +36,7 @@ const isExtensionWorker = (worker) => worker.url().startsWith('chrome-extension:
  *   close: () => Promise<void>,
  * }>}
  */
-export async function launchExtension({ transcriptDelayMs = 0 } = {}) {
+export async function launchExtension({ transcriptDelayMs = 0, contextOptions = {} } = {}) {
   const workDir = mkdtempSync(join(tmpdir(), 'voicetype-e2e-'));
   /** @type {import('@playwright/test').BrowserContext|undefined} */
   let context;
@@ -46,6 +47,7 @@ export async function launchExtension({ transcriptDelayMs = 0 } = {}) {
   try {
     const tone = writeToneWav(join(workDir, 'tone.wav'), { seconds: 10 });
     context = await chromium.launchPersistentContext('', {
+      ...contextOptions,
       channel: 'chromium',
       headless: true,
       args: [

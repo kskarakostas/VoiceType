@@ -306,13 +306,15 @@ button:focus-visible {
   color: var(--vt-text);
 }
 
-/* Level glow while recording. setLevel() clamps to [0, 1]; the clamp here caps it regardless. */
+/* Level glow while recording: a solid ring that thickens with the level, over a wide soft halo.
+   setLevel() clamps to [0, 1]; the clamp here caps it regardless. */
 .pill[data-state='recording'] .body {
   --vt-l: clamp(0, var(--vt-level, 0), 1);
 
   box-shadow:
     var(--vt-shadow),
-    0 0 calc(6px + var(--vt-l) * 14px) calc(1px + var(--vt-l) * 3px) rgb(var(--vt-glow) / calc(0.45 + var(--vt-l) * 0.4));
+    0 0 0 calc(2px + var(--vt-l) * 2px) rgb(var(--vt-glow) / calc(0.6 + var(--vt-l) * 0.35)),
+    0 0 calc(10px + var(--vt-l) * 26px) calc(2px + var(--vt-l) * 10px) rgb(var(--vt-glow) / calc(0.35 + var(--vt-l) * 0.45));
   transition: box-shadow 0.1s linear;
 }
 

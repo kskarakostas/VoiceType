@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <title>VoiceType demo</title>
+  <!-- A neutral compose form for the README screenshots (test/screenshots/). -->
+  <style>
+    :root {
+      --page: #f4f4f5;
+      --card: #ffffff;
+      --text: #18181b;
+      --muted: #71717a;
+      --line: #e4e4e7;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #18181b;
+        --card: #232326;
+        --text: #f4f4f5;
+        --muted: #a1a1aa;
+        --line: #3f3f46;
+      }
+    }
+    body { margin: 0; padding: 48px; background: var(--page); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+    .card { width: 520px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    h1 { margin: 0; padding: 14px 18px; font-size: 15px; font-weight: 600; border-bottom: 1px solid var(--line); }
+    .row { display: flex; gap: 12px; align-items: center; padding: 0 18px; border-bottom: 1px solid var(--line); }
+    .row label { width: 56px; color: var(--muted); }
+    .row input { flex: 1; padding: 10px 0; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
+    textarea { display: block; width: 100%; box-sizing: border-box; height: 190px; padding: 14px 18px; border: 0; outline: 0; resize: none; background: transparent; color: inherit; font: inherit; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>New message</h1>
+    <div class="row"><label for="to">To</label><input id="to" type="email" value="team@example.com"></div>
+    <div class="row"><label for="subject">Subject</label><input id="subject" type="text" value="Launch notes"></div>
+    <textarea id="body" aria-label="Message">Hi all,
+
+The release candidate passed review this morning. Two items are left before we ship: the pricing page copy and the final QA pass on Safari.
+
+</textarea>
+  </div>
+</body>
+</html>
