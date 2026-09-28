@@ -33,7 +33,7 @@ describe('content script', () => {
   });
 });
 
-describe('release 2.1.1', () => {
+describe('release 2.2.0', () => {
   // Reads files itself so this block works whatever the imports at the top of the file are.
   async function readRoot(name) {
     const fs = await import('node:fs');
@@ -45,7 +45,7 @@ describe('release 2.1.1', () => {
     const { version } = JSON.parse(await readRoot('manifest.json'));
     const pkg = JSON.parse(await readRoot('package.json'));
     const lock = JSON.parse(await readRoot('package-lock.json'));
-    expect(version).toBe('2.1.1');
+    expect(version).toBe('2.2.0');
     expect(pkg.version).toBe(version);
     expect(lock.version).toBe(version);
     expect(lock.packages[''].version).toBe(version);

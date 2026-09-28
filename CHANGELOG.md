@@ -1,6 +1,14 @@
 # Changelog
 
-## 2.1.1 (unreleased)
+## 2.2.0 (2026-09-28)
+
+### Changed
+- The glow around the pill while recording is larger and easier to see: a solid red ring that thickens as you speak, inside a wider halo. With reduced motion on, the ring stays still as before.
+
+### Added
+- `npm run screenshots`: regenerates the README screenshots in light and dark from the built extension, with a demo page, a sample key and sample usage.
+
+## 2.1.1 (2026-09-28)
 
 ### Fixed
 - Single-line dictation into Slate-based editors now stays in the field. 2.1.0 showed "Done", but the text vanished at the next keystroke and was not on the clipboard either. One `Ctrl+Z` removes the dictated text (dictated at a fresh caret).
