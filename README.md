@@ -112,10 +112,14 @@ Keys stay in your browser's local extension storage, readable only by VoiceType'
 
 | Mode | Icon | What it does |
 |------|:----:|--------------|
-| **Default** | 🎤 | Accurate speech-to-text transcription |
+| **Default** | 🎤 | Transcription only: no text model, no extra cost |
 | **Email** | 📧 | Transforms your ideas into formatted emails |
-| **Instruct** | 💡 | Ask AI questions, get responses in the text field |
 | **Translate** | 🌐 | Speak in any language, get text in another |
+| **Instruct** | 💡 | Ask AI questions, get responses in the text field |
+
+- Every mode except Default sends the transcript through the provider's text model (`gpt-6-luna` or `gemini-3.8-flash`), which adds a small text cost.
+- Translate's target language (English, Greek, Spanish, French or German) is picked in the pill menu while Translate is the active mode.
+- Add your own modes in the popup under **Modes, Add mode**: an icon, a name and instructions for the text model. Empty instructions mean plain transcription. `{{targetLanguage}}` in the instructions is replaced with Translate's target language.
 
 ---
 
@@ -152,10 +156,10 @@ Then in Chrome 140 or newer:
 - Create an API key
 - Cost: ~$0.0045/minute
 
-**Option B: Google Gemini** (may offer a free tier; check aistudio.google.com)
+**Option B: Google Gemini**
 - Go to [aistudio.google.com](https://aistudio.google.com)
 - Create an API key
-- Cost: pay-per-use (may offer a free tier; check aistudio.google.com)
+- Cost: ~$0.006/minute; a free tier may be available
 
 ### 3. Configure & Go
 
@@ -213,9 +217,29 @@ Blocked it by mistake? Open `chrome://settings/content/microphone`, remove Voice
 
 Click the VoiceType icon. One column holds Provider, Recording, Speech, Modes, Usage and About.
 
+- **Recording**
+  - **Minimum length** (0.5, 1, 2 or 3 s; default 1 s): shorter recordings are discarded as accidental clicks, and the pill says "Too short, ignored".
+  - **Maximum length** (30 s to 5 min; default 2 min): recording stops at this length, the pill says "Max time reached", and what you said is transcribed.
+  - **Silence auto-stop** (Off, 2, 3 or 5 s; default Off): once you have spoken, recording stops after this much silence.
 - Every change saves on its own; there is no Save button. Edits to an existing mode save automatically too. A new mode is saved with **Create mode**.
 - **Clear history** and **Reset to defaults** need two separate clicks: the first changes the button's label, the second confirms. A double click or a held Enter does not confirm them.
 - **Reset to defaults** keeps your API keys, provider, spoken languages and vocabulary.
+
+---
+
+## 🗣️ Spoken Languages and Vocabulary
+
+Both live in the popup under **Speech** and are sent with every recording, whatever the mode.
+
+**Spoken languages**
+- **Auto** (default): the provider detects the language on its own.
+- Tick one or more languages to steer recognition. They are hints about what to expect, not a lock.
+- Mixing languages, such as Greek with English terms? Tick every language you mix; that is what the list is for. With only one ticked, words from the other language are more likely to come out wrong.
+
+**Vocabulary**
+- One term per line: product names, people's names, jargon, acronyms. Write each exactly as it should appear, such as `Noesis`.
+- Up to 100 terms of up to 64 characters each.
+- A term makes the provider more likely to hear it, not certain to. A name that sounds like a common word (Noesis and "noises") is recognized more often but can still slip.
 
 ---
 
@@ -263,6 +287,7 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 
 | Problem | Solution |
 |---------|----------|
+| **"Could not load javascript 'content.js'" or "Could not load manifest"** | You selected the repository folder. Run `npm run build`, then choose the `dist/` folder in **Load unpacked** |
 | **"Add an API key" message** | Click the extension icon → paste your API key and press Esc. A key or typed text saves when you press Tab or Esc, or after a second; clicking outside to close the popup right after pasting may not save it |
 | **Microphone not working** | VoiceType asks in its own tab, not in the site's address bar. If the pill says the microphone is blocked, open `chrome://settings/content/microphone`, remove VoiceType from the blocked list, and press REC again |
 | **Asked for the microphone every time** | You chose "Allow this time". Reset it at `chrome://settings/content/microphone`, press REC and choose **Allow while visiting the site** |
@@ -270,6 +295,8 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 | **"VoiceType was turned off or updated. Reload this page."** | VoiceType was turned off on `chrome://extensions`, or that tab could not be switched to the new version. Turn VoiceType on if it is off, then reload the page |
 | **Text went to the clipboard** | Focus moved before the text arrived, or the site does not accept inserted text. Paste with `Ctrl+V` |
 | **Transcription fails** | Check your API key and account balance |
+| **Names or jargon come out wrong** | Add them in the popup under Speech, Vocabulary, one term per line, spelled as they should appear |
+| **Mixed-language speech comes out garbled** | Tick every language you speak under Speech, Spoken languages |
 | **Poor quality** | Speak clearly, reduce background noise, or try the other provider |
 
 ---
@@ -284,6 +311,18 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 | Gemini | gemini-3.8-flash (modes) | $0.75 in / $3.75 out per 1M tokens (list price through 2026) |
 
 *A typical 30-second recording costs less than $0.01*
+
+---
+
+## 📤 What Is Sent
+
+| Mode | To the speech model | To the text model |
+|------|---------------------|-------------------|
+| Default | Audio, spoken languages, vocabulary | Nothing |
+| Any other mode | Audio, spoken languages, vocabulary | The transcript text and the mode's instructions, never the audio |
+
+- Everything goes straight from your browser to the provider you chose, with your key. Both steps use that same provider.
+- On Gemini, speech recognition already removes filler words and self-corrections and formats the text, even in Default. On OpenAI, Default returns the transcript as recognized.
 
 ---
 
