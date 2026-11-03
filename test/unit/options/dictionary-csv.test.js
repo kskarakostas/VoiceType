@@ -232,6 +232,18 @@ describe('importDictionaryCsv', () => {
     expect(withRepeats.skipped).toBe(5);
   });
 
+  // A copy of the group per added term took about 41 s on this file; one copy per group, under 0.2 s.
+  it('a file of 100,000 distinct terms is refused quickly with the exact overage', () => {
+    const text = terms(100_000, 't').join('\n');
+    expect(text.length).toBeLessThan(MAX_IMPORT_BYTES);
+    const started = performance.now();
+    const result = importDictionaryCsv(text, {});
+    expect(performance.now() - started).toBeLessThan(5_000);
+    expect(result).toEqual({
+      ok: false, message: 'This import would go over the 100 term limit by 99900. Nothing was imported.',
+    });
+  }, 120_000);
+
   it('a file with no terms says so', () => {
     for (const text of ['', BOM, 'language,term\r\n']) {
       expect(importDictionaryCsv(text, {})).toEqual(NO_TERMS);

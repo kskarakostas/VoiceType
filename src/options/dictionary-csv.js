@@ -191,7 +191,9 @@ export function importDictionaryCsv(text, dictionary) {
       return refuse(`Line ${line}: the term is over ${MAX_TERM_LENGTH} characters. ${NOTHING_IMPORTED}`);
     } else {
       seen.add(folded);
-      next[group] = [...(next[group] ?? []), term];
+      // One copy per group: a file can hold far more rows than the cap, and the count must finish.
+      if (next[group] === dictionary[group]) next[group] = [...(dictionary[group] ?? [])];
+      next[group].push(term);
       added += 1;
     }
   }
