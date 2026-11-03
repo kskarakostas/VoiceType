@@ -128,7 +128,26 @@
 
         <section data-route="dictionary" aria-labelledby="h-dictionary" hidden>
           <h1 id="h-dictionary" tabindex="-1">Dictionary</h1>
-          <p class="placeholder">Coming in a later update. Until then, edit your vocabulary in <a href="#settings/speech">Settings, Speech</a>.</p>
+          <p class="hint">Names and jargon the provider should recognize. Every term goes with every dictation, whatever language you speak.</p>
+          <div>
+            <div class="dictionary-toolbar">
+              <p class="hint" id="dictionary-count">0 of 100 terms</p>
+              <div class="dictionary-actions">
+                <button type="button" class="btn" id="dictionary-export">Export</button>
+                <button type="button" class="btn" id="dictionary-import">Import</button>
+                <input type="file" id="dictionary-file" accept=".csv,text/csv" hidden>
+              </div>
+            </div>
+            <p class="hint" id="dictionary-status" role="status"></p>
+          </div>
+          <div class="dictionary-groups" id="dictionary-groups"></div>
+          <div class="card" id="dictionary-add-language">
+            <label class="field-label" for="dictionary-language">Add a language</label>
+            <div class="dictionary-add">
+              <select id="dictionary-language"></select>
+              <button type="button" class="btn" id="dictionary-add-group">Add language</button>
+            </div>
+          </div>
         </section>
 
         <section data-route="settings/provider" aria-labelledby="h-provider" hidden>
@@ -202,11 +221,7 @@
               <div class="check-grid" id="languages"></div>
             </fieldset>
             <p class="hint">Auto detects the language. Pick languages to steer recognition.</p>
-            <div class="field field-spaced">
-              <label class="field-label" for="keywords">Vocabulary</label>
-              <textarea id="keywords" rows="4" spellcheck="false" placeholder="One term per line: names, jargon, product names" aria-describedby="keyword-count"></textarea>
-              <p class="hint" id="keyword-count">0 of 100 terms</p>
-            </div>
+            <p class="hint">Names and jargon now live in the <a href="#dictionary">Dictionary</a>.</p>
           </div>
         </section>
 

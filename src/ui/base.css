@@ -155,7 +155,6 @@ svg {
 .hint { margin-top: 6px; color: var(--muted); font-size: 12px; }
 .hint[data-tone="error"] { color: var(--danger); font-weight: 600; }
 .hint-warning { color: var(--warning); }
-.field-spaced { margin-top: 12px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
 input[type="text"],

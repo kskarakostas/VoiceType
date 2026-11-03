@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { initOptions } from '../../../src/options/options.js';
-import { parseKeywords } from '../../../src/ui/form.js';
 import { MSG } from '../../../src/shared/messages.js';
 import { freshSettings, AUTO_STOP_CHOICES } from '../../../src/shared/defaults.js';
 import { formatChord } from '../../../src/shared/chord.js';
@@ -110,7 +109,7 @@ describe('settings page core sections layout', () => {
       expect(inRoute('settings/provider', id), id).toBe(true);
     }
     for (const id of ['min-time', 'max-time', 'auto-stop', 'hotkey', 'hotkey-hint']) expect(inRoute('settings/recording', id), id).toBe(true);
-    for (const id of ['languages', 'keywords', 'keyword-count']) expect(inRoute('settings/speech', id), id).toBe(true);
+    for (const id of ['languages']) expect(inRoute('settings/speech', id), id).toBe(true);
     expect($('status')).toBeNull();
     expect($('status-text')).toBeNull();
   });
@@ -387,62 +386,10 @@ describe('settings page speech', () => {
     expect(auto.checked).toBe(false);
   });
 
-  it('vocabulary textarea saves parseKeywords output', async () => {
-    const chrome = fakeChrome();
-    await start(chrome, 'settings/speech');
-    const area = $('keywords');
-    const text = ' Palowise \n\npalowise\nCommetric\n';
-    area.focus();
-    area.value = text;
-    change(area);
-    area.blur();
-    await flush();
-    expect(chrome.saves()).toEqual([{ dictionary: { any: parseKeywords(text) } }]);
-    expect(area.value).toBe('Palowise\nCommetric');
-    expect($('keyword-count').textContent).toBe('2 of 100 terms');
-  });
-
-  it('vocabulary count shows the total across groups', async () => {
-    const stored = storedSettings();
-    stored.dictionary = { any: ['a'], el: ['b', 'c'] };
-    await start(fakeChrome(stored), 'settings/speech');
-    expect($('keyword-count').textContent).toBe('3 of 100 terms');
-    expect($('keywords').value).toBe('a');
-  });
-
-  it('vocabulary skips terms that live in another group', async () => {
-    const stored = storedSettings();
-    stored.dictionary = { el: ['Noesis'] };
-    const chrome = fakeChrome(stored);
-    await start(chrome, 'settings/speech');
-    const area = $('keywords');
-    area.focus();
-    area.value = 'noesis\nPalowise';
-    change(area);
-    area.blur();
-    await flush();
-    expect(chrome.saves()).toEqual([{ dictionary: { el: ['Noesis'], any: ['Palowise'] } }]);
-  });
-
-  it('an external change never overwrites the field being typed in', async () => {
-    vi.useFakeTimers();
-    const stored = storedSettings();
-    stored.dictionary = { el: ['Noesis'] };
-    const chrome = fakeChrome(stored);
-    const page = await start(chrome, 'settings/speech');
-    const area = $('keywords');
-    area.focus();
-    typeInto(area, 'Palowise');
-    await vi.advanceTimersByTimeAsync(200);
-    chrome.script(MSG.GET_SETTINGS, { ...storedSettings(), dictionary: {} });
-    chrome.fire(SETTINGS_CHANGE, 'local');
-    await flush();
-    expect(page.settings.dictionary).toEqual({});
-    expect($('keyword-count').textContent).toBe('0 of 100 terms');
-    expect(area.value).toBe('Palowise');
-    expect(chrome.saves()).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(400);
-    expect(chrome.saves()).toEqual([{ dictionary: { any: ['Palowise'] } }]);
+  it('the Speech page links to the Dictionary', async () => {
+    await start(fakeChrome(), 'settings/speech');
+    expect(document.querySelector('section[data-route="settings/speech"] a[href="#dictionary"]')).not.toBeNull();
+    expect($('keywords')).toBeNull();
   });
 });
 
@@ -484,18 +431,5 @@ describe('settings page close', () => {
     }
     expect(document.visibilityState).toBe('visible');
     expect(chrome.saves()).toEqual([{ keys: { openai: 'sk-proj-pasted-4321' } }]);
-  });
-
-  it('pagehide within 400 ms of typing vocabulary saves it', async () => {
-    vi.useFakeTimers();
-    const chrome = fakeChrome();
-    await start(chrome, 'settings/speech');
-    const area = $('keywords');
-    area.focus();
-    typeInto(area, 'Palowise\nCommetric');
-    await vi.advanceTimersByTimeAsync(300);
-    expect(chrome.saves()).toHaveLength(0);
-    pagehide();
-    expect(chrome.saves()).toEqual([{ dictionary: { any: ['Palowise', 'Commetric'] } }]);
   });
 });

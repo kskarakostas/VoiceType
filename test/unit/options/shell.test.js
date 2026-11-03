@@ -12,7 +12,6 @@ const HTML = readFileSync(join(import.meta.dirname, '../../../src/options/option
 const LOAD_ERROR = 'Could not load settings. Reload this page.';
 const NOT_LOADED = 'Settings are not loaded. Nothing was saved.';
 const PLACEHOLDER = 'Coming in a later update.';
-const DICTIONARY_PLACEHOLDER = 'Coming in a later update. Until then, edit your vocabulary in Settings, Speech.';
 
 function storedSettings() {
   const s = freshSettings();
@@ -146,9 +145,7 @@ describe('settings page shell', () => {
     await start(fakeChrome());
     const text = (id) => [...document.querySelectorAll(`section[data-route="${id}"] .placeholder`)].map((p) => p.textContent.trim());
     for (const id of ['settings/sites', 'settings/appearance', 'settings/sound']) expect(text(id), id).toEqual([PLACEHOLDER]);
-    expect(text('dictionary')).toEqual([DICTIONARY_PLACEHOLDER]);
-    expect(document.querySelector('section[data-route="dictionary"] .placeholder a').getAttribute('href')).toBe('#settings/speech');
-    for (const id of ['home', 'modes', 'settings/provider', 'settings/recording', 'settings/speech', 'settings/usage']) expect(text(id), id).toEqual([]);
+    for (const id of ['home', 'modes', 'dictionary', 'settings/provider', 'settings/recording', 'settings/speech', 'settings/usage']) expect(text(id), id).toEqual([]);
   });
 
   it('the footer shows the version and the byline', async () => {

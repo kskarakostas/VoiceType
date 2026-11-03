@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { SPOKEN_LANGUAGES, MAX_KEYWORDS } from '../../../src/shared/dictionary.js';
-import { parseKeywords, formatKeywords, toggleLanguage, createInlineConfirm } from '../../../src/ui/form.js';
+import { SPOKEN_LANGUAGES } from '../../../src/shared/dictionary.js';
+import { toggleLanguage, createInlineConfirm } from '../../../src/ui/form.js';
 
 afterEach(() => { vi.useRealTimers(); });
 
@@ -13,44 +13,6 @@ describe('SPOKEN_LANGUAGES', () => {
   it('is frozen', () => {
     expect(Object.isFrozen(SPOKEN_LANGUAGES)).toBe(true);
     expect(Object.isFrozen(SPOKEN_LANGUAGES[0])).toBe(true);
-  });
-});
-
-describe('parseKeywords', () => {
-  it('keeps one trimmed term per line and drops empty lines', () => {
-    expect(parseKeywords('  Palowise \n\n Kubernetes\r\n\t\nK. S. Karakostas  ')).toEqual(['Palowise', 'Kubernetes', 'K. S. Karakostas']);
-  });
-  it('drops case-insensitive duplicates and keeps the first spelling', () => {
-    expect(parseKeywords('OpenAI\nopenai\nOPENAI\nGemini')).toEqual(['OpenAI', 'Gemini']);
-  });
-  it('keeps at most 100 terms', () => {
-    const text = Array.from({ length: 130 }, (_, i) => `term${i}`).join('\n');
-    const out = parseKeywords(text);
-    expect(MAX_KEYWORDS).toBe(100);
-    expect(out).toHaveLength(100);
-    expect(out[99]).toBe('term99');
-  });
-  it('returns an empty list for blank or non-string input', () => {
-    expect(parseKeywords('')).toEqual([]);
-    expect(parseKeywords(' \n \n')).toEqual([]);
-    expect(parseKeywords(undefined)).toEqual([]);
-  });
-  it('parseKeywords honours limit and exclude', () => {
-    expect(parseKeywords('a\nB\nc\nd', { limit: 2, exclude: new Set(['b']) })).toEqual(['a', 'c']);
-    expect(parseKeywords('a\nb', { limit: -3 })).toEqual([]);
-    expect(parseKeywords('a\nb', { limit: 0 })).toEqual([]);
-    expect(parseKeywords('a\nb', {})).toEqual(['a', 'b']);
-  });
-});
-
-describe('formatKeywords', () => {
-  it('joins terms with newlines', () => {
-    expect(formatKeywords(['a', 'b c'])).toBe('a\nb c');
-    expect(formatKeywords([])).toBe('');
-  });
-  it('round-trips through parseKeywords', () => {
-    const list = ['Palowise', 'Commetric'];
-    expect(parseKeywords(formatKeywords(list))).toEqual(list);
   });
 });
 

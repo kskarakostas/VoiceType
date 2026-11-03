@@ -1,37 +1,6 @@
 // Pure form helpers shared by the extension pages. No chrome APIs, so every function is testable in isolation.
 
-import { SPOKEN_LANGUAGES, MAX_KEYWORDS } from '../shared/dictionary.js';
-
-/**
- * Vocabulary textarea to a term list: one term per line, trimmed, empty lines dropped,
- * case-insensitive duplicates dropped (first spelling kept), terms whose lowercase form is
- * in `exclude` skipped, at most `limit` terms (default MAX_KEYWORDS, floored at 0).
- * @param {string} text
- * @param {{ limit?: number, exclude?: Set<string> }} [options]
- * @returns {string[]}
- */
-export function parseKeywords(text, { limit = MAX_KEYWORDS, exclude = new Set() } = {}) {
-  const max = Math.max(0, limit);
-  const seen = new Set();
-  const terms = [];
-  for (const line of String(text ?? '').split(/\r\n|\r|\n/)) {
-    if (terms.length >= max) break;
-    const term = line.trim();
-    const folded = term.toLowerCase();
-    if (!term || seen.has(folded) || exclude.has(folded)) continue;
-    seen.add(folded);
-    terms.push(term);
-  }
-  return terms;
-}
-
-/**
- * @param {string[]} list
- * @returns {string}
- */
-export function formatKeywords(list) {
-  return list.join('\n');
-}
+import { SPOKEN_LANGUAGES } from '../shared/dictionary.js';
 
 /**
  * Apply one checkbox change to the spoken-language list. Checking 'auto' clears the list;

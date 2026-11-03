@@ -101,17 +101,17 @@ test('the popup opens a route and reuses the settings tab', async () => {
 
 test('a value typed on the settings page survives closing the tab one second later', async () => {
   await seedSettings(serviceWorker, DUMMY_KEY);
-  const page = await openSettingsPage('settings/speech');
-  const keywords = page.locator('#keywords');
-  await expect(keywords).toHaveValue('');
+  const page = await openSettingsPage('dictionary');
+  const field = page.locator('#dictionary-input-any');
+  await expect(field).toHaveValue('');
 
-  await keywords.pressSequentially('Palowise');
+  await field.pressSequentially('Palowise');
   await page.waitForTimeout(CLOSE_AFTER_MS);
   await page.close();
 
   await expect.poll(async () => (await storedSettings()).dictionary.any).toEqual(['Palowise']);
-  const reopened = await openSettingsPage('settings/speech');
-  await expect(reopened.locator('#keywords')).toHaveValue('Palowise');
+  const reopened = await openSettingsPage('dictionary');
+  await expect(reopened.locator('.chip-text')).toHaveText('Palowise');
 });
 
 test('a key pasted on the settings page survives closing the tab one second later', async () => {

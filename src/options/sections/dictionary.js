@@ -1,0 +1,225 @@
+// Dictionary: one card per group, each with a chip per term, an add field and a group remove.
+// Cards stay in place across renders, so typed text and focus survive a save or an external change.
+import {
+  DICTIONARY_ANY, MAX_KEYWORDS, MAX_TERM_LENGTH, SPOKEN_LANGUAGES,
+  addTerms, countTerms, groupLabel, orderedGroupKeys, removeTerm, setGroupTerms,
+} from '../../shared/dictionary.js';
+import { createInlineConfirm } from '../../ui/form.js';
+
+/** @typedef {import('../options.js').PageContext} PageContext */
+/** @typedef {import('../options.js').Section} Section */
+/** @typedef {import('../options.js').TypingSave} TypingSave */
+/** @typedef {{ root: HTMLElement, input: HTMLInputElement, add(): Promise<void>, render(terms: string[]): void }} Card */
+
+const REMOVE_GROUP_PROMPT = 'Click again to remove this group and its terms';
+
+const sameList = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+
+/**
+ * @param {{ reason: 'duplicate'|'tooLong'|'full', group?: string }} refusal
+ * @returns {string}
+ */
+function refusalText({ reason, group }) {
+  if (reason === 'duplicate') return `Already in ${groupLabel(group)}`;
+  if (reason === 'tooLong') return `Terms can have at most ${MAX_TERM_LENGTH} characters`;
+  return `The dictionary is full (${MAX_KEYWORDS} terms)`;
+}
+
+/**
+ * @param {PageContext} ctx
+ * @returns {Section}
+ */
+export function createDictionarySection(ctx) {
+  const { $, document } = ctx;
+  const el = {
+    count: $('dictionary-count'), groups: $('dictionary-groups'), addLanguage: $('dictionary-add-language'),
+    language: $('dictionary-language'), addGroup: $('dictionary-add-group'),
+  };
+  /** @type {Map<string, Card>} */
+  const cards = new Map();
+
+  function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  /**
+   * @param {string} group
+   * @returns {Card}
+   */
+  function createCard(group) {
+    const headingId = `dictionary-heading-${group}`;
+    const inputId = `dictionary-input-${group}`;
+    const messageId = `dictionary-message-${group}`;
+
+    const root = element('div', 'card dictionary-group');
+    root.dataset.group = group;
+    const heading = element('h2', '', groupLabel(group));
+    heading.id = headingId;
+    const list = element('ul', 'chips');
+    list.setAttribute('aria-labelledby', headingId);
+
+    const label = element('label', 'field-label', 'Add a term');
+    label.htmlFor = inputId;
+    const input = element('input');
+    input.type = 'text';
+    input.id = inputId;
+    input.placeholder = 'Type a term, then press Enter';
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    input.setAttribute('aria-describedby', messageId);
+    const message = element('p', 'hint');
+    message.id = messageId;
+    message.setAttribute('role', 'status');
+    const field = element('div', 'field');
+    field.append(label, input, message);
+
+    const removeGroup = element('button', 'btn btn-danger', 'Remove group');
+    removeGroup.type = 'button';
+    removeGroup.dataset.role = 'remove-group';
+    removeGroup.setAttribute('aria-describedby', headingId);
+    const actions = element('div', 'card-actions');
+    actions.append(removeGroup);
+    root.append(heading, list, field, actions);
+
+    /** The remove button of each chip drawn, by term. */
+    const chips = new Map();
+    let drawn = [];
+
+    function showRefusal(refusal) {
+      message.textContent = refusal ? refusalText(refusal) : '';
+      if (refusal) message.dataset.tone = 'error';
+      else delete message.dataset.tone;
+    }
+
+    // The field takes the refused text before the commit, so a blur right after Enter finds
+    // nothing new. A failed save hands back all the text, unless the field has changed since.
+    async function add() {
+      const text = input.value;
+      if (!text.trim()) return;
+      const { dictionary, added, refused } = addTerms(ctx.settings().dictionary, group, text);
+      const kept = refused.map(({ term }) => term).join(', ');
+      input.value = kept;
+      showRefusal(refused[0]);
+      const saved = await ctx.commit((s) => { s.dictionary = dictionary; });
+      if (!saved && input.value === kept) input.value = text;
+    }
+
+    // Adds the field's text first. Left to the blur that the focus move below causes, that add
+    // would rebuild the chips while no element has focus, and the moved focus would be lost.
+    function removeChip(term) {
+      add();
+      const terms = ctx.settings().dictionary[group] ?? [];
+      const index = terms.indexOf(term);
+      const neighbour = terms[index + 1] ?? terms[index - 1];
+      ctx.commit((s) => { s.dictionary = removeTerm(s.dictionary, group, term); });
+      (chips.get(neighbour) ?? input).focus();
+    }
+
+    function createChip(term) {
+      const item = element('li', 'chip');
+      const button = element('button', 'chip-remove', '×');
+      button.type = 'button';
+      button.setAttribute('aria-label', `Remove ${term}`);
+      // Without this the press blurs a field holding text, the blur adds it, the chips rebuild
+      // under the pointer and the click never lands.
+      button.addEventListener('mousedown', (event) => event.preventDefault());
+      button.addEventListener('click', () => removeChip(term));
+      item.append(element('span', 'chip-text', term), button);
+      chips.set(term, button);
+      return item;
+    }
+
+    function render(terms) {
+      removeGroup.hidden = group === DICTIONARY_ANY && terms.length === 0;
+      if (sameList(terms, drawn)) return;
+      drawn = terms;
+      const focused = [...chips.keys()].find((term) => chips.get(term) === document.activeElement);
+      chips.clear();
+      list.replaceChildren(...terms.map((term) => createChip(term)));
+      chips.get(focused)?.focus();
+    }
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      add();
+    });
+    input.addEventListener('blur', add);
+
+    createInlineConfirm(removeGroup, {
+      prompt: REMOVE_GROUP_PROMPT,
+      setTimeout: ctx.setTimer,
+      clearTimeout: ctx.clearTimer,
+      onConfirm: () => {
+        ctx.commit((s) => { s.dictionary = setGroupTerms(s.dictionary, group, []); });
+        cards.get(DICTIONARY_ANY)?.input.focus();
+      },
+    });
+
+    return { root, input, add, render };
+  }
+
+  function renderLanguages(dictionary) {
+    const missing = SPOKEN_LANGUAGES.filter(({ code }) => !Object.hasOwn(dictionary, code));
+    el.addLanguage.hidden = missing.length === 0;
+    if (document.activeElement === el.language) return;
+    const chosen = el.language.value;
+    el.language.replaceChildren(...missing.map(({ code, label }) => {
+      const option = element('option', '', label);
+      option.value = code;
+      return option;
+    }));
+    if (missing.some(({ code }) => code === chosen)) el.language.value = chosen;
+  }
+
+  function render() {
+    const { dictionary } = ctx.settings();
+    el.count.textContent = `${countTerms(dictionary)} of ${MAX_KEYWORDS} terms`;
+
+    const groups = [...new Set([DICTIONARY_ANY, ...orderedGroupKeys(dictionary)])];
+    // Over a copy: removing a focused field can blur it, and that blur can add and render again.
+    for (const [group, card] of [...cards]) {
+      if (groups.includes(group)) continue;
+      cards.delete(group);
+      card.root.remove();
+    }
+    // Last to first, so a new card knows the next one.
+    let next = null;
+    for (const group of groups.toReversed()) {
+      if (!cards.has(group)) {
+        cards.set(group, createCard(group));
+        el.groups.insertBefore(cards.get(group).root, next);
+      }
+      cards.get(group).render(dictionary[group] ?? []);
+      next = cards.get(group).root;
+    }
+    renderLanguages(dictionary);
+  }
+
+  // A stale select can name a group that exists by now, and committing `[]` would wipe its terms.
+  el.addGroup.addEventListener('click', () => {
+    const code = el.language.value;
+    if (!code) return;
+    if (!Object.hasOwn(ctx.settings().dictionary, code)) {
+      ctx.commit((s) => { s.dictionary = { ...s.dictionary, [code]: [] }; });
+    }
+    cards.get(code)?.input.focus();
+  });
+
+  /** @type {TypingSave} */
+  const save = {
+    get pending() {
+      return [...cards.values()].some(({ input }) => input.value.trim() !== '');
+    },
+    schedule() {},
+    cancel() {},
+    flush() {
+      return Promise.all([...cards.values()].map(({ add }) => add()));
+    },
+  };
+
+  return { render, typingSaves: [save] };
+}

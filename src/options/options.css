@@ -88,6 +88,7 @@ main > section { display: grid; gap: 12px; }
 main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .placeholder { color: var(--muted); font-size: 13px; }
 .placeholder a { color: var(--accent); font-weight: 600; }
+.hint a { color: var(--accent); font-weight: 600; }
 .footnote { margin-top: 24px; color: var(--muted); font-size: 12px; }
 
 .toast { left: auto; max-width: 360px; }
@@ -121,6 +122,52 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .days li[data-state="dictated"] { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .days li[data-state="upcoming"] { border: 1px dashed var(--border-strong); color: var(--muted); }
 .days li[aria-current="date"] { outline: 2px solid var(--text); outline-offset: 2px; }
+
+/* Dictionary */
+
+.dictionary-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.dictionary-toolbar .hint { margin-top: 0; }
+.dictionary-actions { display: flex; gap: 6px; }
+.dictionary-groups { display: grid; gap: 12px; }
+.dictionary-add { display: flex; gap: 6px; margin-top: 4px; }
+.dictionary-add select { flex: 1; min-width: 0; }
+.dictionary-group .card-actions:has(> [hidden]) { display: none; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; }
+.chips:empty { display: none; }
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 1px 3px 1px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.chip-text { min-width: 0; overflow-wrap: anywhere; }
+
+.chip-remove {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chip-remove:hover { background: var(--border); color: var(--text); }
 
 /* Narrow windows: the sidebar stacks above the content. */
 
