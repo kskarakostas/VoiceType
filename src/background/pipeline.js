@@ -2,6 +2,7 @@ import * as openai from './providers/openai.js';
 import * as gemini from './providers/gemini.js';
 import { PROVIDERS } from '../shared/models.js';
 import { fillTemplate } from '../shared/text.js';
+import { flattenDictionary } from '../shared/dictionary.js';
 import { estimateSttCost, estimateTextCost } from '../shared/pricing.js';
 import { ProviderError } from './providers/errors.js';
 
@@ -56,7 +57,7 @@ export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeK
   const stt = await adapter.transcribe({
     audioBase64, mimeType, key,
     languages: settings.languages || [],
-    keywords: settings.keywords || [],
+    keywords: flattenDictionary(settings.dictionary),
     signal,
   });
   const raw = (stt.text || '').trim();

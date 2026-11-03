@@ -1,8 +1,13 @@
 // Single source of truth for the settings shape, built-in modes, migration and validation.
 import { LEGACY_PROVIDER_OF_MODEL, PROVIDERS, deepFreeze } from './models.js';
 import { isValidChord } from './chord.js';
+import { MAX_KEYWORDS, orderedGroupKeys } from './dictionary.js';
+import { siteKey } from './sites.js';
 
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
+
+/** How the on-page pill is drawn. */
+export const PILL_STYLES = Object.freeze(['pill', 'dot', 'minimal']);
 
 /** Silence auto-stop choices in seconds; 0 turns it off. */
 export const AUTO_STOP_CHOICES = Object.freeze([0, 2, 3, 5]);
@@ -18,13 +23,17 @@ export const AUTO_STOP_CHOICES = Object.freeze([0, 2, 3, 5]);
  *   maxRecordingTime: number,
  *   translateTargetLang: string,
  *   languages: string[],
- *   keywords: string[],
+ *   dictionary: Record<string, string[]>,
  *   pillGap: number,
  *   hotkey: import('./chord.js').Chord,
  *   autoStopSilenceSec: number,
  *   modes: Record<string, Mode>,
+ *   siteRules: Record<string, { hidePill: boolean, mode: string|null }>,
+ *   pillStyle: 'pill'|'dot'|'minimal',
+ *   sounds: boolean,
+ *   alwaysCopy: boolean,
  * }} Settings
- * @typedef {Omit<Settings, 'keys'> & { hasKey: { openai: boolean, gemini: boolean } }} PublicSettings
+ * @typedef {Omit<Settings, 'keys'|'siteRules'|'dictionary'> & { hasKey: { openai: boolean, gemini: boolean } }} PublicSettings
  */
 
 /** @type {Record<string, Mode>} */
@@ -74,11 +83,15 @@ export const DEFAULT_SETTINGS = deepFreeze({
   maxRecordingTime: 120,
   translateTargetLang: 'English',
   languages: [],
-  keywords: [],
+  dictionary: {},
   pillGap: 8,
   hotkey: { code: 'Space', ctrl: true, shift: true, alt: false, meta: false },
   autoStopSilenceSec: 0,
   modes: BUILTIN_MODES,
+  siteRules: {},
+  pillStyle: 'pill',
+  sounds: false,
+  alwaysCopy: false,
 });
 
 /** @returns {Settings} */
@@ -148,10 +161,74 @@ function repairModes(value) {
   return out;
 }
 
-/** v2 and newer: validate every field, repair only what is wrong, keep everything else. */
-function migrateV2(v) {
-  const fix = {};
-  if (typeof v.settingsVersion !== 'number') fix.settingsVersion = SETTINGS_VERSION;
+/**
+ * Dictionary terms per group in display order: strings only, trimmed, empties dropped,
+ * case-insensitive duplicates across the whole dictionary dropped (first kept), at most
+ * MAX_KEYWORDS in total. Unknown and non-list groups are dropped; empty groups are kept.
+ * Same reference when nothing changes, else a repaired copy.
+ */
+function repairDictionary(value) {
+  if (!isObject(value)) return {};
+  const groups = orderedGroupKeys(value).filter((group) => Array.isArray(value[group]));
+  let changed = groups.length !== Object.keys(value).length;
+  const seen = new Set();
+  const out = {};
+  for (const group of groups) {
+    const list = value[group];
+    const terms = [];
+    for (const raw of list) {
+      const term = typeof raw === 'string' ? raw.trim() : '';
+      const folded = term.toLowerCase();
+      if (!term || seen.has(folded) || seen.size === MAX_KEYWORDS) continue;
+      seen.add(folded);
+      terms.push(term);
+    }
+    if (terms.length !== list.length || terms.some((term, i) => term !== list[i])) changed = true;
+    out[group] = terms;
+  }
+  return changed ? out : value;
+}
+
+/**
+ * Site rules keyed by `siteKey`: unusable or duplicate hosts and non-object rules dropped,
+ * `hidePill` a boolean, `mode` a key of `modes` or null, rules that do nothing deleted.
+ * Same reference when nothing changes, else a repaired copy.
+ */
+function repairSiteRules(value, modes) {
+  if (!isObject(value)) return {};
+  const entries = [];
+  const hosts = new Set();
+  let changed = false;
+  for (const [rawKey, rule] of Object.entries(value)) {
+    const key = siteKey(rawKey);
+    if (key === null || hosts.has(key) || !isObject(rule)) {
+      changed = true;
+      continue;
+    }
+    const hidePill = typeof rule.hidePill === 'boolean' ? rule.hidePill : false;
+    const mode = typeof rule.mode === 'string' && Object.hasOwn(modes, rule.mode) ? rule.mode : null;
+    if (!hidePill && mode === null) {
+      changed = true;
+      continue;
+    }
+    hosts.add(key);
+    const same = key === rawKey && hidePill === rule.hidePill && mode === rule.mode;
+    if (!same) changed = true;
+    entries.push([key, same ? rule : { ...rule, hidePill, mode }]);
+  }
+  // fromEntries defines own properties, so a `__proto__` host never reaches the prototype.
+  return changed ? Object.fromEntries(entries) : value;
+}
+
+/** Input reference when `fix` is empty, else a repaired deep copy. */
+function applyFix(v, fix) {
+  if (Object.keys(fix).length === 0) return v;
+  // Clone so the result shares nothing with storage or with the frozen defaults.
+  return structuredClone({ ...v, ...fix });
+}
+
+/** Field checks v2 and v3 share; records each repair in `fix` and returns the repaired modes. */
+function fixCommon(v, fix) {
   if (!isProvider(v.provider)) fix.provider = DEFAULT_SETTINGS.provider;
   const keys = repairKeys(v.keys);
   if (keys !== v.keys) fix.keys = keys;
@@ -163,17 +240,52 @@ function migrateV2(v) {
   if (!isNonBlank(v.translateTargetLang)) fix.translateTargetLang = DEFAULT_SETTINGS.translateTargetLang;
   const languages = stringList(v.languages);
   if (languages !== v.languages) fix.languages = languages;
-  const keywords = stringList(v.keywords);
-  if (keywords !== v.keywords) fix.keywords = keywords;
   if (!isNonNegative(v.pillGap)) fix.pillGap = DEFAULT_SETTINGS.pillGap;
   if (!isValidChord(v.hotkey)) fix.hotkey = DEFAULT_SETTINGS.hotkey;
   if (!AUTO_STOP_CHOICES.includes(v.autoStopSilenceSec)) fix.autoStopSilenceSec = DEFAULT_SETTINGS.autoStopSilenceSec;
-  if (Object.keys(fix).length === 0) return v;
-  // Clone so the result shares nothing with storage or with the frozen defaults.
-  return structuredClone({ ...v, ...fix });
+  return modes;
 }
 
-/** v1 (unversioned) to v2: recover keys and custom modes, replace built-in prompts. */
+/** v2: validate every v2 field, repair only what is wrong, keep everything else. */
+function migrateV2(v) {
+  const fix = {};
+  if (typeof v.settingsVersion !== 'number') fix.settingsVersion = 2;
+  fixCommon(v, fix);
+  const keywords = stringList(v.keywords);
+  if (keywords !== v.keywords) fix.keywords = keywords;
+  return applyFix(v, fix);
+}
+
+/** A validated v2 record as a new v3 object: keywords move to `dictionary.any`, new fields take their defaults. */
+function v2ToV3(v2) {
+  const { keywords, ...rest } = v2;
+  return {
+    ...structuredClone(rest),
+    dictionary: keywords.length ? { any: [...keywords] } : {},
+    siteRules: {},
+    pillStyle: 'pill',
+    sounds: false,
+    alwaysCopy: false,
+    settingsVersion: 3,
+  };
+}
+
+/** v3 and newer: validate every field, repair only what is wrong, keep everything else. */
+function validateV3(v) {
+  const fix = {};
+  if (typeof v.settingsVersion !== 'number') fix.settingsVersion = SETTINGS_VERSION;
+  const modes = fixCommon(v, fix);
+  const dictionary = repairDictionary(v.dictionary);
+  if (dictionary !== v.dictionary) fix.dictionary = dictionary;
+  const siteRules = repairSiteRules(v.siteRules, modes);
+  if (siteRules !== v.siteRules) fix.siteRules = siteRules;
+  if (!PILL_STYLES.includes(v.pillStyle)) fix.pillStyle = DEFAULT_SETTINGS.pillStyle;
+  if (typeof v.sounds !== 'boolean') fix.sounds = DEFAULT_SETTINGS.sounds;
+  if (typeof v.alwaysCopy !== 'boolean') fix.alwaysCopy = DEFAULT_SETTINGS.alwaysCopy;
+  return applyFix(v, fix);
+}
+
+/** v1 (unversioned) to the current schema: recover keys and custom modes, replace built-in prompts. */
 function migrateV1(v) {
   const s = freshSettings();
   if (isProvider(v.provider)) s.provider = v.provider;
@@ -208,17 +320,25 @@ function migrateV1(v) {
 export function migrateSettings(stored) {
   if (!isObject(stored)) return freshSettings();
   const v = /** @type {any} */ (stored);
-  // Data from this or a newer version is never pushed through the v1 migration.
-  return Number(v.settingsVersion) >= SETTINGS_VERSION ? migrateV2(v) : migrateV1(v);
+  // Only data older than v2 goes through the v1 migration (it rebuilds keys from v1 fields),
+  // and data from a newer version is validated as v3, never down-migrated.
+  const version = Number(v.settingsVersion);
+  if (version >= 3) return validateV3(v);
+  if (version === 2) return validateV3(v2ToV3(migrateV2(v)));
+  // migrateV1 builds on freshSettings(), which is already v3.
+  return validateV3(migrateV1(v));
 }
 
-/** Settings fields a web page may see: every known field except `keys`. */
-const PUBLIC_FIELDS = Object.freeze(Object.keys(DEFAULT_SETTINGS).filter((field) => field !== 'keys'));
+/** Fields a web page never sees: the keys, and the site rules and terms no content code reads. */
+const PRIVATE_FIELDS = Object.freeze(['keys', 'siteRules', 'dictionary']);
+
+/** Settings fields a web page may see: every known field except PRIVATE_FIELDS. */
+const PUBLIC_FIELDS = Object.freeze(Object.keys(DEFAULT_SETTINGS).filter((field) => !PRIVATE_FIELDS.includes(field)));
 
 /**
  * Settings safe to hand to a web page's content script: a deep copy of the known fields
- * except `keys` (an allowlist, so a stray stored field never reaches a page), plus which
- * providers have a non-blank key.
+ * except PRIVATE_FIELDS (an allowlist, so a stray stored field never reaches a page), plus
+ * which providers have a non-blank key.
  * @param {Settings} settings
  * @returns {PublicSettings}
  */

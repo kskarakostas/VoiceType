@@ -5,6 +5,7 @@ import { PROVIDERS } from '../shared/models.js';
 import { formatCost } from '../shared/pricing.js';
 import { freshSettings, AUTO_STOP_CHOICES, orderedModeKeys } from '../shared/defaults.js';
 import { formatChord, chordFromEvent } from '../shared/chord.js';
+import { DICTIONARY_ANY, countTerms, flattenDictionary, setGroupTerms } from '../shared/dictionary.js';
 import {
   SPOKEN_LANGUAGES, MAX_KEYWORDS, parseKeywords, formatKeywords, toggleLanguage, createInlineConfirm,
 } from './form.js';
@@ -232,8 +233,8 @@ export async function initPopup({ chrome, document, window }) {
     for (const box of el.languages.querySelectorAll('input[type="checkbox"]')) {
       box.checked = box.value === 'auto' ? settings.languages.length === 0 : chosen.has(box.value);
     }
-    if (document.activeElement !== el.keywords) el.keywords.value = formatKeywords(settings.keywords);
-    el.keywordCount.textContent = `${settings.keywords.length} of ${MAX_KEYWORDS} terms`;
+    if (document.activeElement !== el.keywords) el.keywords.value = formatKeywords(settings.dictionary.any ?? []);
+    el.keywordCount.textContent = `${countTerms(settings.dictionary)} of ${MAX_KEYWORDS} terms`;
   }
 
   function setText(node, text) {
@@ -434,14 +435,17 @@ export async function initPopup({ chrome, document, window }) {
     el.languages.append(wrap);
   }
 
+  // shortcut: the 2.2 textarea edits only the `any` group, until the 3.0 popup and settings page replace it.
   async function saveKeywords() {
     keywordSave.cancel();
-    const next = parseKeywords(el.keywords.value);
-    if (sameList(next, settings.keywords)) {
+    const others = setGroupTerms(settings.dictionary, DICTIONARY_ANY, []);
+    const exclude = new Set(flattenDictionary(others).map((term) => term.toLowerCase()));
+    const next = parseKeywords(el.keywords.value, { limit: MAX_KEYWORDS - countTerms(others), exclude });
+    if (sameList(next, settings.dictionary.any ?? [])) {
       renderSpeech();
       return;
     }
-    await commit((s) => { s.keywords = next; });
+    await commit((s) => { s.dictionary = setGroupTerms(s.dictionary, DICTIONARY_ANY, next); });
   }
 
   el.keywords.addEventListener('input', () => keywordSave.schedule());
@@ -597,7 +601,10 @@ export async function initPopup({ chrome, document, window }) {
     onConfirm: () => {
       closeEditor();
       return commit((s) => {
-        const kept = { keys: { ...s.keys }, provider: s.provider, languages: [...s.languages], keywords: [...s.keywords] };
+        const kept = {
+          keys: { ...s.keys }, provider: s.provider, languages: [...s.languages],
+          dictionary: structuredClone(s.dictionary), siteRules: structuredClone(s.siteRules),
+        };
         Object.assign(s, freshSettings(), kept);
       }, 'Settings reset');
     },

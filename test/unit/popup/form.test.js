@@ -36,6 +36,12 @@ describe('parseKeywords', () => {
     expect(parseKeywords(' \n \n')).toEqual([]);
     expect(parseKeywords(undefined)).toEqual([]);
   });
+  it('parseKeywords honours limit and exclude', () => {
+    expect(parseKeywords('a\nB\nc\nd', { limit: 2, exclude: new Set(['b']) })).toEqual(['a', 'c']);
+    expect(parseKeywords('a\nb', { limit: -3 })).toEqual([]);
+    expect(parseKeywords('a\nb', { limit: 0 })).toEqual([]);
+    expect(parseKeywords('a\nb', {})).toEqual(['a', 'b']);
+  });
 });
 
 describe('formatKeywords', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  SETTINGS_VERSION, BUILTIN_MODES, DEFAULT_SETTINGS, AUTO_STOP_CHOICES, CONTENT_PATCH_FIELDS,
+  SETTINGS_VERSION, BUILTIN_MODES, DEFAULT_SETTINGS, AUTO_STOP_CHOICES, CONTENT_PATCH_FIELDS, PILL_STYLES,
   freshSettings, recoverKey, migrateSettings, toPublicSettings, applySettingsPatch, orderedModeKeys,
 } from '../../../src/shared/defaults.js';
 import { isValidChord } from '../../../src/shared/chord.js';
@@ -59,6 +59,23 @@ function fullSettings() {
   };
 }
 
+/** A v3 record with every field present and valid, none at its default. */
+function fullV3Settings() {
+  const { keywords: _keywords, ...v2 } = fullSettings();
+  return {
+    ...v2,
+    settingsVersion: 3,
+    dictionary: { any: ['Palowise', 'Karakostas'], el: ['Νόησις'] },
+    siteRules: { 'mail.google.com': { hidePill: false, mode: 'email' }, 'example.com': { hidePill: true, mode: null } },
+    pillStyle: 'dot',
+    sounds: true,
+    alwaysCopy: true,
+  };
+}
+
+/** The v3 fields a v2 record gains when it migrates. */
+const V3_DEFAULTS = { siteRules: {}, pillStyle: 'pill', sounds: false, alwaysCopy: false };
+
 describe('defaults', () => {
   it('default mode has no prompt and all built-ins are flagged', () => {
     expect(BUILTIN_MODES.default.prompt).toBe('');
@@ -80,6 +97,13 @@ describe('defaults', () => {
     expect(DEFAULT_SETTINGS.autoStopSilenceSec).toBe(0);
     expect(AUTO_STOP_CHOICES).toEqual([0, 2, 3, 5]);
     expect(Object.isFrozen(AUTO_STOP_CHOICES)).toBe(true);
+  });
+  it('is schema v3 with a dictionary, site rules, pill style, sounds and always-copy', () => {
+    expect(SETTINGS_VERSION).toBe(3);
+    expect(PILL_STYLES).toEqual(['pill', 'dot', 'minimal']);
+    expect(Object.isFrozen(PILL_STYLES)).toBe(true);
+    expect(DEFAULT_SETTINGS).toMatchObject({ settingsVersion: 3, dictionary: {}, ...V3_DEFAULTS });
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('keywords');
   });
   it('deep-freezes DEFAULT_SETTINGS and BUILTIN_MODES', () => {
     for (const value of [DEFAULT_SETTINGS, DEFAULT_SETTINGS.keys, DEFAULT_SETTINGS.hotkey, DEFAULT_SETTINGS.languages, DEFAULT_SETTINGS.modes.email, BUILTIN_MODES, BUILTIN_MODES.translate]) {
@@ -114,9 +138,12 @@ describe('migrateSettings', () => {
     expect(Object.keys(s.modes)).toEqual(['default', 'email', 'translate', 'instruct']);
   });
 
-  it('migrates a v1 object', () => {
+  it('v1 migrates straight to v3', () => {
     const s = migrateSettings(V1_SETTINGS);
-    expect(s.settingsVersion).toBe(2);
+    expect(s.settingsVersion).toBe(3);
+    expect(s.dictionary).toEqual({});
+    expect(s).not.toHaveProperty('keywords');
+    expect(s).toMatchObject(V3_DEFAULTS);
     expect(s.provider).toBe('gemini');
     expect(s.keys.openai).toBe('sk-proj-abc123');
     expect(s.keys.gemini).toBe('AIzaSyD9x2KqL0mN3pQ7rS8tU1vW4xY5zA6bC7dE');
@@ -151,56 +178,97 @@ describe('migrateSettings', () => {
     expect(s.activeMode).toBe('default');
   });
 
-  it('returns the same reference for a complete v2 object', () => {
-    const v2 = freshSettings();
-    expect(migrateSettings(v2)).toBe(v2);
+  it('returns the same reference for a complete v3 object', () => {
+    const v3 = freshSettings();
+    expect(migrateSettings(v3)).toBe(v3);
   });
 
-  it('adds missing built-in modes to a v2 object', () => {
-    const v2 = freshSettings();
-    delete v2.modes.instruct;
-    const s = migrateSettings(v2);
-    expect(s).not.toBe(v2);
+  it('adds missing built-in modes to a v3 object', () => {
+    const v3 = freshSettings();
+    delete v3.modes.instruct;
+    const s = migrateSettings(v3);
+    expect(s).not.toBe(v3);
     expect(s.modes.instruct).toEqual(BUILTIN_MODES.instruct);
   });
 
   it('passes through data from a newer settings version without touching keys', () => {
-    const v3 = { ...freshSettings(), settingsVersion: 3 };
-    v3.keys.openai = 'sk-newer';
-    const s = migrateSettings(v3);
-    expect(s).toBe(v3);
+    const v4 = { ...freshSettings(), settingsVersion: 4 };
+    v4.keys.openai = 'sk-newer';
+    const s = migrateSettings(v4);
+    expect(s).toBe(v4);
     expect(s.keys.openai).toBe('sk-newer');
   });
 
-  it('restores a missing keys object on a v2 record', () => {
-    const v2 = freshSettings();
-    delete v2.keys;
-    const s = migrateSettings(v2);
-    expect(s).not.toBe(v2);
+  it('a newer store is never down-migrated', () => {
+    const stored = { ...fullV3Settings(), settingsVersion: 4, futureField: 1 };
+    expect(migrateSettings(stored)).toBe(stored);
+  });
+
+  it('restores a missing keys object on a v3 record', () => {
+    const v3 = freshSettings();
+    delete v3.keys;
+    const s = migrateSettings(v3);
+    expect(s).not.toBe(v3);
     expect(s.keys).toEqual({ openai: '', gemini: '' });
   });
 
-  it('replaces a non-object modes value on a v2 record instead of throwing', () => {
+  it('replaces a non-object modes value on a v3 record instead of throwing', () => {
     for (const bad of ['x', 5, true, []]) {
-      const v2 = { ...freshSettings(), modes: bad };
-      const s = migrateSettings(v2);
-      expect(s).not.toBe(v2);
+      const v3 = { ...freshSettings(), modes: bad };
+      const s = migrateSettings(v3);
+      expect(s).not.toBe(v3);
       expect(Object.keys(s.modes)).toEqual(['default', 'email', 'translate', 'instruct']);
     }
   });
 
   it('fills missing providers in a partial keys object without dropping present keys', () => {
-    const v2 = { ...freshSettings(), keys: { openai: 'sk-a' } };
-    const s = migrateSettings(v2);
-    expect(s).not.toBe(v2);
+    const v3 = { ...freshSettings(), keys: { openai: 'sk-a' } };
+    const s = migrateSettings(v3);
+    expect(s).not.toBe(v3);
     expect(s.keys).toEqual({ openai: 'sk-a', gemini: '' });
+  });
+
+  it('v2 with keys, modes and keywords keeps them all', () => {
+    const keywords = ['Palowise', ' palowise ', '', 'Karakostas', ...Array.from({ length: 120 }, (_, i) => `t${i}`)];
+    const s = migrateSettings({ ...fullSettings(), keywords });
+    expect(s.keys).toEqual(fullSettings().keys);
+    expect(s.modes).toEqual(fullSettings().modes);
+    expect(s.modes.custom_1).toEqual({ name: 'Notes', icon: '📝', prompt: 'Turn this into bullet notes.', builtIn: false });
+    expect(s.activeMode).toBe('custom_1');
+    expect(s.dictionary.any).toHaveLength(100);
+    expect(s.dictionary.any.slice(0, 3)).toEqual(['Palowise', 'Karakostas', 't0']);
+    expect('keywords' in s).toBe(false);
+    expect(s.settingsVersion).toBe(3);
+    expect(s).toMatchObject(V3_DEFAULTS);
+    expect(migrateSettings(s)).toBe(s);
+  });
+
+  it('v2 with no keywords migrates to an empty dictionary', () => {
+    expect(migrateSettings({ ...phase0Settings(), keywords: [] }).dictionary).toEqual({});
+  });
+
+  it('a v2 store is never sent through the v1 migration', () => {
+    const stored = { ...phase0Settings(), keys: { openai: 'sk-a', gemini: 'AQ.b' } };
+    expect(stored).not.toHaveProperty('apiKey');
+    expect(migrateSettings(stored).keys).toEqual({ openai: 'sk-a', gemini: 'AQ.b' });
+  });
+
+  it('v2 keywords are validated as a string list before they move to the dictionary', () => {
+    expect(migrateSettings({ ...fullSettings(), keywords: {} }).dictionary).toEqual({});
+    expect(migrateSettings({ ...fullSettings(), keywords: ['a', {}, 'b'] }).dictionary).toEqual({ any: ['a', 'b'] });
+    const { keywords: _keywords, ...noKeywords } = fullSettings();
+    expect(migrateSettings(noKeywords).dictionary).toEqual({});
   });
 
   it('gives a Phase 0 v2 record the new defaults and keeps its keys and custom modes', () => {
     const stored = phase0Settings();
     const s = migrateSettings(stored);
     expect(s).not.toBe(stored);
-    expect(s).toEqual({ ...phase0Settings(), hotkey: DEFAULT_HOTKEY, autoStopSilenceSec: 0 });
+    const { keywords: _keywords, ...v2 } = phase0Settings();
+    expect(s).toEqual({
+      ...v2, ...V3_DEFAULTS, settingsVersion: 3, dictionary: { any: ['Palowise', 'Karakostas'] },
+      hotkey: DEFAULT_HOTKEY, autoStopSilenceSec: 0,
+    });
     expect(s.keys).toEqual({ openai: 'sk-proj-abc123', gemini: 'AQ.Ab8Rn2xyz' });
     expect(s.modes.custom_1).toEqual({ name: 'Notes', icon: '📝', prompt: 'Turn this into bullet notes.', builtIn: false });
     expect(s.activeMode).toBe('custom_1');
@@ -209,20 +277,29 @@ describe('migrateSettings', () => {
     expect(migrateSettings(s)).toBe(s);
   });
 
-  it('returns the same reference for a fully populated v2 record and leaves it untouched', () => {
-    const stored = fullSettings();
+  it('a valid v3 store comes back as the same reference and untouched', () => {
+    const stored = fullV3Settings();
     expect(migrateSettings(stored)).toBe(stored);
-    expect(stored).toEqual(fullSettings());
+    expect(stored).toEqual(fullV3Settings());
   });
 
   it('keeps valid edge values', () => {
-    const stored = { ...fullSettings(), pillGap: 0, minRecordingTime: 0.5, autoStopSilenceSec: 5, languages: [], keywords: [] };
+    const stored = {
+      ...fullV3Settings(), pillGap: 0, minRecordingTime: 0.5, autoStopSilenceSec: 5, languages: [],
+      dictionary: { any: [], el: ['x'] }, siteRules: {}, pillStyle: 'minimal', sounds: false,
+    };
+    expect(migrateSettings(stored)).toBe(stored);
+  });
+
+  it('leaves a stray keywords field on a v3 record alone', () => {
+    const stored = { ...fullV3Settings(), keywords: ['old'] };
     expect(migrateSettings(stored)).toBe(stored);
   });
 
   it('takes the v2 path for a string settings version and stores it as a number', () => {
     const s = migrateSettings({ ...fullSettings(), settingsVersion: '2' });
-    expect(s.settingsVersion).toBe(2);
+    expect(s.settingsVersion).toBe(3);
+    expect(s.dictionary).toEqual({ any: ['Palowise', 'Karakostas'] });
     expect(s.keys).toEqual(fullSettings().keys);
     expect(s.modes.custom_1).toEqual(fullSettings().modes.custom_1);
     expect(s.hotkey).toEqual(fullSettings().hotkey);
@@ -248,8 +325,6 @@ describe('migrateSettings', () => {
       ['languages', 'el', []],
       ['languages', null, []],
       ['languages', ['el', 5, null, 'en'], ['el', 'en']],
-      ['keywords', {}, []],
-      ['keywords', ['a', {}, 'b'], ['a', 'b']],
       ['pillGap', -1, 8],
       ['pillGap', '12', 8],
       ['hotkey', null, DEFAULT_HOTKEY],
@@ -261,41 +336,112 @@ describe('migrateSettings', () => {
       ['autoStopSilenceSec', null, 0],
     ];
     for (const [field, bad, expected] of cases) {
-      const stored = { ...fullSettings(), [field]: bad };
+      const stored = { ...fullV3Settings(), [field]: bad };
       const s = migrateSettings(stored);
       const label = `${field} = ${JSON.stringify(bad)}`;
       expect(s, label).not.toBe(stored);
       expect(s[field], label).toEqual(expected);
-      expect(s.keys, label).toEqual(fullSettings().keys);
-      expect(s.modes, label).toEqual(fullSettings().modes);
+      expect(s.keys, label).toEqual(fullV3Settings().keys);
+      expect(s.modes, label).toEqual(fullV3Settings().modes);
       expect(migrateSettings(s), label).toBe(s);
     }
   });
 
+  it('v3 validation repairs only what is wrong', () => {
+    const cases = [
+      ['pillStyle', 'huge', 'pill'],
+      ['pillStyle', undefined, 'pill'],
+      ['sounds', 'yes', false],
+      ['alwaysCopy', 1, false],
+      ['dictionary', [], {}],
+      ['dictionary', undefined, {}],
+      ['dictionary', { any: ['a', 'A', ' '], xx: ['b'], el: 'c' }, { any: ['a'] }],
+      ['dictionary', { el: [' Νόησις ', 5, null] }, { el: ['Νόησις'] }],
+      ['siteRules', null, {}],
+      ['siteRules', ['x'], {}],
+    ];
+    for (const [field, bad, expected] of cases) {
+      const stored = { ...fullV3Settings(), [field]: bad };
+      const s = migrateSettings(stored);
+      const label = `${field} = ${JSON.stringify(bad)}`;
+      expect(s, label).not.toBe(stored);
+      expect(s, label).toEqual({ ...fullV3Settings(), [field]: expected });
+      expect(migrateSettings(s), label).toBe(s);
+    }
+  });
+
+  it('dictionary validation dedupes across groups in display order and caps at 100', () => {
+    const el = ['Alpha', ...Array.from({ length: 60 }, (_, i) => `el${i}`)];
+    const any = ['alpha', ...Array.from({ length: 60 }, (_, i) => `any${i}`)];
+    const s = migrateSettings({ ...fullV3Settings(), dictionary: { el, any } });
+    expect(s.dictionary.any).toHaveLength(61);
+    expect(s.dictionary.any[0]).toBe('alpha');
+    expect(s.dictionary.el).not.toContain('Alpha');
+    expect(s.dictionary.el).toEqual(Array.from({ length: 39 }, (_, i) => `el${i}`));
+    expect(s.dictionary.any.length + s.dictionary.el.length).toBe(100);
+    expect(migrateSettings(s)).toBe(s);
+  });
+
+  it('site rules are normalized and pruned', () => {
+    const siteRules = {
+      'WWW.Example.com': { hidePill: true, mode: 'gone' },
+      'example.com': { hidePill: false, mode: 'email' },
+      'chrome://x': { hidePill: true, mode: null },
+      'a.com': { hidePill: false, mode: null },
+      'b.com': 'x',
+      'c.com': { hidePill: 'yes', mode: 'email' },
+    };
+    const s = migrateSettings({ ...fullV3Settings(), siteRules });
+    expect(s.siteRules).toEqual({ 'example.com': { hidePill: true, mode: null }, 'c.com': { hidePill: false, mode: 'email' } });
+    expect(migrateSettings(s)).toBe(s);
+  });
+
+  it('a site rule whose mode was removed falls back to no mode', () => {
+    const stored = fullV3Settings();
+    stored.siteRules = { 'notes.example': { hidePill: true, mode: 'custom_1' }, 'x.example': { hidePill: false, mode: 'custom_1' } };
+    delete stored.modes.custom_1;
+    stored.activeMode = 'default';
+    expect(migrateSettings(stored).siteRules).toEqual({ 'notes.example': { hidePill: true, mode: null } });
+  });
+
+  it('a site rule keyed __proto__ stays an own entry and never touches the prototype', () => {
+    const siteRules = JSON.parse('{"__proto__": {"hidePill": true, "mode": null}, "WWW.a.com": {"hidePill": true, "mode": null}}');
+    const s = migrateSettings({ ...fullV3Settings(), siteRules });
+    expect(Object.getPrototypeOf(s.siteRules)).toBe(Object.prototype);
+    expect(Object.hasOwn(s.siteRules, '__proto__')).toBe(true);
+    expect(s.siteRules['a.com']).toEqual({ hidePill: true, mode: null });
+  });
+
   it('repairs keys that are not strings', () => {
-    expect(migrateSettings({ ...fullSettings(), keys: { openai: 5, gemini: null } }).keys).toEqual({ openai: '', gemini: '' });
-    expect(migrateSettings({ ...fullSettings(), keys: 'sk-x' }).keys).toEqual({ openai: '', gemini: '' });
+    expect(migrateSettings({ ...fullV3Settings(), keys: { openai: 5, gemini: null } }).keys).toEqual({ openai: '', gemini: '' });
+    expect(migrateSettings({ ...fullV3Settings(), keys: 'sk-x' }).keys).toEqual({ openai: '', gemini: '' });
   });
 
   it('restores a built-in mode that is not an object and drops non-object modes', () => {
-    const stored = fullSettings();
+    const stored = fullV3Settings();
     stored.modes = { ...stored.modes, email: 'broken', junk: null, list: [] };
     const s = migrateSettings(stored);
     expect(s.modes.email).toEqual(BUILTIN_MODES.email);
     expect(s.modes).not.toHaveProperty('junk');
     expect(s.modes).not.toHaveProperty('list');
-    expect(s.modes.custom_1).toEqual(fullSettings().modes.custom_1);
+    expect(s.modes.custom_1).toEqual(fullV3Settings().modes.custom_1);
   });
 
   it('never mutates the stored object while repairing it', () => {
-    const stored = { ...phase0Settings(), provider: 'nope', languages: ['el', 3] };
+    const stored = { ...phase0Settings(), provider: 'nope', languages: ['el', 3], keywords: [' a ', 'A'] };
     const snapshot = structuredClone(stored);
-    migrateSettings(stored);
+    const s = migrateSettings(stored);
     expect(stored).toEqual(snapshot);
+    s.modes.custom_1.name = 'changed';
+    expect(stored.modes.custom_1.name).toBe('Notes');
+    const v3 = { ...fullV3Settings(), dictionary: { any: ['a', 'A'] }, siteRules: { 'WWW.x.com': { hidePill: true, mode: null } } };
+    const v3Snapshot = structuredClone(v3);
+    migrateSettings(v3);
+    expect(v3).toEqual(v3Snapshot);
   });
 
   it('returns a result that shares nothing with DEFAULT_SETTINGS', () => {
-    const s = migrateSettings({ ...fullSettings(), hotkey: null });
+    const s = migrateSettings({ ...fullV3Settings(), hotkey: null });
     expect(s.hotkey).not.toBe(DEFAULT_SETTINGS.hotkey);
     s.hotkey.alt = true;
     expect(DEFAULT_SETTINGS.hotkey.alt).toBe(false);
@@ -326,7 +472,7 @@ describe('migrateSettings', () => {
     expect(s.translateTargetLang).toBe('English');
   });
 
-  it('v1: produces a record the v2 path accepts unchanged', () => {
+  it('v1: produces a record the v3 path accepts unchanged', () => {
     const s = migrateSettings(V1_SETTINGS);
     expect(migrateSettings(s)).toBe(s);
   });
@@ -334,7 +480,7 @@ describe('migrateSettings', () => {
 
 describe('toPublicSettings', () => {
   function withKeys() {
-    const s = fullSettings();
+    const s = fullV3Settings();
     s.keys = { openai: 'sk-proj-secret123', gemini: '   ' };
     return s;
   }
@@ -347,17 +493,24 @@ describe('toPublicSettings', () => {
   });
 
   it('keeps every other field', () => {
-    const { keys: _keys, ...rest } = withKeys();
+    const { keys: _keys, siteRules: _siteRules, dictionary: _dictionary, ...rest } = withKeys();
     expect(toPublicSettings(withKeys())).toEqual({ ...rest, hasKey: { openai: true, gemini: false } });
+  });
+
+  it('public settings carry no keys, site rules or dictionary', () => {
+    const pub = toPublicSettings(fullV3Settings());
+    for (const field of ['keys', 'siteRules', 'dictionary', 'keywords']) expect(pub, field).not.toHaveProperty(field);
+    expect(pub).toMatchObject({ pillStyle: 'dot', sounds: true, alwaysCopy: true, hasKey: { openai: true, gemini: true } });
   });
 
   it('drops an unknown field and still carries every known field plus hasKey', () => {
     const pub = toPublicSettings({ ...withKeys(), apiKey: 'sk-live-LEAK', draftKey: 'AQ.leak' });
     expect(pub).not.toHaveProperty('apiKey');
     expect(pub).not.toHaveProperty('draftKey');
-    const { keys: _keys, ...known } = withKeys();
+    const { keys: _keys, siteRules: _siteRules, dictionary: _dictionary, ...known } = withKeys();
     expect(pub).toEqual({ ...known, hasKey: { openai: true, gemini: false } });
-    expect(Object.keys(pub).sort()).toEqual([...Object.keys(DEFAULT_SETTINGS).filter((f) => f !== 'keys'), 'hasKey'].sort());
+    const hidden = ['keys', 'siteRules', 'dictionary'];
+    expect(Object.keys(pub).sort()).toEqual([...Object.keys(DEFAULT_SETTINGS).filter((f) => !hidden.includes(f)), 'hasKey'].sort());
   });
 
   it('returns a deep copy and leaves the input intact', () => {
@@ -371,7 +524,7 @@ describe('toPublicSettings', () => {
   });
 
   it('reports no key when keys are missing', () => {
-    const { keys: _keys, ...noKeys } = fullSettings();
+    const { keys: _keys, ...noKeys } = fullV3Settings();
     expect(toPublicSettings(noKeys).hasKey).toEqual({ openai: false, gemini: false });
   });
 });

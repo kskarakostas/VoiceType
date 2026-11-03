@@ -6,21 +6,24 @@ import { SPOKEN_LANGUAGES, MAX_KEYWORDS } from '../shared/dictionary.js';
 export { SPOKEN_LANGUAGES, MAX_KEYWORDS };
 
 /**
- * Vocabulary textarea to `keywords`: one term per line, trimmed, empty lines dropped,
- * case-insensitive duplicates dropped (first spelling kept), at most MAX_KEYWORDS terms.
+ * Vocabulary textarea to a term list: one term per line, trimmed, empty lines dropped,
+ * case-insensitive duplicates dropped (first spelling kept), terms whose lowercase form is
+ * in `exclude` skipped, at most `limit` terms (default MAX_KEYWORDS, floored at 0).
  * @param {string} text
+ * @param {{ limit?: number, exclude?: Set<string> }} [options]
  * @returns {string[]}
  */
-export function parseKeywords(text) {
+export function parseKeywords(text, { limit = MAX_KEYWORDS, exclude = new Set() } = {}) {
+  const max = Math.max(0, limit);
   const seen = new Set();
   const terms = [];
   for (const line of String(text ?? '').split(/\r\n|\r|\n/)) {
+    if (terms.length >= max) break;
     const term = line.trim();
     const folded = term.toLowerCase();
-    if (!term || seen.has(folded)) continue;
+    if (!term || seen.has(folded) || exclude.has(folded)) continue;
     seen.add(folded);
     terms.push(term);
-    if (terms.length === MAX_KEYWORDS) break;
   }
   return terms;
 }

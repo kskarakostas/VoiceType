@@ -20,7 +20,7 @@ function settingsWith(overrides = {}) {
   s.keys.openai = 'sk-test';
   s.keys.gemini = 'AQ.test';
   s.languages = ['el', 'en'];
-  s.keywords = ['Palowise'];
+  s.dictionary = { el: ['Νόησις'], any: ['Palowise', 'palowise'] };
   return Object.assign(s, overrides);
 }
 
@@ -32,7 +32,7 @@ describe('runDictation', () => {
     const result = await runDictation({ ...base, modeKey: 'default', settings: settingsWith() }, adapters);
     expect(adapters.openai.transcribe).toHaveBeenCalledTimes(1);
     const args = adapters.openai.transcribe.mock.calls[0][0];
-    expect(args).toMatchObject({ audioBase64: 'QUJD', mimeType: 'audio/webm', key: 'sk-test', languages: ['el', 'en'], keywords: ['Palowise'] });
+    expect(args).toMatchObject({ audioBase64: 'QUJD', mimeType: 'audio/webm', key: 'sk-test', languages: ['el', 'en'], keywords: ['Palowise', 'Νόησις'] });
     expect(args.signal).toBeInstanceOf(AbortSignal);
     expect(adapters.openai.refine).not.toHaveBeenCalled();
     expect(result).toMatchObject({ raw: 'raw words', text: 'raw words', provider: 'openai', sttModel: 'gpt-transcribe', textModel: null, audioSeconds: 30, warning: null });

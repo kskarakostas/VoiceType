@@ -319,10 +319,13 @@ describe('popup inline confirms', () => {
     expect(chrome.count(MSG.GET_USAGE)).toBe(1);
   });
 
-  it('reset keeps keys, provider, languages and keywords', async () => {
+  it('reset keeps keys, provider, languages, dictionary and site rules', async () => {
     const stored = storedSettings({ gemini: 'AQ.gemini-key-0001' });
+    const dictionary = { any: ['Palowise'], el: ['Νόησις'] };
+    const siteRules = { 'example.com': { hidePill: true, mode: null } };
     Object.assign(stored, {
-      provider: 'gemini', languages: ['en', 'el'], keywords: ['Palowise'], maxRecordingTime: 300, autoStopSilenceSec: 3,
+      provider: 'gemini', languages: ['en', 'el'], dictionary, siteRules, maxRecordingTime: 300, autoStopSilenceSec: 3,
+      pillStyle: 'dot', sounds: true, alwaysCopy: true,
       hotkey: { code: 'KeyD', ctrl: false, shift: false, alt: true, meta: false }, activeMode: 'custom_1',
     });
     stored.modes.custom_1 = { name: 'Notes', icon: 'N', prompt: 'Bullet notes.', builtIn: false };
@@ -343,7 +346,7 @@ describe('popup inline confirms', () => {
     expect(chrome.saves().at(-1)).toEqual({
       ...freshSettings(),
       keys: { openai: 'sk-proj-abcdefgh1234', gemini: 'AQ.gemini-key-0001' },
-      provider: 'gemini', languages: ['en', 'el'], keywords: ['Palowise'],
+      provider: 'gemini', languages: ['en', 'el'], dictionary, siteRules,
     });
     expect($('max-time').value).toBe('120');
     expect($('hotkey').textContent).toBe(formatChord(freshSettings().hotkey));
@@ -434,9 +437,47 @@ describe('popup speech', () => {
     change(area);
     area.blur();
     await flush();
-    expect(chrome.saves().at(-1).keywords).toEqual(parseKeywords(text));
+    expect(chrome.saves().at(-1).dictionary.any).toEqual(parseKeywords(text));
     expect(area.value).toBe('Palowise\nCommetric');
     expect($('keyword-count').textContent).toBe('2 of 100 terms');
+  });
+
+  it('vocabulary count shows the total across groups', async () => {
+    const stored = storedSettings();
+    stored.dictionary = { any: ['a'], el: ['b', 'c'] };
+    await start(fakeChrome(stored));
+    expect($('keyword-count').textContent).toBe('3 of 100 terms');
+    expect($('keywords').value).toBe('a');
+  });
+
+  it('vocabulary save keeps the other groups, skips their terms and leaves room for them', async () => {
+    const stored = storedSettings();
+    const el = Array.from({ length: 98 }, (_, i) => `el${i}`);
+    stored.dictionary = { el };
+    const chrome = fakeChrome(stored);
+    await start(chrome);
+    const area = $('keywords');
+    area.focus();
+    area.value = 'EL0\nPalowise\nCommetric\nNoesis';
+    change(area);
+    area.blur();
+    await flush();
+    expect(chrome.saves().at(-1).dictionary).toEqual({ el, any: ['Palowise', 'Commetric'] });
+    expect($('keyword-count').textContent).toBe('100 of 100 terms');
+  });
+
+  it('clearing the vocabulary drops the any group', async () => {
+    const stored = storedSettings();
+    stored.dictionary = { any: ['a'], el: ['b'] };
+    const chrome = fakeChrome(stored);
+    await start(chrome);
+    const area = $('keywords');
+    area.focus();
+    area.value = '';
+    change(area);
+    area.blur();
+    await flush();
+    expect(chrome.saves().at(-1).dictionary).toEqual({ el: ['b'] });
   });
 });
 
@@ -763,7 +804,7 @@ describe('popup close', () => {
     const area = $('keywords');
     area.focus();
     typeInto(area, 'Palowise\nCommetric');
-    expect((await escapeSaves(chrome, area)).keywords).toEqual(['Palowise', 'Commetric']);
+    expect((await escapeSaves(chrome, area)).dictionary.any).toEqual(['Palowise', 'Commetric']);
   });
 
   it('Esc within 800 ms of typing a mode prompt saves it, then closes the popup', async () => {
