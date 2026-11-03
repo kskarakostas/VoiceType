@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import {
-  SPOKEN_LANGUAGES, MAX_KEYWORDS, parseKeywords, formatKeywords, toggleLanguage, createInlineConfirm,
-} from '../../../src/popup/form.js';
+import { SPOKEN_LANGUAGES, MAX_KEYWORDS } from '../../../src/shared/dictionary.js';
+import { parseKeywords, formatKeywords, toggleLanguage, createInlineConfirm } from '../../../src/ui/form.js';
 
 afterEach(() => { vi.useRealTimers(); });
 

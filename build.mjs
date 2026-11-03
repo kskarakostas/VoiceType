@@ -23,6 +23,7 @@ const ENTRIES = {
 const STATICS = [
   ['manifest.json', 'manifest.json'],
   ['src/popup/popup.html', 'popup.html'],
+  ['src/ui/base.css', 'base.css'],
   ['src/popup/popup.css', 'popup.css'],
   ['src/offscreen/offscreen.html', 'offscreen.html'],
   ['src/offscreen/permission.html', 'permission.html'],

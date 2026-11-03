@@ -1,9 +1,6 @@
-// Pure popup form helpers. No chrome APIs, so every function is testable in isolation.
+// Pure form helpers shared by the extension pages. No chrome APIs, so every function is testable in isolation.
 
 import { SPOKEN_LANGUAGES, MAX_KEYWORDS } from '../shared/dictionary.js';
-
-// Re-exported so current importers keep working; the constants now live in shared/dictionary.js.
-export { SPOKEN_LANGUAGES, MAX_KEYWORDS };
 
 /**
  * Vocabulary textarea to a term list: one term per line, trimmed, empty lines dropped,

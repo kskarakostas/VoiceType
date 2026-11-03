@@ -5,10 +5,11 @@ import { PROVIDERS } from '../shared/models.js';
 import { formatCost } from '../shared/pricing.js';
 import { freshSettings, AUTO_STOP_CHOICES, orderedModeKeys } from '../shared/defaults.js';
 import { formatChord, chordFromEvent } from '../shared/chord.js';
-import { DICTIONARY_ANY, countTerms, flattenDictionary, setGroupTerms } from '../shared/dictionary.js';
 import {
-  SPOKEN_LANGUAGES, MAX_KEYWORDS, parseKeywords, formatKeywords, toggleLanguage, createInlineConfirm,
-} from './form.js';
+  DICTIONARY_ANY, SPOKEN_LANGUAGES, MAX_KEYWORDS, countTerms, flattenDictionary, setGroupTerms,
+} from '../shared/dictionary.js';
+import { parseKeywords, formatKeywords, toggleLanguage, createInlineConfirm } from '../ui/form.js';
+import { isSettings } from '../ui/settings-client.js';
 
 // Typing pauses this long before a key, the vocabulary or a mode saves; blur, change, Esc and
 // the page being hidden or unloaded save at once.
@@ -37,12 +38,6 @@ function formatTime(seconds) {
 
 function maskKey(key) {
   return key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)} (saved)` : 'Key saved';
-}
-
-function isSettings(value) {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-    && Boolean(value.modes) && typeof value.modes === 'object' && !Array.isArray(value.modes)
-    && Boolean(value.keys) && typeof value.keys === 'object';
 }
 
 const sameList = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
