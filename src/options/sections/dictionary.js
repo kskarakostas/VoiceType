@@ -34,6 +34,12 @@ function refusalText({ reason, group }) {
   return `The dictionary is full (${MAX_KEYWORDS} terms)`;
 }
 
+/**
+ * @param {string} text Pasted text with line breaks.
+ * @returns {string} `text` with a comma separator for each run of line breaks, none at the end.
+ */
+const listText = (text) => text.replace(/[\r\n]+/g, ', ').replace(/, $/, '');
+
 /** @param {number} count */
 const termCount = (count) => `${count} ${count === 1 ? 'term' : 'terms'}`;
 
@@ -125,7 +131,7 @@ export function createDictionarySection(ctx) {
     const list = element('ul', 'chips');
     list.setAttribute('aria-labelledby', headingId);
 
-    const label = element('label', 'field-label', 'Add a term');
+    const label = element('label', 'field-label', `Add a term to ${groupLabel(group)}`);
     label.htmlFor = inputId;
     const input = element('input');
     input.type = 'text';
@@ -195,7 +201,11 @@ export function createDictionarySection(ctx) {
       button.addEventListener('keydown', (event) => {
         if (event.repeat && (event.key === 'Enter' || event.key === ' ')) event.preventDefault();
       });
-      button.addEventListener('click', () => removeChip(term));
+      // Focus moves to the next chip, and the rest of a double click lands on the chip that slides in.
+      button.addEventListener('click', (event) => {
+        if (event.detail > 1) return;
+        removeChip(term);
+      });
       item.append(element('span', 'chip-text', term), button);
       chips.set(term, button);
       return item;
@@ -212,9 +222,17 @@ export function createDictionarySection(ctx) {
     }
 
     input.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter') return;
+      if (event.key !== 'Enter' || event.isComposing) return;
       event.preventDefault();
       add();
+    });
+    // A text input turns line breaks into spaces, which would make a pasted list one term.
+    input.addEventListener('paste', (event) => {
+      const text = event.clipboardData.getData('text/plain');
+      if (!/[\r\n]/.test(text)) return;
+      event.preventDefault();
+      input.setRangeText(listText(text), input.selectionStart, input.selectionEnd, 'end');
+      followFieldText();
     });
     input.addEventListener('blur', add);
     input.addEventListener('input', followFieldText);

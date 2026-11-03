@@ -8,7 +8,7 @@ import {
 /** Largest file the Dictionary page reads. */
 export const MAX_IMPORT_BYTES = 1_000_000;
 
-const BOM = '﻿';
+const BOM = '\uFEFF';
 const HEADER = ['language', 'term'];
 const NOTHING_IMPORTED = 'Nothing was imported.';
 /** Longest unknown language code a refusal repeats, in code points. */
@@ -153,7 +153,7 @@ const refuse = (message) => ({ ok: false, message });
  *   | { ok: false, message: string }}
  */
 export function importDictionaryCsv(text, dictionary) {
-  if (/[�\0]/.test(text)) {
+  if (/[\uFFFD\0]/.test(text)) {
     return refuse(`This file is not UTF-8. Save it as CSV UTF-8 and try again. ${NOTHING_IMPORTED}`);
   }
 
@@ -187,6 +187,8 @@ export function importDictionaryCsv(text, dictionary) {
     const folded = term.toLowerCase();
     if (seen.has(folded)) {
       skipped += 1;
+    } else if (term.includes('\t')) {
+      return refuse(`Line ${line}: the term contains a tab. ${NOTHING_IMPORTED}`);
     } else if (isTermTooLong(term)) {
       return refuse(`Line ${line}: the term is over ${MAX_TERM_LENGTH} characters. ${NOTHING_IMPORTED}`);
     } else {

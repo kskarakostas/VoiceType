@@ -97,7 +97,7 @@ export function setGroupTerms(dictionary, group, terms) {
   return next;
 }
 
-/** Longest term in code points; Gemini's hint sanitizer cuts at 64. */
+/** Longest term in code points; the hint sanitizers of OpenAI and Gemini both cut at 64. */
 export const MAX_TERM_LENGTH = 64;
 
 /**

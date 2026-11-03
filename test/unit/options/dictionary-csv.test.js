@@ -3,7 +3,7 @@ import {
   MAX_IMPORT_BYTES, serializeDictionary, parseCsv, importDictionaryCsv,
 } from '../../../src/options/dictionary-csv.js';
 
-const BOM = '﻿';
+const BOM = '\uFEFF';
 const NOT_UTF8 = 'This file is not UTF-8. Save it as CSV UTF-8 and try again. Nothing was imported.';
 const NO_TERMS = { ok: false, message: 'No terms in that file.' };
 
@@ -181,8 +181,15 @@ describe('importDictionaryCsv', () => {
     expect(ok('a;b\n').dictionary).toEqual({ any: ['a;b'] });
   });
 
+  it('takes a semicolon header in any case, with trailing separators, after blank lines', () => {
+    const terms = { el: ['Νόηση'] };
+    expect(ok('LANGUAGE;TERM\nel;Νόηση\n').dictionary).toEqual(terms);
+    expect(ok('language;term;;\nel;Νόηση;;\n').dictionary).toEqual(terms);
+    expect(ok('\r\n  \r\nlanguage;term\r\nel;Νόηση\r\n').dictionary).toEqual(terms);
+  });
+
   it('refuses a file that was not UTF-8', () => {
-    for (const text of ['caf�\n', 'a\0b\n']) {
+    for (const text of ['caf\uFFFD\n', 'a\0b\n']) {
       expect(importDictionaryCsv(text, {})).toEqual({ ok: false, message: NOT_UTF8 });
     }
   });
@@ -201,6 +208,18 @@ describe('importDictionaryCsv', () => {
   it('measures term length in code points', () => {
     const term = '\u{1F600}'.repeat(64);
     expect(ok(term).dictionary).toEqual({ any: [term] });
+  });
+
+  it('refuses a term with a tab', () => {
+    expect(importDictionaryCsv('good\nlanguage\tterm\nel\tΝόηση\n', {}).message)
+      .toBe('Line 2: the term contains a tab. Nothing was imported.');
+  });
+
+  it('a stored term with a tab round-trips', () => {
+    const stored = { any: ['a\tb'] };
+    const result = ok(serializeDictionary(stored), stored);
+    expect(result.added).toBe(0);
+    expect(result.skipped).toBe(1);
   });
 
   it('a stored term over 64 characters round-trips', () => {

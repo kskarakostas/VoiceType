@@ -85,6 +85,12 @@ function pressEnter(el) {
   el.dispatchEvent(event);
   return event;
 }
+function paste(el, text) {
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  event.clipboardData = { getData: (type) => (type === 'text/plain' ? text : '') };
+  el.dispatchEvent(event);
+  return event;
+}
 function externalChange(chrome, dictionary) {
   chrome.script(MSG.GET_SETTINGS, storedSettings(dictionary));
   chrome.fire(SETTINGS_CHANGE, 'local');
@@ -139,8 +145,8 @@ describe('dictionary page layout', () => {
       'Names and jargon the provider should recognize. Every term goes with every dictation, whatever language you speak.',
     );
     expect(section.querySelector('.placeholder')).toBeNull();
-    expect($('dictionary-export').textContent).toBe('Export');
-    expect($('dictionary-import').textContent).toBe('Import');
+    expect($('dictionary-export').textContent).toBe('Export CSV');
+    expect($('dictionary-import').textContent).toBe('Import CSV');
     expect($('dictionary-file').type).toBe('file');
     expect($('dictionary-file').hidden).toBe(true);
     expect($('dictionary-file').accept).toBe('.csv,.txt,text/csv,text/plain');
@@ -162,7 +168,7 @@ describe('dictionary page layout', () => {
     expect(input('any').placeholder).toBe('Type a term, then press Enter');
     expect(input('any').getAttribute('aria-describedby')).toBe('dictionary-message-any');
     const label = card('any').querySelector('label.field-label');
-    expect(label.textContent).toBe('Add a term');
+    expect(label.textContent).toBe('Add a term to All languages');
     expect(label.htmlFor).toBe('dictionary-input-any');
     expect(message('any').tagName).toBe('P');
     expect(message('any').classList.contains('hint')).toBe(true);
@@ -196,6 +202,44 @@ describe('dictionary page adding terms', () => {
     expect(input('any').value).toBe('');
     expect(chips('any')).toEqual(['Palowise', 'Noesis']);
     expect($('dictionary-count').textContent).toBe('2 of 100 terms');
+  });
+
+  it('names the group in each add field\'s label', async () => {
+    await start(fakeChrome(storedSettings({ el: ['a'] })));
+    expect(card('el').querySelector('label.field-label').textContent).toBe('Add a term to Greek');
+  });
+
+  it('an Enter that ends a composition neither adds nor is prevented', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    typeInto(input('any'), 'a');
+    const event = new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true });
+    input('any').dispatchEvent(event);
+    await flush();
+    expect(event.defaultPrevented).toBe(false);
+    expect(input('any').value).toBe('a');
+    expect(chrome.saves()).toEqual([]);
+  });
+
+  it('a pasted line list goes in as comma-separated terms at the selection', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    typeInto(input('any'), 'x, y');
+    input('any').setSelectionRange(3, 4);
+    const event = paste(input('any'), 'Alpha\r\n\r\nBeta\nGamma\r\n');
+    expect(event.defaultPrevented).toBe(true);
+    expect(input('any').value).toBe('x, Alpha, Beta, Gamma');
+    expect(input('any').selectionStart).toBe(input('any').value.length);
+    pressEnter(input('any'));
+    await flush();
+    expect(chrome.saves()).toEqual([{ dictionary: { any: ['x', 'Alpha', 'Beta', 'Gamma'] } }]);
+  });
+
+  it('a paste with no line break is left to the browser', async () => {
+    await start(fakeChrome());
+    typeInto(input('any'), 'x');
+    expect(paste(input('any'), 'Alpha, Beta').defaultPrevented).toBe(false);
+    expect(input('any').value).toBe('x');
   });
 
   it('refuses a term in another group', async () => {
@@ -424,6 +468,17 @@ describe('dictionary page removing terms', () => {
     expect(held({ key: 'Tab', repeat: true })).toBe(false);
   });
 
+  it('a double click on a chip removes one term', async () => {
+    const chrome = fakeChrome(storedSettings({ any: ['a', 'b', 'c'] }));
+    await start(chrome);
+    chipButton('a').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
+    await flush();
+    chipButton('b').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 2 }));
+    await flush();
+    expect(chips('any')).toEqual(['b', 'c']);
+    expect(chrome.saves()).toEqual([{ dictionary: { any: ['b', 'c'] } }]);
+  });
+
   it('a chip click adds the text in the field first, then removes, then moves focus', async () => {
     const chrome = fakeChrome(storedSettings({ any: ['a', 'b'] }));
     await start(chrome);
@@ -634,7 +689,7 @@ describe('dictionary page import and export', () => {
     expect(await exportedText()).toBe(serializeDictionary({ any: ['typed'] }));
   });
 
-  it('Export leaves out a term whose save failed', async () => {
+  it('Export leaves out a term whose save failed during its flush', async () => {
     const chrome = fakeChrome();
     chrome.script(MSG.SAVE_SETTINGS, { success: false, error: 'x' });
     await start(chrome);
@@ -853,6 +908,17 @@ describe('dictionary page import and export', () => {
 
 describe('dictionary page heartbeat', () => {
   const beats = (chrome) => chrome.count(MSG.GET_SETTINGS) - 1;
+
+  it('a pasted line list starts the heartbeat', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome();
+    await start(chrome);
+    paste(input('any'), 'Alpha\nBeta');
+    await vi.advanceTimersByTimeAsync(FIRST_BEAT_MS);
+    expect(beats(chrome)).toBe(1);
+    input('any').value = '';
+    input('any').dispatchEvent(new Event('input', { bubbles: true }));
+  });
 
   it('the heartbeat runs only while a field holds text', async () => {
     vi.useFakeTimers();

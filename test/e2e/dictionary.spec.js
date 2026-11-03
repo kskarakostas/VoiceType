@@ -43,7 +43,8 @@ async function openDictionary(dictionary) {
   await serviceWorker.evaluate((s) => chrome.storage.local.set({ settings: s }), seed);
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/options.html#dictionary`);
-  await expect(page.locator('#dictionary-count')).toHaveText(`${Object.values(dictionary).flat().length} of 100 terms`);
+  await expect(page.locator('#dictionary-input-any')).toBeAttached();
+  await expect(page.locator('#banner')).toBeHidden();
   return page;
 }
 
@@ -94,4 +95,31 @@ test('an import over the cap changes nothing', async () => {
   await expect(page.locator('#dictionary-status')).toHaveAttribute('data-tone', 'error');
   await expect(page.locator('#dictionary-count')).toHaveText('95 of 100 terms');
   expect((await storedSettings()).dictionary).toEqual(dictionary);
+});
+
+test('a real double click on a chip removes one term', async () => {
+  const page = await openDictionary({ any: ['aaa', 'bbb', 'ccc', 'ddd'] });
+
+  await page.getByRole('button', { name: 'Remove aaa' }).dblclick();
+
+  await expect(page.locator('.dictionary-group[data-group="any"] .chip-text')).toHaveText(['bbb', 'ccc', 'ddd']);
+  await expect.poll(async () => (await storedSettings()).dictionary.any).toEqual(['bbb', 'ccc', 'ddd']);
+});
+
+test('a real paste of a line list adds one term per line', async () => {
+  const page = await openDictionary({});
+  const field = page.locator('#dictionary-input-any');
+  // Chromium refuses to grant clipboard permissions to an extension origin, so a real copy fills it.
+  await page.evaluate((text) => document.addEventListener('copy', (event) => {
+    event.clipboardData.setData('text/plain', text);
+    event.preventDefault();
+  }, { once: true }), 'Alpha\r\nBeta\r\nGamma\r\n');
+  await field.focus();
+  await page.keyboard.press('Control+C');
+
+  await page.keyboard.press('Control+V');
+  await expect(field).toHaveValue('Alpha, Beta, Gamma');
+  await field.press('Enter');
+
+  await expect.poll(async () => (await storedSettings()).dictionary.any).toEqual(['Alpha', 'Beta', 'Gamma']);
 });
