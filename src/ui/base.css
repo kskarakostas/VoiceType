@@ -375,7 +375,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
   background: var(--surface-2);
 }
 
-.editor h3 { font-size: 13px; font-weight: 700; }
+.editor h2 { font-size: 13px; font-weight: 700; }
 .editor-row { display: grid; grid-template-columns: 64px 1fr; gap: 8px; }
 .editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .editor-actions .btn-danger { margin-right: auto; }

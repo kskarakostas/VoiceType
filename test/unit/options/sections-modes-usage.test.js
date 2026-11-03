@@ -12,7 +12,7 @@ import { formatChord } from '../../../src/shared/chord.js';
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/options/options.html'), 'utf8');
 const SETTINGS_CHANGE = { settings: { newValue: {} } };
 const RESET_PROMPT = 'Click again to reset. Custom modes will be deleted.';
-const RESET_HINT = 'Resets modes and prompts, recording limits, silence auto-stop, the hotkey, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode. Keeps your API keys, provider, spoken languages, dictionary and site rules.';
+const RESET_HINT = 'Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the hotkey, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary and site rules.';
 
 function bucket(sessions, audioSeconds, cost) {
   return {
@@ -121,8 +121,11 @@ describe('settings page modes and usage layout', () => {
   it('no card heading repeats its route heading', async () => {
     await start(fakeChrome(), 'modes');
     const cardHeadings = (id) => [...route(id).querySelectorAll('h2')].map((h) => h.textContent.trim());
-    for (const id of ['modes', 'settings/provider', 'settings/recording', 'settings/speech']) expect(cardHeadings(id), id).toEqual([]);
-    expect(cardHeadings('settings/usage')).toEqual(['Usage']);
+    for (const id of ['settings/provider', 'settings/recording', 'settings/speech']) expect(cardHeadings(id), id).toEqual([]);
+    expect(cardHeadings('modes')).toEqual(['Edit mode']);
+    expect($('editor-title').tagName).toBe('H2');
+    expect(cardHeadings('settings/usage')).toEqual(['Usage', 'Reset']);
+    expect($('reset').closest('.card').querySelector('h2').textContent.trim()).toBe('Reset');
     expect(route('modes').querySelector('.card-head #add-mode')).not.toBeNull();
   });
 

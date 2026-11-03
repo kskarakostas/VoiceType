@@ -79,6 +79,11 @@ describe('extension page stylesheets and markup', () => {
     }
   });
 
+  it('styles the mode editor title as the h2 it is', () => {
+    expect(BASE_CSS).toContain('.editor h2 { font-size: 13px; font-weight: 700; }');
+    expect(BASE_CSS).not.toContain('.editor h3');
+  });
+
   it('options.css adds no colour token', () => {
     expect(OPTIONS_CSS).not.toMatch(/--[\w-]+\s*:/);
     expect(OPTIONS_CSS).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(/);
