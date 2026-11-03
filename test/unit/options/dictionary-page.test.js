@@ -7,6 +7,7 @@ import { createDictionarySection } from '../../../src/options/sections/dictionar
 import { MSG } from '../../../src/shared/messages.js';
 import { freshSettings } from '../../../src/shared/defaults.js';
 import { SPOKEN_LANGUAGES } from '../../../src/shared/dictionary.js';
+import { MAX_IMPORT_BYTES, serializeDictionary } from '../../../src/options/dictionary-csv.js';
 import { CONFIRM_GUARD_MS } from '../../../src/ui/form.js';
 
 // jsdom replaces the global URL, so resolve paths with node:path rather than new URL().
@@ -142,6 +143,7 @@ describe('dictionary page layout', () => {
     expect($('dictionary-import').textContent).toBe('Import');
     expect($('dictionary-file').type).toBe('file');
     expect($('dictionary-file').hidden).toBe(true);
+    expect($('dictionary-file').accept).toBe('.csv,.txt,text/csv,text/plain');
     expect($('dictionary-status').getAttribute('role')).toBe('status');
     expect($('dictionary-status').classList.contains('hint')).toBe(true);
     expect($('dictionary-status').textContent).toBe('');
@@ -551,6 +553,269 @@ describe('dictionary page languages', () => {
     expect(chrome.saves()).toEqual([]);
     expect(chips('en')).toEqual(['a']);
     expect(document.activeElement).toBe(input('en'));
+  });
+});
+
+describe('dictionary page import and export', () => {
+  const BLOB_URL = 'blob:chrome-extension://test/1';
+  /** What a file input's value reads while it holds a file; jsdom cannot hold one. */
+  const PICKED_VALUE = 'C:\\fakepath\\words.csv';
+  const REVOKE_MS = 1000;
+
+  const status = () => $('dictionary-status');
+  const fileOf = (text, size = text.length) => ({ size, text: vi.fn(async () => text) });
+
+  /** Plays the file chooser closing on `file`, or on nothing. */
+  function pick(file) {
+    const field = $('dictionary-file');
+    Object.defineProperty(field, 'files', { value: file ? [file] : [], configurable: true });
+    Object.defineProperty(field, 'value', { value: file ? PICKED_VALUE : '', configurable: true, writable: true });
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  async function importFile(text) {
+    pick(fileOf(text));
+    await flush();
+  }
+
+  const exported = (call = 0) => window.URL.createObjectURL.mock.calls[call][0];
+  const exportedText = async (call = 0) => (
+    new TextDecoder('utf-8', { ignoreBOM: true }).decode(await exported(call).arrayBuffer())
+  );
+
+  let click;
+  let downloads;
+
+  beforeEach(() => {
+    downloads = [];
+    window.URL.createObjectURL = vi.fn(() => BLOB_URL);
+    window.URL.revokeObjectURL = vi.fn();
+    click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function record() {
+      downloads.push({ name: this.download, href: this.href });
+    });
+  });
+  afterEach(() => {
+    click.mockRestore();
+    delete window.URL.createObjectURL;
+    delete window.URL.revokeObjectURL;
+  });
+
+  it('Export downloads the CSV through a Blob URL', async () => {
+    const stored = storedSettings({ any: ['Palowise'], el: ['Νόηση'] });
+    vi.useFakeTimers();
+    await start(fakeChrome(stored));
+    $('dictionary-export').click();
+    await flush();
+    expect(downloads).toEqual([{ name: 'voicetype-dictionary.csv', href: BLOB_URL }]);
+    expect(exported().type).toBe('text/csv;charset=utf-8');
+    await vi.advanceTimersByTimeAsync(REVOKE_MS - 1);
+    expect(window.URL.revokeObjectURL).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(window.URL.revokeObjectURL).toHaveBeenCalledWith(BLOB_URL);
+    vi.useRealTimers();
+    expect(await exportedText()).toBe(serializeDictionary(stored.dictionary));
+  });
+
+  it('Export of an empty dictionary is the header alone', async () => {
+    await start(fakeChrome());
+    $('dictionary-export').click();
+    await flush();
+    expect(downloads).toHaveLength(1);
+    expect(await exportedText()).toBe(serializeDictionary({}));
+  });
+
+  it('Export includes a term still in an add field', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    typeInto(input('any'), 'typed');
+    $('dictionary-export').click();
+    await flush();
+    expect(chrome.saves()).toEqual([{ dictionary: { any: ['typed'] } }]);
+    expect(await exportedText()).toBe(serializeDictionary({ any: ['typed'] }));
+  });
+
+  it('Export leaves out a term whose save failed', async () => {
+    const chrome = fakeChrome();
+    chrome.script(MSG.SAVE_SETTINGS, { success: false, error: 'x' });
+    await start(chrome);
+    typeInto(input('any'), 'typed');
+    $('dictionary-export').click();
+    await flush();
+    expect(input('any').value).toBe('typed');
+    expect(await exportedText()).toBe(serializeDictionary({}));
+  });
+
+  it('the Import button opens the file picker', async () => {
+    await start(fakeChrome());
+    const opened = vi.spyOn($('dictionary-file'), 'click');
+    $('dictionary-import').click();
+    expect(opened).toHaveBeenCalledOnce();
+  });
+
+  it('Import merges and reports', async () => {
+    const chrome = fakeChrome(storedSettings({ any: ['a'] }));
+    await start(chrome);
+    await importFile('language,term\nel,x\nen,a\n');
+    expect(chrome.saves()).toEqual([{ dictionary: { any: ['a'], el: ['x'] } }]);
+    expect(status().textContent).toBe('Imported 1 term, skipped 1 already in the dictionary.');
+    expect(status().hasAttribute('data-tone')).toBe(false);
+    expect(groups()).toEqual(['any', 'el']);
+    expect(chips('el')).toEqual(['x']);
+  });
+
+  it('Import counts in the plural and says nothing of skips when there are none', async () => {
+    const chrome = fakeChrome(storedSettings({ any: ['a', 'b'] }));
+    await start(chrome);
+    await importFile('c\nd\na\nb\n');
+    expect(status().textContent).toBe('Imported 2 terms, skipped 2 already in the dictionary.');
+    await importFile('e\n');
+    expect(status().textContent).toBe('Imported 1 term.');
+    await importFile('f\ng\n');
+    expect(status().textContent).toBe('Imported 2 terms.');
+  });
+
+  it('Import shows the first bad line and saves nothing', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    await importFile('language,term\nxx,a\nyy,b\n');
+    expect(status().textContent).toBe('Line 2: unknown language "xx". Nothing was imported.');
+    expect(status().dataset.tone).toBe('error');
+    expect(chrome.saves()).toEqual([]);
+  });
+
+  it('Import shows what the file says as text', async () => {
+    await start(fakeChrome());
+    await importFile('language,term\n<img src=x>,a\n');
+    expect(status().textContent).toBe('Line 2: unknown language "<img src=x>". Nothing was imported.');
+    expect(status().querySelector('img')).toBeNull();
+  });
+
+  it('Import over the cap saves nothing', async () => {
+    const chrome = fakeChrome(storedSettings({ any: Array.from({ length: 95 }, (_, i) => `t${i}`) }));
+    await start(chrome);
+    await importFile(`${Array.from({ length: 10 }, (_, i) => `n${i}`).join('\n')}\n`);
+    expect(status().textContent).toBe('This import would go over the 100 term limit by 5. Nothing was imported.');
+    expect(status().dataset.tone).toBe('error');
+    expect(chrome.saves()).toEqual([]);
+  });
+
+  it('Import with nothing new does not save', async () => {
+    const chrome = fakeChrome(storedSettings({ any: ['a', 'b'] }));
+    await start(chrome);
+    await importFile('a\n');
+    expect(status().textContent).toBe('Nothing new: that term is already in the dictionary.');
+    expect(status().hasAttribute('data-tone')).toBe(false);
+    await importFile('a\nb\n');
+    expect(status().textContent).toBe('Nothing new: all 2 terms are already in the dictionary.');
+    expect(status().hasAttribute('data-tone')).toBe(false);
+    expect(chrome.saves()).toEqual([]);
+  });
+
+  it('Import refuses a large file before reading it', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    const large = fileOf('a\n', MAX_IMPORT_BYTES + 1);
+    pick(large);
+    await flush();
+    expect(large.text).not.toHaveBeenCalled();
+    expect(status().textContent).toBe('That file is too large. Nothing was imported.');
+    expect(status().dataset.tone).toBe('error');
+    expect(chrome.saves()).toEqual([]);
+
+    pick(fileOf('a\n', MAX_IMPORT_BYTES));
+    await flush();
+    expect(status().textContent).toBe('Imported 1 term.');
+  });
+
+  it('Import reports a read failure', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    pick({ size: 1, text: async () => { throw new Error('gone'); } });
+    await flush();
+    expect(status().textContent).toBe('Could not read that file. Nothing was imported.');
+    expect(status().dataset.tone).toBe('error');
+    expect(chrome.saves()).toEqual([]);
+  });
+
+  it('Import reports a failed save', async () => {
+    const chrome = fakeChrome();
+    chrome.script(MSG.SAVE_SETTINGS, { success: false, error: 'x' });
+    await start(chrome);
+    await importFile('a\n');
+    expect(status().textContent).toBe('Could not save. Nothing was imported.');
+    expect(status().dataset.tone).toBe('error');
+    expect(chips('any')).toEqual([]);
+  });
+
+  it('Import merges into the dictionary as it is when the file has been read', async () => {
+    let finish;
+    const chrome = fakeChrome();
+    await start(chrome);
+    pick({ size: 1, text: () => new Promise((resolve) => { finish = resolve; }) });
+    typeInto(input('any'), 'typed');
+    pressEnter(input('any'));
+    await flush();
+    finish('read\n');
+    await flush();
+    expect(chrome.saves().at(-1)).toEqual({ dictionary: { any: ['typed', 'read'] } });
+    expect(status().textContent).toBe('Imported 1 term.');
+  });
+
+  it('closing the file picker on nothing does nothing', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    await importFile('language,term\nxx,a\n');
+    const before = status().textContent;
+    pick(null);
+    await flush();
+    expect(status().textContent).toBe(before);
+    expect(status().dataset.tone).toBe('error');
+    expect(chrome.saves()).toEqual([]);
+  });
+
+  it('the same file can be picked twice', async () => {
+    const chrome = fakeChrome(storedSettings({ any: ['a'] }));
+    await start(chrome);
+    const paths = [
+      fileOf('b\n', MAX_IMPORT_BYTES + 1),
+      { size: 1, text: async () => { throw new Error('gone'); } },
+      fileOf('language,term\nxx,b\n'),
+      fileOf('a\n'),
+      fileOf('b\n'),
+    ];
+    for (const file of paths) {
+      pick(file);
+      await flush();
+      expect($('dictionary-file').value).toBe('');
+    }
+    chrome.script(MSG.SAVE_SETTINGS, { success: false, error: 'x' });
+    pick(fileOf('c\n'));
+    await flush();
+    expect(status().textContent).toBe('Could not save. Nothing was imported.');
+    expect($('dictionary-file').value).toBe('');
+  });
+
+  it('the status clears at the next Export', async () => {
+    await start(fakeChrome());
+    await importFile('language,term\nxx,a\n');
+    expect(status().dataset.tone).toBe('error');
+    $('dictionary-export').click();
+    expect(status().textContent).toBe('');
+    expect(status().hasAttribute('data-tone')).toBe(false);
+    await flush();
+  });
+
+  it('the status clears at the next file pick, and a success clears the error tone', async () => {
+    let finish;
+    await start(fakeChrome());
+    await importFile('language,term\nxx,a\n');
+    pick({ size: 1, text: () => new Promise((resolve) => { finish = resolve; }) });
+    expect(status().textContent).toBe('');
+    expect(status().hasAttribute('data-tone')).toBe(false);
+    finish('a\n');
+    await flush();
+    expect(status().textContent).toBe('Imported 1 term.');
+    expect(status().hasAttribute('data-tone')).toBe(false);
   });
 });
 

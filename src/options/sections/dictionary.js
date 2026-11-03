@@ -1,4 +1,5 @@
-// Dictionary: one card per group, each with a chip per term, an add field and a group remove.
+// Dictionary: one card per group, each with a chip per term, an add field and a group remove,
+// and CSV export and import. A file's text reaches the page through textContent only.
 // Cards stay in place across renders, so typed text and focus survive a save or an external change.
 import {
   DICTIONARY_ANY, MAX_KEYWORDS, MAX_TERM_LENGTH, SPOKEN_LANGUAGES,
@@ -6,6 +7,7 @@ import {
 } from '../../shared/dictionary.js';
 import { MSG } from '../../shared/messages.js';
 import { createInlineConfirm } from '../../ui/form.js';
+import { MAX_IMPORT_BYTES, importDictionaryCsv, serializeDictionary } from '../dictionary-csv.js';
 
 /** @typedef {import('../options.js').PageContext} PageContext */
 /** @typedef {import('../options.js').Section} Section */
@@ -15,6 +17,10 @@ import { createInlineConfirm } from '../../ui/form.js';
 const REMOVE_GROUP_PROMPT = 'Click again to remove this group and its terms';
 /** Under the service worker's 30 s idle limit, so a field holding text keeps it awake. */
 const HEARTBEAT_MS = 20000;
+const EXPORT_FILE_NAME = 'voicetype-dictionary.csv';
+const EXPORT_TYPE = 'text/csv;charset=utf-8';
+/** Long enough for the browser to start the download. */
+const REVOKE_DELAY_MS = 1000;
 
 const sameList = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
@@ -26,6 +32,29 @@ function refusalText({ reason, group }) {
   if (reason === 'duplicate') return `Already in ${groupLabel(group)}`;
   if (reason === 'tooLong') return `Terms can have at most ${MAX_TERM_LENGTH} characters`;
   return `The dictionary is full (${MAX_KEYWORDS} terms)`;
+}
+
+/** @param {number} count */
+const termCount = (count) => `${count} ${count === 1 ? 'term' : 'terms'}`;
+
+/**
+ * @param {number} added
+ * @param {number} skipped
+ * @returns {string}
+ */
+function importedText(added, skipped) {
+  const imported = `Imported ${termCount(added)}`;
+  return skipped ? `${imported}, skipped ${skipped} already in the dictionary.` : `${imported}.`;
+}
+
+/**
+ * @param {number} count Terms in the file, all already in the dictionary.
+ * @returns {string}
+ */
+function nothingNewText(count) {
+  return count === 1
+    ? 'Nothing new: that term is already in the dictionary.'
+    : `Nothing new: all ${count} terms are already in the dictionary.`;
 }
 
 /**
@@ -46,6 +75,8 @@ export function createDictionarySection(ctx) {
   const el = {
     count: $('dictionary-count'), groups: $('dictionary-groups'), addLanguage: $('dictionary-add-language'),
     language: $('dictionary-language'), addGroup: $('dictionary-add-group'),
+    export: $('dictionary-export'), import: $('dictionary-import'), file: $('dictionary-file'),
+    status: $('dictionary-status'),
   };
   /** @type {Map<string, Card>} */
   const cards = new Map();
@@ -253,6 +284,64 @@ export function createDictionarySection(ctx) {
     }
     cards.get(code)?.input.focus();
     renderLanguages(ctx.settings().dictionary);
+  });
+
+  /**
+   * @param {string} text
+   * @param {'error'} [tone]
+   */
+  function showStatus(text, tone) {
+    el.status.textContent = text;
+    if (tone) el.status.dataset.tone = tone;
+    else delete el.status.dataset.tone;
+  }
+
+  el.export.addEventListener('click', async () => {
+    showStatus('');
+    await save.flush();
+    const blob = new Blob([serializeDictionary(ctx.settings().dictionary)], { type: EXPORT_TYPE });
+    const url = ctx.window.URL.createObjectURL(blob);
+    const link = element('a');
+    link.href = url;
+    link.download = EXPORT_FILE_NAME;
+    link.click();
+    ctx.setTimer(() => ctx.window.URL.revokeObjectURL(url), REVOKE_DELAY_MS);
+  });
+
+  el.import.addEventListener('click', () => el.file.click());
+
+  /** @param {File} file */
+  async function importFile(file) {
+    if (file.size > MAX_IMPORT_BYTES) {
+      showStatus('That file is too large. Nothing was imported.', 'error');
+      return;
+    }
+    let text;
+    try {
+      text = await file.text();
+    } catch {
+      showStatus('Could not read that file. Nothing was imported.', 'error');
+      return;
+    }
+    const result = importDictionaryCsv(text, ctx.settings().dictionary);
+    if (!result.ok) {
+      showStatus(result.message, 'error');
+    } else if (result.added === 0) {
+      showStatus(nothingNewText(result.skipped));
+    } else if (await ctx.commit((s) => { s.dictionary = result.dictionary; })) {
+      showStatus(importedText(result.added, result.skipped));
+    } else {
+      showStatus('Could not save. Nothing was imported.', 'error');
+    }
+  }
+
+  el.file.addEventListener('change', () => {
+    const [file] = el.file.files;
+    // Without this, picking the same file again fires no change.
+    el.file.value = '';
+    if (!file) return;
+    showStatus('');
+    importFile(file);
   });
 
   /** @type {TypingSave} */
