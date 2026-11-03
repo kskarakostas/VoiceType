@@ -6,10 +6,25 @@ const PROVIDER_KEYS = ['openai', 'gemini'];
 /**
  * @typedef {{ sessions: number, audioSeconds: number, cost: number }} ProviderBucket
  * @typedef {{ sessions: number, audioSeconds: number, estimatedCost: number,
+ *             words: number, wordSeconds: number, wordCost: number,
  *             byProvider: { openai: ProviderBucket, gemini: ProviderBucket }, modes: Record<string, number> }} Bucket
  * @typedef {{ version: 2, daily: Record<string, Bucket>, total: Bucket }} UsageLog
- * @typedef {{ provider: 'openai'|'gemini', audioSeconds: number, cost: number, mode: string }} UsageEntry
+ * @typedef {{ provider: 'openai'|'gemini', audioSeconds: number, cost: number, mode: string, words?: number }} UsageEntry
  */
+
+const wordSegmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
+
+/**
+ * Number of word-like segments in text; 0 for anything that is not a string.
+ * @param {unknown} text
+ * @returns {number}
+ */
+export function countWords(text) {
+  if (typeof text !== 'string') return 0;
+  let n = 0;
+  for (const s of wordSegmenter.segment(text)) if (s.isWordLike) n += 1;
+  return n;
+}
 
 /** Local calendar date as YYYY-MM-DD. */
 export function localDateKey(date = new Date()) {
@@ -32,7 +47,7 @@ function emptyProviderBucket() {
 /** @returns {Bucket} */
 function emptyBucket() {
   return {
-    sessions: 0, audioSeconds: 0, estimatedCost: 0,
+    sessions: 0, audioSeconds: 0, estimatedCost: 0, words: 0, wordSeconds: 0, wordCost: 0,
     byProvider: { openai: emptyProviderBucket(), gemini: emptyProviderBucket() },
     modes: {},
   };
@@ -61,6 +76,9 @@ function normalizeBucket(value) {
   bucket.sessions = finite(src.sessions);
   bucket.audioSeconds = finite(src.audioSeconds);
   bucket.estimatedCost = finite(src.estimatedCost);
+  bucket.words = finite(src.words);
+  bucket.wordSeconds = finite(src.wordSeconds);
+  bucket.wordCost = finite(src.wordCost);
   const byProvider = isObject(src.byProvider) ? src.byProvider : {};
   for (const p of PROVIDER_KEYS) {
     const b = Object.hasOwn(byProvider, p) && isObject(byProvider[p]) ? byProvider[p] : {};
@@ -96,6 +114,12 @@ function addTo(bucket, entry) {
   bucket.sessions += 1;
   bucket.audioSeconds += audioSeconds;
   bucket.estimatedCost += cost;
+  // Only sessions with a known word count feed the word stats, so words per minute stays honest.
+  if (Number.isFinite(entry.words) && entry.words >= 0) {
+    bucket.words += entry.words;
+    bucket.wordSeconds += audioSeconds;
+    bucket.wordCost += cost;
+  }
   if (PROVIDER_KEYS.includes(entry.provider)) {
     const p = bucket.byProvider[entry.provider];
     p.sessions += 1;
@@ -131,6 +155,9 @@ function sumDays(log, keys) {
     acc.sessions += d.sessions;
     acc.audioSeconds += d.audioSeconds;
     acc.estimatedCost += d.estimatedCost;
+    acc.words += d.words;
+    acc.wordSeconds += d.wordSeconds;
+    acc.wordCost += d.wordCost;
     for (const p of PROVIDER_KEYS) {
       acc.byProvider[p].sessions += d.byProvider[p].sessions;
       acc.byProvider[p].audioSeconds += d.byProvider[p].audioSeconds;
@@ -144,10 +171,21 @@ function sumDays(log, keys) {
 /**
  * @param {unknown} log
  * @param {Date} [now]
- * @returns {{ today: Bucket, last7Days: Bucket, total: Bucket }}
+ * @returns {{ today: Bucket, last7Days: Bucket, thisWeek: Bucket, total: Bucket,
+ *             week: { days: Array<{ date: string, sessions: number }>, todayIndex: number } }}
  */
 export function summarize(log, now = new Date()) {
   const src = normalizeLog(log);
   const keys = (n) => Array.from({ length: n }, (_, i) => localDateKey(daysAgo(now, i)));
-  return { today: sumDays(src, keys(1)), last7Days: sumDays(src, keys(7)), total: src.total };
+  // Monday-first local week: Monday is todayIndex days back; later days are negative offsets.
+  const todayIndex = (now.getDay() + 6) % 7;
+  const weekKeys = Array.from({ length: 7 }, (_, i) => localDateKey(daysAgo(now, todayIndex - i)));
+  const days = weekKeys.map((date) => ({ date, sessions: Object.hasOwn(src.daily, date) ? src.daily[date].sessions : 0 }));
+  return {
+    today: sumDays(src, keys(1)),
+    last7Days: sumDays(src, keys(7)),
+    thisWeek: sumDays(src, weekKeys.slice(0, todayIndex + 1)),
+    total: src.total,
+    week: { days, todayIndex },
+  };
 }

@@ -1,5 +1,6 @@
 import { redact } from './providers/errors.js';
 import { warnFailure } from './router.js';
+import { countWords } from './usage.js';
 
 /**
  * One dictation from recorded audio to the message the tab receives. Never throws.
@@ -25,6 +26,7 @@ export function createDictate({ storage, runDictation, applyUsage, userMessage }
     try {
       await storage.updateUsageLog((log) => applyUsage(log, {
         provider: result.provider, audioSeconds: result.audioSeconds, cost: result.cost, mode: modeKey,
+        words: countWords(result.raw),
       }));
     } catch (err) {
       // Logging is bookkeeping; never lose a paid transcript over it.

@@ -32,7 +32,13 @@ describe('createDictate', () => {
     expect(message).toEqual({ success: true, text: 'final', raw: 'raw', cost: 0.0009, warning: null });
     expect(deps.runDictation).toHaveBeenCalledWith({ ...input, settings });
     expect(deps.storage.updateUsageLog).toHaveBeenCalledTimes(1);
-    expect(deps.applyUsage).toHaveBeenCalledWith(expect.anything(), { provider: 'openai', audioSeconds: 12, cost: 0.0009, mode: 'email' });
+    expect(deps.applyUsage).toHaveBeenCalledWith(expect.anything(), { provider: 'openai', audioSeconds: 12, cost: 0.0009, mode: 'email', words: 1 });
+  });
+
+  it('logs the word count of the raw transcript', async () => {
+    deps.runDictation.mockResolvedValueOnce({ ...result, raw: 'Καλημέρα, τι κάνεις;', text: 'Good morning, how are you?' });
+    await dictate(input);
+    expect(deps.applyUsage.mock.calls[0][1].words).toBe(3);
   });
 
   it('reads the settings again on every call', async () => {
