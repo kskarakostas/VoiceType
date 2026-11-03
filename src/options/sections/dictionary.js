@@ -231,8 +231,10 @@ export function createDictionarySection(ctx) {
       const text = event.clipboardData.getData('text/plain');
       if (!/[\r\n]/.test(text)) return;
       event.preventDefault();
-      input.setRangeText(listText(text), input.selectionStart, input.selectionEnd, 'end');
-      followFieldText();
+      // Setting the selection closes the typing undo step, or Ctrl+Z would also take typed text.
+      input.setSelectionRange(input.selectionStart, input.selectionEnd);
+      // Keeps the field's undo history, and fires the input event that runs followFieldText.
+      document.execCommand('insertText', false, listText(text));
     });
     input.addEventListener('blur', add);
     input.addEventListener('input', followFieldText);

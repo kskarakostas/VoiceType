@@ -122,4 +122,15 @@ test('a real paste of a line list adds one term per line', async () => {
   await field.press('Enter');
 
   await expect.poll(async () => (await storedSettings()).dictionary.any).toEqual(['Alpha', 'Beta', 'Gamma']);
+
+  await field.pressSequentially('abc');
+  await page.keyboard.press('Control+V');
+  await expect(field).toHaveValue('abcAlpha, Beta, Gamma');
+  await page.keyboard.press('Control+Z');
+  await expect(field).toHaveValue('abc');
+  await field.pressSequentially('X');
+  await expect(field).toHaveValue('abcX');
+  await field.press('Enter');
+
+  await expect.poll(async () => (await storedSettings()).dictionary.any).toEqual(['Alpha', 'Beta', 'Gamma', 'abcX']);
 });

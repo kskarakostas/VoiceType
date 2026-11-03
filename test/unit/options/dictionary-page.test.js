@@ -91,6 +91,15 @@ function paste(el, text) {
   el.dispatchEvent(event);
   return event;
 }
+/** jsdom has no execCommand. This one acts as Chrome does: it replaces the selection and fires input. */
+function stubInsertText(el) {
+  document.execCommand = vi.fn((command, showUi, text) => {
+    el.setRangeText(text, el.selectionStart, el.selectionEnd, 'end');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  });
+  return document.execCommand;
+}
 function externalChange(chrome, dictionary) {
   chrome.script(MSG.GET_SETTINGS, storedSettings(dictionary));
   chrome.fire(SETTINGS_CHANGE, 'local');
@@ -113,6 +122,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  delete document.execCommand;
 });
 
 describe('dictionary page layout', () => {
@@ -226,10 +236,11 @@ describe('dictionary page adding terms', () => {
     await start(chrome);
     typeInto(input('any'), 'x, y');
     input('any').setSelectionRange(3, 4);
+    const execCommand = stubInsertText(input('any'));
     const event = paste(input('any'), 'Alpha\r\n\r\nBeta\nGamma\r\n');
     expect(event.defaultPrevented).toBe(true);
+    expect(execCommand.mock.calls).toEqual([['insertText', false, 'Alpha, Beta, Gamma']]);
     expect(input('any').value).toBe('x, Alpha, Beta, Gamma');
-    expect(input('any').selectionStart).toBe(input('any').value.length);
     pressEnter(input('any'));
     await flush();
     expect(chrome.saves()).toEqual([{ dictionary: { any: ['x', 'Alpha', 'Beta', 'Gamma'] } }]);
@@ -238,7 +249,9 @@ describe('dictionary page adding terms', () => {
   it('a paste with no line break is left to the browser', async () => {
     await start(fakeChrome());
     typeInto(input('any'), 'x');
+    const execCommand = stubInsertText(input('any'));
     expect(paste(input('any'), 'Alpha, Beta').defaultPrevented).toBe(false);
+    expect(execCommand).not.toHaveBeenCalled();
     expect(input('any').value).toBe('x');
   });
 
@@ -913,6 +926,7 @@ describe('dictionary page heartbeat', () => {
     vi.useFakeTimers();
     const chrome = fakeChrome();
     await start(chrome);
+    stubInsertText(input('any'));
     paste(input('any'), 'Alpha\nBeta');
     await vi.advanceTimersByTimeAsync(FIRST_BEAT_MS);
     expect(beats(chrome)).toBe(1);
