@@ -298,6 +298,10 @@ export function createDictionarySection(ctx) {
 
   el.export.addEventListener('click', async () => {
     showStatus('');
+    if (!ctx.loaded()) {
+      showStatus('Settings are not loaded. Nothing was exported.', 'error');
+      return;
+    }
     await save.flush();
     const blob = new Blob([serializeDictionary(ctx.settings().dictionary)], { type: EXPORT_TYPE });
     const url = ctx.window.URL.createObjectURL(blob);

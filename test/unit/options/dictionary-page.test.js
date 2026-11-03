@@ -645,6 +645,38 @@ describe('dictionary page import and export', () => {
     expect(await exportedText()).toBe(serializeDictionary({}));
   });
 
+  it('Export refuses when the settings did not load', async () => {
+    const chrome = fakeChrome(storedSettings({ any: ['a'] }));
+    chrome.script(MSG.GET_SETTINGS, { error: 'nope' });
+    await start(chrome);
+    $('dictionary-export').click();
+    await flush();
+    expect(window.URL.createObjectURL).not.toHaveBeenCalled();
+    expect(downloads).toEqual([]);
+    expect(status().textContent).toBe('Settings are not loaded. Nothing was exported.');
+    expect(status().dataset.tone).toBe('error');
+  });
+
+  it('Export refuses while the first load is running, and works once it is done', async () => {
+    let finish;
+    const stored = storedSettings({ any: ['a'] });
+    const chrome = fakeChrome(stored);
+    chrome.script(MSG.GET_SETTINGS, new Promise((resolve) => { finish = resolve; }));
+    const opened = start(chrome);
+    $('dictionary-export').click();
+    await flush();
+    expect(window.URL.createObjectURL).not.toHaveBeenCalled();
+    expect(status().textContent).toBe('Settings are not loaded. Nothing was exported.');
+
+    finish(structuredClone(stored));
+    await opened;
+    $('dictionary-export').click();
+    await flush();
+    expect(status().textContent).toBe('');
+    expect(status().hasAttribute('data-tone')).toBe(false);
+    expect(await exportedText()).toBe(serializeDictionary(stored.dictionary));
+  });
+
   it('the Import button opens the file picker', async () => {
     await start(fakeChrome());
     const opened = vi.spyOn($('dictionary-file'), 'click');
