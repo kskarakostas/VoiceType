@@ -1,344 +1,138 @@
-// VoiceType popup. A trusted extension page: it reads the full settings (keys included) and
-// autosaves every change with SAVE_SETTINGS, rolling the change back when the save fails.
+// VoiceType popup: a quick panel over the settings page. A trusted extension page: it reads the
+// full settings, saves only the field an edit changed (provider or activeMode), and re-reads when
+// stored settings change. Everything else lives on the settings page, which it opens (V6).
 import { MSG } from '../shared/messages.js';
-import { PROVIDERS } from '../shared/models.js';
 import { formatCost } from '../shared/pricing.js';
-import { freshSettings, AUTO_STOP_CHOICES, orderedModeKeys } from '../shared/defaults.js';
-import { formatChord, chordFromEvent } from '../shared/chord.js';
-import {
-  DICTIONARY_ANY, SPOKEN_LANGUAGES, MAX_KEYWORDS, countTerms, flattenDictionary, setGroupTerms,
-} from '../shared/dictionary.js';
-import { parseKeywords, formatKeywords, toggleLanguage, createInlineConfirm } from '../ui/form.js';
-import { isSettings } from '../ui/settings-client.js';
+import { freshSettings, orderedModeKeys } from '../shared/defaults.js';
+import { createSettingsClient, changedFields } from '../ui/settings-client.js';
+import { openSettings } from './open-settings.js';
 
-// Typing pauses this long before a key, the vocabulary or a mode saves; blur, change, Esc and
-// the page being hidden or unloaded save at once.
-const TYPING_SAVE_MS = 800;
+/** @typedef {import('../shared/defaults.js').Settings} Settings */
+
 const LOAD_ERROR = 'Could not load settings. Close and reopen the popup.';
 const NOT_LOADED = 'Settings are not loaded. Nothing was saved.';
-const HOTKEY_IDLE_HINT = 'Tap to toggle, hold to talk.';
-const HOTKEY_ARMED_HINT = 'Press the new hotkey. Esc cancels.';
-const HOTKEY_INVALID_HINT = 'Use Ctrl, Alt or Cmd with a key';
-const RESET_PROMPT = 'Click again to reset modes, prompts, recording limits, silence auto-stop and hotkey';
+const SAVE_ERROR = 'Could not save settings.';
 const DEFAULT_MODE_ICON = '🎯';
-const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'AltGraph', 'Meta', 'OS']);
-const SVG_NS = 'http://www.w3.org/2000/svg';
-const ICON_PATHS = {
-  edit: ['M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3Z', 'm13.5 8.5 3 3'],
-  check: ['m5 12.5 4.5 4.5L19 7.5'],
-};
-
-/** Seconds as m:ss, or h:mm:ss from one hour up. */
-function formatTime(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = String(Math.floor(seconds % 60)).padStart(2, '0');
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
-}
-
-function maskKey(key) {
-  return key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)} (saved)` : 'Key saved';
-}
-
-const sameList = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 /**
- * Wire the popup markup, load settings and usage, and autosave every control.
+ * Wire the quick panel, load settings and today's usage, and save the provider and active mode.
  * @param {{ chrome: typeof globalThis.chrome, document: Document, window: Window }} env
- * @returns {Promise<{ readonly settings: import('../shared/defaults.js').Settings, readonly loaded: boolean }>}
+ * @returns {Promise<{ readonly settings: Settings, readonly loaded: boolean }>}
  */
 export async function initPopup({ chrome, document, window }) {
   const $ = (id) => document.getElementById(id);
-  const setTimer = (fn, ms) => window.setTimeout(fn, ms);
-  const clearTimer = (id) => window.clearTimeout(id);
-  const nav = window.navigator;
-  const mac = /mac/i.test(nav?.userAgentData?.platform || nav?.platform || '');
-  const providerIds = Object.keys(PROVIDERS);
+  const client = createSettingsClient({ chrome });
 
   const el = {
-    status: $('status'), statusText: $('status-text'), banner: $('banner'), bannerText: $('banner-text'),
+    ready: $('status-ready'), addKey: $('add-key'), banner: $('banner'), bannerText: $('banner-text'),
     providerRadios: [...document.querySelectorAll('input[name="provider"]')],
-    keyRow: {}, keyInput: {}, testKey: {}, clearKey: {}, spendHint: $('spend-hint'),
-    minTime: $('min-time'), maxTime: $('max-time'), autoStop: $('auto-stop'),
-    hotkey: $('hotkey'), hotkeyHint: $('hotkey-hint'),
-    languages: $('languages'), keywords: $('keywords'), keywordCount: $('keyword-count'),
-    modeList: $('mode-list'), addMode: $('add-mode'), editor: $('mode-editor'), editorTitle: $('editor-title'),
-    modeName: $('mode-name'), modeIcon: $('mode-icon'), modePrompt: $('mode-prompt'),
-    deleteMode: $('delete-mode'), closeMode: $('close-mode'), createMode: $('create-mode'),
-    refreshUsage: $('refresh-usage'), clearUsage: $('clear-usage'),
-    version: $('version'), reset: $('reset'), toast: $('toast'),
+    mode: $('active-mode'), todaySessions: $('today-sessions'), todayCost: $('today-cost'),
+    openSettings: $('open-settings'), toast: $('toast'),
   };
-  for (const id of providerIds) {
-    el.keyRow[id] = $(`key-row-${id}`);
-    el.keyInput[id] = $(`key-${id}`);
-    el.testKey[id] = $(`test-${id}`);
-    el.clearKey[id] = $(`clear-${id}`);
-  }
 
   let settings = freshSettings();
   let loaded = false;
-  /** @type {{ key: string|null } | null} */
-  let editing = null;
-  let hotkeyArmed = false;
   let toastTimer;
-  const keySaves = Object.fromEntries(providerIds.map((id) => [id, typingSave(() => saveKey(id))]));
-  const keywordSave = typingSave(saveKeywords);
-  const modeSave = typingSave(saveModeEdits);
-  /** Mode list rows by mode key, reused across renders. */
-  const modeRows = new Map();
-
-  async function send(message) {
-    try {
-      return await chrome.runtime.sendMessage(message);
-    } catch {
-      return null;
-    }
-  }
+  // Saves in flight, saves started so far, and re-reads started so far, as on the settings page:
+  // a re-read waits for the saves in flight and is dropped when a save started while it ran.
+  let inFlight = 0;
+  let saveCount = 0;
+  let readCount = 0;
+  let rereadPending = false;
+  let loading = true;
+  let changedWhileLoading = false;
 
   function toast(text, tone = 'info') {
     el.toast.textContent = text;
     el.toast.dataset.tone = tone;
     el.toast.hidden = false;
-    clearTimer(toastTimer);
-    toastTimer = setTimer(() => { el.toast.hidden = true; }, tone === 'error' ? 6000 : 2500);
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => { el.toast.hidden = true; }, tone === 'error' ? 6000 : 2500);
   }
-
-  /**
-   * A save that waits for a pause in typing. `flush` runs it at once, but only while it waits,
-   * and returns the save's promise.
-   * @param {() => unknown} save
-   */
-  function typingSave(save) {
-    let timer = null;
-    const cancel = () => {
-      clearTimer(timer);
-      timer = null;
-    };
-    return {
-      get pending() {
-        return timer !== null;
-      },
-      schedule() {
-        cancel();
-        timer = setTimer(() => {
-          timer = null;
-          save();
-        }, TYPING_SAVE_MS);
-      },
-      cancel,
-      flush() {
-        if (timer === null) return undefined;
-        cancel();
-        return save();
-      },
-    };
-  }
-
-  /**
-   * Apply a change, save the whole settings object, and roll back on failure.
-   * @param {(s: import('../shared/defaults.js').Settings) => void} mutate
-   * @param {string} [successText]
-   * @returns {Promise<boolean>}
-   */
-  async function commit(mutate, successText) {
-    const previous = structuredClone(settings);
-    mutate(settings);
-    render();
-    const response = loaded ? await send({ action: MSG.SAVE_SETTINGS, settings }) : null;
-    if (response?.success === true) {
-      if (successText) toast(successText, 'success');
-      return true;
-    }
-    settings = previous;
-    render();
-    toast(loaded ? response?.error || 'Could not save settings.' : NOT_LOADED, 'error');
-    return false;
-  }
-
-  function svgIcon(name, className) {
-    const svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('aria-hidden', 'true');
-    if (className) svg.setAttribute('class', className);
-    for (const d of ICON_PATHS[name]) {
-      const path = document.createElementNS(SVG_NS, 'path');
-      path.setAttribute('d', d);
-      svg.append(path);
-    }
-    return svg;
-  }
-
-  function span(className, text) {
-    const node = document.createElement('span');
-    node.className = className;
-    node.textContent = text;
-    return node;
-  }
-
-  // Rendering. A focused text field is never overwritten, so a save while typing keeps the caret.
 
   function render() {
-    renderProvider();
-    renderRecording();
-    renderSpeech();
-    renderModes();
-    renderEditor();
-  }
-
-  function renderProvider() {
-    for (const radio of el.providerRadios) radio.checked = radio.value === settings.provider;
-    for (const id of providerIds) {
-      const key = settings.keys[id] || '';
-      el.keyRow[id].hidden = id !== settings.provider;
-      el.keyInput[id].placeholder = key ? maskKey(key) : PROVIDERS[id].keyPlaceholder;
-      if (document.activeElement !== el.keyInput[id]) el.keyInput[id].value = '';
-      el.clearKey[id].disabled = !key;
-    }
     const ready = Boolean(settings.keys[settings.provider]?.trim());
-    el.status.dataset.ready = String(ready);
-    el.statusText.textContent = ready ? 'Ready' : 'Add API key';
-    el.spendHint.hidden = !providerIds.some((id) => settings.keys[id]?.trim());
+    el.ready.hidden = !ready;
+    el.addKey.hidden = ready;
+    for (const radio of el.providerRadios) radio.checked = radio.value === settings.provider;
+    renderModes();
   }
 
-  function setSelect(select, value) {
-    const wanted = String(value);
-    if (![...select.options].some((o) => o.value === wanted)) {
-      const option = document.createElement('option');
-      option.value = wanted;
-      option.textContent = `${wanted} s`;
-      select.append(option);
-    }
-    select.value = wanted;
-  }
-
-  function renderRecording() {
-    setSelect(el.minTime, settings.minRecordingTime);
-    setSelect(el.maxTime, settings.maxRecordingTime);
-    el.autoStop.value = String(settings.autoStopSilenceSec);
-    renderHotkey();
-  }
-
-  function renderHotkey() {
-    el.hotkey.textContent = hotkeyArmed ? 'Press keys' : formatChord(settings.hotkey, { mac });
-    el.hotkey.setAttribute('aria-pressed', String(hotkeyArmed));
-  }
-
-  function renderSpeech() {
-    const chosen = new Set(settings.languages);
-    for (const box of el.languages.querySelectorAll('input[type="checkbox"]')) {
-      box.checked = box.value === 'auto' ? settings.languages.length === 0 : chosen.has(box.value);
-    }
-    if (document.activeElement !== el.keywords) el.keywords.value = formatKeywords(settings.dictionary.any ?? []);
-    el.keywordCount.textContent = `${countTerms(settings.dictionary)} of ${MAX_KEYWORDS} terms`;
-  }
-
-  function setText(node, text) {
-    if (node.textContent !== text) node.textContent = text;
-  }
-
-  /** Put `child` in `parent` exactly when `present`, touching the DOM only on a change. */
-  function keepChild(parent, child, present) {
-    if (present && child.parentNode !== parent) parent.append(child);
-    else if (!present && child.parentNode === parent) child.remove();
-  }
-
-  function createModeRow(key) {
-    const item = document.createElement('li');
-    item.className = 'mode';
-
-    const select = document.createElement('button');
-    select.type = 'button';
-    select.className = 'mode-select';
-    select.dataset.focusKey = `select:${key}`;
-    const icon = span('mode-icon', '');
-    const label = document.createTextNode('');
-    const name = span('mode-name', '');
-    name.append(label);
-    const preview = span('mode-preview', '');
-    const text = span('mode-text', '');
-    text.append(name, preview);
-    select.append(icon, text);
-    select.addEventListener('click', () => selectMode(key));
-
-    const edit = document.createElement('button');
-    edit.type = 'button';
-    edit.className = 'icon-btn';
-    edit.dataset.focusKey = `edit:${key}`;
-    edit.append(svgIcon('edit'));
-    edit.addEventListener('click', () => openEditor(key));
-
-    item.append(select, edit);
-    return {
-      item, select, icon, name, label, preview, edit,
-      badge: span('mode-badge', 'Built-in'),
-      check: svgIcon('check', 'mode-check'),
-    };
-  }
-
-  function fillModeRow(row, key) {
-    const mode = settings.modes[key];
-    const active = key === settings.activeMode;
-    row.select.setAttribute('aria-pressed', String(active));
-    setText(row.icon, mode.icon || DEFAULT_MODE_ICON);
-    setText(row.label, mode.name);
-    keepChild(row.name, row.badge, Boolean(mode.builtIn));
-    setText(row.preview, mode.prompt?.trim() ? mode.prompt.trim() : 'Raw transcription');
-    keepChild(row.select, row.check, active);
-    row.edit.setAttribute('aria-label', `Edit ${mode.name}`);
-  }
-
-  // Rows are updated in place; the list is rebuilt only when modes are added, removed or
-  // reordered. A blur save renders between mousedown and mouseup, and a row replaced in
-  // between never receives its click.
+  // The options are rebuilt only when the mode list or a label changed.
   function renderModes() {
-    const keys = orderedModeKeys(settings.modes);
-    for (const key of modeRows.keys()) if (!keys.includes(key)) modeRows.delete(key);
-    for (const key of keys) {
-      if (!modeRows.has(key)) modeRows.set(key, createModeRow(key));
-      fillModeRow(modeRows.get(key), key);
+    const options = orderedModeKeys(settings.modes).map((key) => {
+      const mode = settings.modes[key];
+      return [key, `${mode.icon || DEFAULT_MODE_ICON} ${mode.name}`];
+    });
+    const current = [...el.mode.options];
+    const same = current.length === options.length
+      && options.every(([key, text], i) => current[i].value === key && current[i].textContent === text);
+    if (!same) {
+      el.mode.replaceChildren(...options.map(([key, text]) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = text;
+        return option;
+      }));
     }
-    const items = keys.map((key) => modeRows.get(key).item);
-    if (sameList(items, [...el.modeList.children])) return;
-    const focused = el.modeList.contains(document.activeElement) ? document.activeElement : null;
-    el.modeList.replaceChildren(...items);
-    if (focused?.isConnected) focused.focus();
+    el.mode.value = settings.activeMode;
   }
 
-  /** The editor shows the saved mode it edits; a new-mode draft is not in settings yet. */
-  function renderEditor() {
-    const mode = editing?.key ? settings.modes[editing.key] : null;
-    if (!mode) return;
-    if (document.activeElement !== el.modeName) el.modeName.value = mode.name;
-    if (document.activeElement !== el.modeIcon) el.modeIcon.value = mode.icon || DEFAULT_MODE_ICON;
-    if (document.activeElement !== el.modePrompt) el.modePrompt.value = mode.prompt;
-  }
-
-  // Provider and keys.
-
-  async function saveKey(id) {
-    keySaves[id].cancel();
-    const value = el.keyInput[id].value.trim();
-    if (!value || value === settings.keys[id]) {
-      renderProvider();
+  /**
+   * Apply a change to a copy of the settings, save only the fields it changed, and put those
+   * fields back when the save fails. The popup saves only top-level scalar fields.
+   * @param {(draft: Settings) => void} mutate
+   * @param {string} [successText]
+   */
+  async function commit(mutate, successText) {
+    const snapshot = structuredClone(settings);
+    const draft = structuredClone(settings);
+    mutate(draft);
+    const patch = changedFields(snapshot, draft);
+    if (Object.keys(patch).length === 0) return;
+    if (!loaded) {
+      // Never save from fallback settings: that would write blank keys over the real ones.
+      render();
+      toast(NOT_LOADED, 'error');
       return;
     }
-    await commit((s) => { s.keys[id] = value; }, 'Key saved');
+    settings = draft;
+    render();
+    inFlight += 1;
+    saveCount += 1;
+    const result = await client.save(patch);
+    inFlight -= 1;
+    if (result.success) {
+      if (successText) toast(successText, 'success');
+    } else {
+      const restored = Object.fromEntries(Object.keys(patch).map((field) => [field, snapshot[field]]));
+      settings = { ...settings, ...restored };
+      render();
+      toast(result.error || SAVE_ERROR, 'error');
+    }
+    if (inFlight === 0 && rereadPending) {
+      rereadPending = false;
+      reread();
+    }
   }
 
-  async function testKey(id) {
-    const key = el.keyInput[id].value.trim() || settings.keys[id]?.trim();
-    if (!key) {
-      toast('Enter a key first', 'error');
+  // Also runs after the popup's own saves; rendering the same settings again changes nothing.
+  async function reread() {
+    if (inFlight > 0) {
+      rereadPending = true;
       return;
     }
-    const button = el.testKey[id];
-    button.disabled = true;
-    button.textContent = 'Testing…';
-    const result = await send({ action: MSG.VALIDATE_KEY, provider: id, key });
-    button.disabled = false;
-    button.textContent = 'Test';
-    if (result?.ok) toast(`${PROVIDERS[id].label} key works`, 'success');
-    else toast(result?.error || 'Could not reach the provider.', 'error');
+    const read = ++readCount;
+    const savesBefore = saveCount;
+    const fresh = await client.load();
+    if (read !== readCount) return;
+    if (saveCount !== savesBefore) {
+      reread();
+      return;
+    }
+    if (!fresh) return;
+    settings = fresh;
+    render();
   }
 
   for (const radio of el.providerRadios) {
@@ -347,298 +141,44 @@ export async function initPopup({ chrome, document, window }) {
     });
   }
 
-  for (const id of providerIds) {
-    const input = el.keyInput[id];
-    input.addEventListener('input', () => keySaves[id].schedule());
-    input.addEventListener('change', () => saveKey(id));
-    input.addEventListener('blur', () => saveKey(id));
-    el.testKey[id].addEventListener('click', () => testKey(id));
-    el.clearKey[id].addEventListener('click', () => {
-      keySaves[id].cancel();
-      input.value = '';
-      commit((s) => { s.keys[id] = ''; }, 'Key cleared');
-    });
-  }
-
-  // Recording.
-
-  for (const seconds of AUTO_STOP_CHOICES) {
-    const option = document.createElement('option');
-    option.value = String(seconds);
-    option.textContent = seconds === 0 ? 'Off' : `${seconds} s`;
-    el.autoStop.append(option);
-  }
-
-  el.minTime.addEventListener('change', () => commit((s) => { s.minRecordingTime = Number(el.minTime.value); }));
-  el.maxTime.addEventListener('change', () => commit((s) => { s.maxRecordingTime = Number(el.maxTime.value); }));
-  el.autoStop.addEventListener('change', () => commit((s) => { s.autoStopSilenceSec = Number(el.autoStop.value); }));
-
-  function setHotkeyHint(text, tone) {
-    el.hotkeyHint.textContent = text;
-    if (tone) el.hotkeyHint.dataset.tone = tone;
-    else delete el.hotkeyHint.dataset.tone;
-  }
-
-  function disarmHotkey() {
-    hotkeyArmed = false;
-    setHotkeyHint(HOTKEY_IDLE_HINT);
-    renderHotkey();
-  }
-
-  el.hotkey.addEventListener('click', () => {
-    if (hotkeyArmed) {
-      disarmHotkey();
-      return;
-    }
-    hotkeyArmed = true;
-    setHotkeyHint(HOTKEY_ARMED_HINT);
-    renderHotkey();
-    el.hotkey.focus();
-  });
-  el.hotkey.addEventListener('blur', () => { if (hotkeyArmed) disarmHotkey(); });
-  el.hotkey.addEventListener('keydown', (event) => {
-    if (!hotkeyArmed || event.key === 'Tab') return;
-    // Also keeps Escape from closing the popup and Space or Enter from clicking the button.
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.key === 'Escape') {
-      disarmHotkey();
-      return;
-    }
-    if (MODIFIER_KEYS.has(event.key)) return;
-    const chord = chordFromEvent(event);
-    if (!chord) {
-      setHotkeyHint(HOTKEY_INVALID_HINT, 'error');
-      return;
-    }
-    hotkeyArmed = false;
-    setHotkeyHint(HOTKEY_IDLE_HINT);
-    commit((s) => { s.hotkey = chord; }, `Hotkey: ${formatChord(chord, { mac })}`);
+  el.mode.addEventListener('change', () => {
+    const key = el.mode.value;
+    commit((s) => { s.activeMode = key; }, `Mode: ${settings.modes[key]?.name ?? key}`);
   });
 
-  // Speech.
-
-  for (const { code, label } of [{ code: 'auto', label: 'Auto' }, ...SPOKEN_LANGUAGES]) {
-    const wrap = document.createElement('label');
-    wrap.className = 'check';
-    const box = document.createElement('input');
-    box.type = 'checkbox';
-    box.id = `lang-${code}`;
-    box.value = code;
-    box.addEventListener('change', () => commit((s) => { s.languages = toggleLanguage(s.languages, code, box.checked); }));
-    wrap.append(box, document.createTextNode(label));
-    el.languages.append(wrap);
+  async function openRoute(route) {
+    await openSettings(chrome, route);
+    window.close();
   }
 
-  // shortcut: the 2.2 textarea edits only the `any` group, until the 3.0 popup and settings page replace it.
-  async function saveKeywords() {
-    keywordSave.cancel();
-    const others = setGroupTerms(settings.dictionary, DICTIONARY_ANY, []);
-    const exclude = new Set(flattenDictionary(others).map((term) => term.toLowerCase()));
-    const next = parseKeywords(el.keywords.value, { limit: MAX_KEYWORDS - countTerms(others), exclude });
-    if (sameList(next, settings.dictionary.any ?? [])) {
-      renderSpeech();
-      return;
-    }
-    await commit((s) => { s.dictionary = setGroupTerms(s.dictionary, DICTIONARY_ANY, next); });
-  }
-
-  el.keywords.addEventListener('input', () => keywordSave.schedule());
-  el.keywords.addEventListener('change', saveKeywords);
-  el.keywords.addEventListener('blur', saveKeywords);
-
-  // Modes.
-
-  function selectMode(key) {
-    if (key === settings.activeMode) return;
-    commit((s) => { s.activeMode = key; }, `Mode: ${settings.modes[key].name}`);
-  }
-
-  /** The editor fields as a mode, or null when the name is empty. */
-  function readEditor() {
-    const name = el.modeName.value.trim();
-    if (!name) return null;
-    return { name, icon: el.modeIcon.value.trim() || DEFAULT_MODE_ICON, prompt: el.modePrompt.value.trim() };
-  }
-
-  // An existing mode autosaves like every other control; only a new mode waits for Create.
-  function syncEditorActions() {
-    const key = editing?.key ?? null;
-    el.editorTitle.textContent = key ? 'Edit mode' : 'New mode';
-    el.createMode.hidden = Boolean(key);
-    el.closeMode.textContent = key ? 'Close' : 'Cancel';
-    el.deleteMode.hidden = !key || Boolean(settings.modes[key]?.builtIn);
-  }
-
-  async function saveModeEdits() {
-    modeSave.cancel();
-    const key = editing?.key;
-    const mode = key ? settings.modes[key] : null;
-    if (!mode) return;
-    const fields = readEditor();
-    if (!fields) {
-      toast('Enter a mode name', 'error');
-      return;
-    }
-    if (fields.name === mode.name && fields.icon === mode.icon && fields.prompt === mode.prompt) return;
-    await commit((s) => { s.modes[key] = { ...s.modes[key], ...fields }; });
-  }
-
-  function openEditor(key) {
-    saveModeEdits();
-    editing = { key };
-    syncEditorActions();
-    const mode = key ? settings.modes[key] : null;
-    el.modeName.value = mode?.name ?? '';
-    el.modeIcon.value = mode?.icon ?? DEFAULT_MODE_ICON;
-    el.modePrompt.value = mode?.prompt ?? '';
-    el.editor.hidden = false;
-    el.modeName.focus();
-  }
-
-  function closeEditor() {
-    saveModeEdits();
-    editing = null;
-    el.editor.hidden = true;
-  }
-
-  async function createMode() {
-    const draft = editing;
-    if (draft?.key !== null || el.createMode.disabled) return;
-    const fields = readEditor();
-    if (!fields) {
-      toast('Enter a mode name', 'error');
-      el.modeName.focus();
-      return;
-    }
-    const key = `custom_${Date.now()}`;
-    el.createMode.disabled = true;
-    const ok = await commit((s) => { s.modes[key] = { ...fields, builtIn: false }; }, 'Mode created');
-    el.createMode.disabled = false;
-    if (!ok || editing !== draft) return;
-    editing = { key };
-    syncEditorActions();
-  }
-
-  async function deleteEditingMode() {
-    const key = editing?.key;
-    if (!key || settings.modes[key]?.builtIn) return;
-    const ok = await commit((s) => {
-      delete s.modes[key];
-      if (s.activeMode === key) s.activeMode = 'default';
-    }, 'Mode deleted');
-    if (ok) closeEditor();
-  }
-
-  el.addMode.addEventListener('click', () => openEditor(null));
-  el.createMode.addEventListener('click', createMode);
-  el.closeMode.addEventListener('click', closeEditor);
-  el.deleteMode.addEventListener('click', deleteEditingMode);
-  for (const field of [el.modeName, el.modeIcon, el.modePrompt]) {
-    field.addEventListener('input', () => {
-      if (editing?.key) modeSave.schedule();
-    });
-    field.addEventListener('change', saveModeEdits);
-    field.addEventListener('blur', saveModeEdits);
-  }
-
-  // Usage.
-
-  function fillUsage(prefix, bucket, costField) {
-    $(`usage-${prefix}-sessions`).textContent = String(bucket?.sessions || 0);
-    $(`usage-${prefix}-audio`).textContent = formatTime(bucket?.audioSeconds || 0);
-    $(`usage-${prefix}-cost`).textContent = formatCost(bucket?.[costField] || 0);
-  }
+  el.addKey.addEventListener('click', () => openRoute('settings/provider'));
+  el.openSettings.addEventListener('click', () => openRoute(null));
 
   async function loadUsage() {
-    const stats = await send({ action: MSG.GET_USAGE });
-    if (!stats?.total || typeof stats.total !== 'object') return false;
-    fillUsage('today', stats.today, 'estimatedCost');
-    fillUsage('week', stats.last7Days, 'estimatedCost');
-    fillUsage('total', stats.total, 'estimatedCost');
-    for (const id of providerIds) fillUsage(id, stats.total.byProvider?.[id], 'cost');
-    return true;
+    const stats = await client.send({ action: MSG.GET_USAGE });
+    const today = stats?.today;
+    if (!today || typeof today !== 'object') return;
+    el.todaySessions.textContent = String(today.sessions || 0);
+    el.todayCost.textContent = formatCost(today.estimatedCost || 0);
   }
 
-  el.refreshUsage.addEventListener('click', async () => {
-    if (!(await loadUsage())) toast('Could not load usage.', 'error');
+  // Load. Subscribe first, so a change while the first read runs is read again after it.
+
+  client.onExternalChange(() => {
+    if (loading) changedWhileLoading = true;
+    else if (loaded) reread();
   });
-
-  createInlineConfirm(el.clearUsage, {
-    prompt: 'Click again to clear usage history',
-    setTimeout: setTimer,
-    clearTimeout: clearTimer,
-    onConfirm: async () => {
-      const response = await send({ action: MSG.CLEAR_USAGE });
-      if (response?.success !== true) {
-        toast('Could not clear usage history.', 'error');
-        return;
-      }
-      await loadUsage();
-      toast('Usage history cleared', 'success');
-    },
-  });
-
-  // About and reset.
-
-  el.version.textContent = `Version ${chrome.runtime.getManifest().version}`;
-  for (const link of document.querySelectorAll('a[data-external]')) {
-    link.addEventListener('click', (event) => {
-      event.preventDefault();
-      chrome.tabs.create({ url: link.href });
-    });
-  }
-
-  createInlineConfirm(el.reset, {
-    prompt: RESET_PROMPT,
-    setTimeout: setTimer,
-    clearTimeout: clearTimer,
-    onConfirm: () => {
-      closeEditor();
-      return commit((s) => {
-        const kept = {
-          keys: { ...s.keys }, provider: s.provider, languages: [...s.languages],
-          dictionary: structuredClone(s.dictionary), siteRules: structuredClone(s.siteRules),
-        };
-        Object.assign(s, freshSettings(), kept);
-      }, 'Settings reset');
-    },
-  });
-
-  // Closing. Chrome drops the extension messages a closing popup sends (from pagehide,
-  // visibilitychange and blur alike), so Esc with a typing save still waiting keeps the popup
-  // open until the saves are sent, then closes it. The pagehide and visibilitychange flush is
-  // a best effort that works for the popup opened as a tab.
-
-  const typingSaves = () => [...providerIds.map((id) => keySaves[id]), keywordSave, modeSave];
-
-  function flushTypingSaves() {
-    return Promise.all(typingSaves().map((save) => save.flush()));
-  }
-
-  document.addEventListener('keydown', async (event) => {
-    if (event.key !== 'Escape' || event.defaultPrevented || !typingSaves().some((save) => save.pending)) return;
-    event.preventDefault();
-    await flushTypingSaves();
-    window.close();
-  });
-  window.addEventListener('pagehide', flushTypingSaves);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushTypingSaves();
-  });
-
-  // Load.
-
-  const stored = await send({ action: MSG.GET_SETTINGS });
-  loaded = isSettings(stored);
+  const stored = await client.load();
+  loading = false;
+  loaded = stored !== null;
   if (loaded) {
-    settings = { ...freshSettings(), ...stored };
+    settings = stored;
   } else {
-    // Never save from fallback settings: that would write blank keys over the real ones.
     el.bannerText.textContent = LOAD_ERROR;
     el.banner.hidden = false;
   }
   render();
+  if (loaded && changedWhileLoading) reread();
   await loadUsage();
 
   return {

@@ -1,4 +1,4 @@
-/* VoiceType popup: its width, layout and popup-only components, on top of base.css. */
+/* VoiceType popup quick panel: its width, layout and popup-only components, on top of base.css. */
 
 body { width: 320px; }
 
@@ -35,12 +35,11 @@ body { width: 320px; }
 
 /* Sections */
 
-main { display: grid; gap: 10px; padding: 10px 12px 0; }
+main { display: grid; gap: 10px; padding: 10px 12px 12px; }
+.segmented { margin-bottom: 0; }
 
-/* About and footer */
+/* Today */
 
-.about-line { margin-bottom: 8px; color: var(--text-2); font-size: 12px; }
-.links { display: flex; gap: 16px; margin-bottom: 12px; }
-.links a { color: var(--accent); font-size: 13px; font-weight: 600; text-decoration: none; }
-.links a:hover { text-decoration: underline; }
-.footnote { margin: 10px 0 12px; color: var(--muted); font-size: 12px; text-align: center; }
+.today { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; }
+.today dt { color: var(--muted); font-size: 12px; font-weight: 600; }
+.today dd { margin: 0; color: var(--text); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }

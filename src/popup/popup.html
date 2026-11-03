@@ -18,7 +18,10 @@
         <p class="tagline">BYOK dictation</p>
       </div>
     </div>
-    <p class="status" id="status" data-ready="false"><span class="status-dot" aria-hidden="true"></span><span id="status-text">Add API key</span></p>
+    <div id="status">
+      <p class="status" id="status-ready" data-ready="true" hidden><span class="status-dot" aria-hidden="true"></span>Ready</p>
+      <button type="button" class="btn btn-primary" id="add-key" hidden>Add API key</button>
+    </div>
   </header>
 
   <div class="banner" id="banner" role="alert" hidden>
@@ -33,142 +36,29 @@
         <label class="segment"><input type="radio" name="provider" value="openai"><span>OpenAI</span></label>
         <label class="segment"><input type="radio" name="provider" value="gemini"><span>Gemini</span></label>
       </div>
-      <div class="key-row" id="key-row-openai">
-        <label class="field-label" for="key-openai">OpenAI API key</label>
-        <div class="key-controls">
-          <input type="password" id="key-openai" class="key-input" autocomplete="new-password" spellcheck="false">
-          <button type="button" class="btn" id="test-openai">Test</button>
-          <button type="button" class="btn btn-quiet" id="clear-openai">Clear</button>
-        </div>
-      </div>
-      <div class="key-row" id="key-row-gemini" hidden>
-        <label class="field-label" for="key-gemini">Gemini API key</label>
-        <div class="key-controls">
-          <input type="password" id="key-gemini" class="key-input" autocomplete="new-password" spellcheck="false">
-          <button type="button" class="btn" id="test-gemini">Test</button>
-          <button type="button" class="btn btn-quiet" id="clear-gemini">Clear</button>
-        </div>
-      </div>
-      <p class="hint hint-warning" id="spend-hint" hidden>Set a spending limit on your provider account.</p>
     </section>
 
-    <section class="card" aria-labelledby="h-recording">
-      <h2 id="h-recording"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 2h6"/></svg>Recording</h2>
-      <div class="grid-2">
-        <div class="field">
-          <label class="field-label" for="min-time">Minimum length</label>
-          <select id="min-time">
-            <option value="0.5">0.5 s</option>
-            <option value="1">1 s</option>
-            <option value="2">2 s</option>
-            <option value="3">3 s</option>
-          </select>
-        </div>
-        <div class="field">
-          <label class="field-label" for="max-time">Maximum length</label>
-          <select id="max-time">
-            <option value="30">30 s</option>
-            <option value="60">1 min</option>
-            <option value="120">2 min</option>
-            <option value="180">3 min</option>
-            <option value="300">5 min</option>
-          </select>
-        </div>
-        <div class="field">
-          <label class="field-label" for="auto-stop">Silence auto-stop</label>
-          <select id="auto-stop"></select>
-        </div>
-        <div class="field">
-          <label class="field-label" for="hotkey">Hotkey</label>
-          <button type="button" class="hotkey" id="hotkey" aria-pressed="false" aria-describedby="hotkey-hint"></button>
-        </div>
-      </div>
-      <p class="hint" id="hotkey-hint" aria-live="polite">Tap to toggle, hold to talk.</p>
+    <section class="card" aria-labelledby="h-mode">
+      <h2 id="h-mode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>Mode</h2>
+      <select id="active-mode" aria-labelledby="h-mode"></select>
     </section>
 
-    <section class="card" aria-labelledby="h-speech">
-      <h2 id="h-speech"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg>Speech</h2>
-      <fieldset class="languages">
-        <legend class="field-label">Spoken languages</legend>
-        <div class="check-grid" id="languages"></div>
-      </fieldset>
-      <p class="hint">Auto detects the language. Pick languages to steer recognition.</p>
-      <div class="field field-spaced">
-        <label class="field-label" for="keywords">Vocabulary</label>
-        <textarea id="keywords" rows="4" spellcheck="false" placeholder="One term per line: names, jargon, product names" aria-describedby="keyword-count"></textarea>
-        <p class="hint" id="keyword-count">0 of 100 terms</p>
-      </div>
+    <section class="card" id="site-block" aria-labelledby="h-site">
+      <h2 id="h-site"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg>This site</h2>
+      <p class="hint">Site controls are coming in a later update.</p>
     </section>
 
-    <section class="card" aria-labelledby="h-modes">
-      <div class="card-head">
-        <h2 id="h-modes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>Modes</h2>
-        <button type="button" class="btn btn-quiet" id="add-mode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Add mode</button>
-      </div>
-      <ul class="mode-list" id="mode-list" aria-labelledby="h-modes"></ul>
-      <div class="editor" id="mode-editor" hidden>
-        <h3 id="editor-title">Edit mode</h3>
-        <div class="editor-row">
-          <div class="field">
-            <label class="field-label" for="mode-icon">Icon</label>
-            <input type="text" id="mode-icon" maxlength="8" placeholder="Emoji">
-          </div>
-          <div class="field">
-            <label class="field-label" for="mode-name">Name</label>
-            <input type="text" id="mode-name" maxlength="40" placeholder="Meeting notes">
-          </div>
-        </div>
-        <div class="field">
-          <label class="field-label" for="mode-prompt">Instructions for the text model</label>
-          <textarea id="mode-prompt" rows="5" placeholder="Leave empty for raw transcription."></textarea>
-          <p class="hint">Applied to the transcript after speech recognition. Empty means the transcript is inserted as is.</p>
-        </div>
-        <div class="editor-actions">
-          <button type="button" class="btn btn-danger" id="delete-mode" hidden>Delete</button>
-          <button type="button" class="btn btn-quiet" id="close-mode">Close</button>
-          <button type="button" class="btn btn-primary" id="create-mode" hidden>Create mode</button>
-        </div>
-      </div>
+    <section class="card" aria-labelledby="h-today">
+      <h2 id="h-today"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11"/><path d="M10 20V5"/><path d="M16 20v-6"/><path d="M21 20H3"/></svg>Today</h2>
+      <dl class="today">
+        <div><dt>Sessions</dt><dd id="today-sessions">0</dd></div>
+        <div><dt>Cost</dt><dd id="today-cost">$0.00</dd></div>
+      </dl>
     </section>
 
-    <section class="card" aria-labelledby="h-usage">
-      <div class="card-head">
-        <h2 id="h-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11"/><path d="M10 20V5"/><path d="M16 20v-6"/><path d="M21 20H3"/></svg>Usage</h2>
-        <button type="button" class="btn btn-quiet" id="refresh-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>Refresh</button>
-      </div>
-      <table class="usage">
-        <thead>
-          <tr><td></td><th scope="col">Sessions</th><th scope="col">Audio</th><th scope="col">Cost</th></tr>
-        </thead>
-        <tbody>
-          <tr><th scope="row">Today</th><td id="usage-today-sessions">0</td><td id="usage-today-audio">0:00</td><td id="usage-today-cost">$0.00</td></tr>
-          <tr><th scope="row">7 days</th><td id="usage-week-sessions">0</td><td id="usage-week-audio">0:00</td><td id="usage-week-cost">$0.00</td></tr>
-          <tr class="total"><th scope="row">All time</th><td id="usage-total-sessions">0</td><td id="usage-total-audio">0:00</td><td id="usage-total-cost">$0.00</td></tr>
-        </tbody>
-        <tbody class="by-provider">
-          <tr><th scope="row">OpenAI</th><td id="usage-openai-sessions">0</td><td id="usage-openai-audio">0:00</td><td id="usage-openai-cost">$0.00</td></tr>
-          <tr><th scope="row">Gemini</th><td id="usage-gemini-sessions">0</td><td id="usage-gemini-audio">0:00</td><td id="usage-gemini-cost">$0.00</td></tr>
-        </tbody>
-      </table>
-      <p class="hint">Estimates from list prices. Provider rows cover all time. Check your provider dashboard for billing.</p>
-      <div class="card-actions">
-        <button type="button" class="btn btn-danger" id="clear-usage">Clear history</button>
-      </div>
-    </section>
-
-    <section class="card" aria-labelledby="h-about">
-      <h2 id="h-about"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>About</h2>
-      <p class="about-line"><span id="version">Version</span><span aria-hidden="true"> · </span><span>by K. S. Karakostas</span></p>
-      <p class="links">
-        <a href="https://github.com/kskarakostas/VoiceType" data-external>GitHub</a>
-        <a href="https://github.com/kskarakostas/VoiceType/blob/main/PRIVACY.md" data-external>Privacy</a>
-      </p>
-      <button type="button" class="btn btn-danger btn-block" id="reset">Reset to defaults</button>
-      <p class="hint">Resets modes, prompts, recording limits, silence auto-stop and the hotkey. Keeps your API keys, provider, spoken languages and vocabulary.</p>
-    </section>
+    <button type="button" class="btn btn-block" id="open-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="m4.93 4.93 2.12 2.12"/><path d="m16.95 16.95 2.12 2.12"/><path d="M2 12h3"/><path d="M19 12h3"/><path d="m4.93 19.07 2.12-2.12"/><path d="m16.95 7.05 2.12-2.12"/></svg>Open settings</button>
   </main>
 
-  <p class="footnote">Changes save automatically.</p>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="popup.js"></script>
 </body>
