@@ -96,3 +96,87 @@ export function setGroupTerms(dictionary, group, terms) {
   if (terms.length) next[group] = terms;
   return next;
 }
+
+/** Longest term in code points; Gemini's hint sanitizer cuts at 64. */
+export const MAX_TERM_LENGTH = 64;
+
+/**
+ * @param {string} group
+ * @returns {string} `All languages` for `any`, else the language label, else `group`.
+ */
+export function groupLabel(group) {
+  if (group === DICTIONARY_ANY) return 'All languages';
+  return SPOKEN_LANGUAGES.find((language) => language.code === group)?.label ?? group;
+}
+
+/**
+ * @param {string} term
+ * @returns {boolean} True past MAX_TERM_LENGTH code points.
+ */
+export function isTermTooLong(term) {
+  return [...term].length > MAX_TERM_LENGTH;
+}
+
+/**
+ * The group holding `term`, first in display order; case-insensitive after trim.
+ * @param {Record<string, string[]>} dictionary
+ * @param {string} term
+ * @returns {string|null}
+ */
+export function findTermGroup(dictionary, term) {
+  const folded = term.trim().toLowerCase();
+  const holds = (group) => dictionary[group].some((stored) => stored.trim().toLowerCase() === folded);
+  return orderedGroupKeys(dictionary).find(holds) ?? null;
+}
+
+/**
+ * Adds the comma-separated terms of `text` to `group`: trimmed, empties dropped, a repeat
+ * inside `text` dropped silently. Stored terms, overlong terms and terms past MAX_KEYWORDS
+ * are refused, in that order. Never mutates `dictionary`; the same reference comes back
+ * when nothing was added, and an unknown group adds and refuses nothing.
+ * @param {Record<string, string[]>} dictionary
+ * @param {string} group
+ * @param {string} text
+ * @returns {{
+ *   dictionary: Record<string, string[]>,
+ *   added: string[],
+ *   refused: Array<{ term: string, reason: 'duplicate'|'tooLong'|'full', group?: string }>,
+ * }}
+ */
+export function addTerms(dictionary, group, text) {
+  const added = [];
+  const refused = [];
+  if (!isDictionaryGroup(group)) return { dictionary, added, refused };
+
+  const room = MAX_KEYWORDS - countTerms(dictionary);
+  const seen = new Set();
+  for (const raw of text.split(',')) {
+    const term = raw.trim();
+    const folded = term.toLowerCase();
+    if (!term || seen.has(folded)) continue;
+    seen.add(folded);
+
+    const holder = findTermGroup(dictionary, term);
+    if (holder !== null) refused.push({ term, reason: 'duplicate', group: holder });
+    else if (isTermTooLong(term)) refused.push({ term, reason: 'tooLong' });
+    else if (added.length >= room) refused.push({ term, reason: 'full' });
+    else added.push(term);
+  }
+
+  if (!added.length) return { dictionary, added, refused };
+  const next = setGroupTerms(dictionary, group, [...(dictionary[group] ?? []), ...added]);
+  return { dictionary: next, added, refused };
+}
+
+/**
+ * A new dictionary without that exact term. The group stays, even empty; a group that is
+ * not in `dictionary` is not created.
+ * @param {Record<string, string[]>} dictionary
+ * @param {string} group
+ * @param {string} term
+ * @returns {Record<string, string[]>}
+ */
+export function removeTerm(dictionary, group, term) {
+  if (!Object.hasOwn(dictionary, group)) return { ...dictionary };
+  return { ...dictionary, [group]: dictionary[group].filter((stored) => stored !== term) };
+}
