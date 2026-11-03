@@ -4,6 +4,7 @@ import { MSG } from '../../../src/shared/messages.js';
 import { freshSettings, SETTINGS_VERSION } from '../../../src/shared/defaults.js';
 import { emptyLog } from '../../../src/background/usage.js';
 import { ProviderError } from '../../../src/background/providers/errors.js';
+import { createStorage } from '../../../src/background/storage.js';
 
 // identify() is injected, so test senders carry their kind directly.
 const POPUP = { kind: 'extension' };
@@ -179,6 +180,42 @@ describe('settings', () => {
       expect(await handle({ action: MSG.SAVE_SETTINGS, settings }, POPUP)).toEqual({ success: false, error: 'Invalid settings.' });
     }
     expect(deps.storage.updateSettings).not.toHaveBeenCalled();
+  });
+
+  describe('SAVE_SETTINGS through the real storage', () => {
+    /** chrome.storage stand-in: values are cloned both ways, like the real structured-clone boundary. */
+    function memoryArea(initial) {
+      const store = structuredClone(initial);
+      return {
+        store,
+        get: async (key) => ({ [key]: structuredClone(store[key]) }),
+        set: async (items) => { Object.assign(store, structuredClone(items)); },
+      };
+    }
+    function routerOver(area) {
+      return createRouter({ ...deps, storage: createStorage(area) });
+    }
+
+    it('a dictionary patch stores both groups and keeps the stored key', async () => {
+      const area = memoryArea({ settings: stored });
+      const save = routerOver(area);
+      expect(await save({ action: MSG.SAVE_SETTINGS, settings: { dictionary: { any: ['A'], el: ['B'] } } }, POPUP)).toEqual({ success: true });
+      expect(area.store.settings.dictionary).toEqual({ any: ['A'], el: ['B'] });
+      expect(area.store.settings.keys).toEqual({ openai: 'sk-test-123456', gemini: '' });
+    });
+
+    it('saving modes without a custom mode clears it from site rules', async () => {
+      stored.siteRules = {
+        'a.com': { hidePill: true, mode: 'custom_1' },
+        'b.com': { hidePill: false, mode: 'custom_1' },
+      };
+      const area = memoryArea({ settings: stored });
+      const save = routerOver(area);
+      const { custom_1: _removed, ...modes } = stored.modes;
+      expect(await save({ action: MSG.SAVE_SETTINGS, settings: { modes } }, POPUP)).toEqual({ success: true });
+      expect(area.store.settings.modes).not.toHaveProperty('custom_1');
+      expect(area.store.settings.siteRules).toEqual({ 'a.com': { hidePill: true, mode: null } });
+    });
   });
 
   it('UPDATE_SETTINGS applies whitelisted fields from content', async () => {
