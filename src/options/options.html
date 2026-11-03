@@ -70,14 +70,84 @@
 
         <section data-route="settings/provider" aria-labelledby="h-settings-provider" hidden>
           <h1 id="h-settings-provider" tabindex="-1">Provider</h1>
+          <section class="card" aria-labelledby="h-provider">
+            <h2 id="h-provider"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2"/><path d="m17 6 2 2"/><path d="m14 9 2 2"/></svg>Provider</h2>
+            <div class="segmented" role="radiogroup" aria-labelledby="h-provider">
+              <label class="segment"><input type="radio" name="provider" value="openai"><span>OpenAI</span></label>
+              <label class="segment"><input type="radio" name="provider" value="gemini"><span>Gemini</span></label>
+            </div>
+            <div class="key-row" id="key-row-openai">
+              <label class="field-label" for="key-openai">OpenAI API key</label>
+              <div class="key-controls">
+                <input type="password" id="key-openai" class="key-input" autocomplete="new-password" spellcheck="false">
+                <button type="button" class="btn" id="test-openai">Test</button>
+                <button type="button" class="btn btn-quiet" id="clear-openai">Clear</button>
+              </div>
+            </div>
+            <div class="key-row" id="key-row-gemini" hidden>
+              <label class="field-label" for="key-gemini">Gemini API key</label>
+              <div class="key-controls">
+                <input type="password" id="key-gemini" class="key-input" autocomplete="new-password" spellcheck="false">
+                <button type="button" class="btn" id="test-gemini">Test</button>
+                <button type="button" class="btn btn-quiet" id="clear-gemini">Clear</button>
+              </div>
+            </div>
+            <p class="hint hint-warning" id="spend-hint" hidden>Set a spending limit on your provider account.</p>
+          </section>
         </section>
 
         <section data-route="settings/recording" aria-labelledby="h-settings-recording" hidden>
           <h1 id="h-settings-recording" tabindex="-1">Recording</h1>
+          <section class="card" aria-labelledby="h-recording">
+            <h2 id="h-recording"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 2h6"/></svg>Recording</h2>
+            <div class="grid-2">
+              <div class="field">
+                <label class="field-label" for="min-time">Minimum length</label>
+                <select id="min-time">
+                  <option value="0.5">0.5 s</option>
+                  <option value="1">1 s</option>
+                  <option value="2">2 s</option>
+                  <option value="3">3 s</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label" for="max-time">Maximum length</label>
+                <select id="max-time">
+                  <option value="30">30 s</option>
+                  <option value="60">1 min</option>
+                  <option value="120">2 min</option>
+                  <option value="180">3 min</option>
+                  <option value="300">5 min</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label" for="auto-stop">Silence auto-stop</label>
+                <select id="auto-stop"></select>
+              </div>
+              <div class="field">
+                <label class="field-label" for="hotkey">Hotkey</label>
+                <button type="button" class="hotkey" id="hotkey" aria-pressed="false" aria-describedby="hotkey-hint"></button>
+              </div>
+            </div>
+            <p class="hint" id="hotkey-hint" aria-live="polite">Tap to toggle, hold to talk.</p>
+          </section>
         </section>
 
         <section data-route="settings/speech" aria-labelledby="h-settings-speech" hidden>
           <h1 id="h-settings-speech" tabindex="-1">Speech</h1>
+          <section class="card" aria-labelledby="h-speech">
+            <h2 id="h-speech"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg>Speech</h2>
+            <fieldset class="languages">
+              <legend class="field-label">Spoken languages</legend>
+              <div class="check-grid" id="languages"></div>
+            </fieldset>
+            <p class="hint">Auto detects the language. Pick languages to steer recognition.</p>
+            <div class="field field-spaced">
+              <label class="field-label" for="keywords">Vocabulary</label>
+              <textarea id="keywords" rows="4" spellcheck="false" placeholder="One term per line: names, jargon, product names" aria-describedby="keyword-count"></textarea>
+              <p class="hint" id="keyword-count">0 of 100 terms</p>
+            </div>
+          </section>
         </section>
 
         <section data-route="settings/sites" aria-labelledby="h-settings-sites" hidden>

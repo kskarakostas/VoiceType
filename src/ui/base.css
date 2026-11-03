@@ -155,6 +155,8 @@ svg {
 .hint { margin-top: 6px; color: var(--muted); font-size: 12px; }
 .hint[data-tone="error"] { color: var(--danger); font-weight: 600; }
 .hint-warning { color: var(--warning); }
+.field-spaced { margin-top: 12px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
 input[type="text"],
 input[type="password"],
@@ -273,6 +275,38 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 }
 
 .check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+
+/* Provider keys */
+
+.key-row { display: grid; gap: 4px; }
+.key-controls { display: flex; gap: 6px; }
+.key-input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; }
+
+/* Hotkey recorder */
+
+.hotkey {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.hotkey[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+/* Spoken languages */
+
+.languages { min-width: 0; margin: 0; padding: 0; border: 0; }
+.languages legend { margin-bottom: 6px; padding: 0; }
+.check-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 8px; }
 
 /* Toast: independent of the banner, which stays until the popup is reopened. */
 

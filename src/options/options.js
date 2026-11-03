@@ -4,6 +4,9 @@
 import { freshSettings } from '../shared/defaults.js';
 import { createSettingsClient, changedFields } from '../ui/settings-client.js';
 import { DEFAULT_ROUTE, parseRoute } from './routes.js';
+import { createProviderSection } from './sections/provider.js';
+import { createRecordingSection } from './sections/recording.js';
+import { createSpeechSection } from './sections/speech.js';
 
 /** @typedef {import('../shared/defaults.js').Settings} Settings */
 /**
@@ -33,7 +36,7 @@ const SAVE_ERROR = 'Could not save settings.';
  * mutates it; every change goes through `ctx.commit`. Its `render` must not write a focused field.
  * @type {ReadonlyArray<(ctx: PageContext) => Section>}
  */
-const SECTIONS = Object.freeze([]);
+const SECTIONS = Object.freeze([createProviderSection, createRecordingSection, createSpeechSection]);
 
 /**
  * `current` with the fields of `patch` put back to their `snapshot` values; for `keys` only the

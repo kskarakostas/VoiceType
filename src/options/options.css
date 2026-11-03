@@ -84,7 +84,7 @@
 .content { width: 100%; max-width: 760px; padding: 24px 32px; }
 .content .banner { margin: 0 0 16px; }
 main { display: grid; gap: 12px; }
-main section { display: grid; gap: 12px; }
+main > section { display: grid; gap: 12px; }
 main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .placeholder { color: var(--muted); font-size: 13px; }
 .placeholder a { color: var(--accent); font-weight: 600; }
