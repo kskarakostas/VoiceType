@@ -198,6 +198,20 @@ describe('popup quick panel', () => {
     expect(window.close).toHaveBeenCalledTimes(2);
   });
 
+  it('a settings tab that cannot open shows an error and keeps the popup open', async () => {
+    const chrome = fakeChrome(storedSettings({ openai: '' }));
+    chrome.tabs.create.mockRejectedValue(new Error('no tabs'));
+    await start(chrome);
+    for (const id of ['open-settings', 'add-key']) {
+      $('toast').textContent = '';
+      $(id).click();
+      await flush();
+      expect($('toast').textContent, id).toBe('Could not open settings.');
+      expect($('toast').dataset.tone, id).toBe('error');
+    }
+    expect(window.close).not.toHaveBeenCalled();
+  });
+
   it('an external change re-renders the mode select', async () => {
     const stored = storedSettings();
     const chrome = fakeChrome(stored);
@@ -217,22 +231,6 @@ describe('popup quick panel', () => {
     chrome.fire(SETTINGS_CHANGE, 'sync');
     await flush();
     expect(chrome.sent.filter((m) => m.action === MSG.GET_SETTINGS)).toHaveLength(2);
-  });
-
-  it('a re-read that started before a save does not undo it', async () => {
-    const chrome = fakeChrome();
-    const popup = await start(chrome);
-    let answer;
-    chrome.script(MSG.GET_SETTINGS, new Promise((r) => { answer = r; }));
-    chrome.fire(SETTINGS_CHANGE, 'local');
-    choose('gemini');
-    await flush();
-    answer(storedSettings());
-    await flush();
-    await flush();
-    expect(popup.settings.provider).toBe('gemini');
-    expect(checkedProvider()).toBe('gemini');
-    expect(chrome.saves()).toEqual([{ provider: 'gemini' }]);
   });
 
   it('a failed save reverts the control', async () => {
@@ -262,6 +260,8 @@ describe('popup quick panel', () => {
     expect(popup.loaded).toBe(false);
     expect($('banner').hidden).toBe(false);
     expect($('banner-text').textContent).toBe(LOAD_ERROR);
+    expect($('status-ready').hidden).toBe(true);
+    expect($('add-key').hidden).toBe(true);
 
     choose('gemini');
     change($('active-mode'), 'email');
@@ -271,5 +271,7 @@ describe('popup quick panel', () => {
     expect($('active-mode').value).toBe('default');
     expect($('toast').textContent).toBe(NOT_LOADED);
     expect($('banner').hidden).toBe(false);
+    expect($('status-ready').hidden).toBe(true);
+    expect($('add-key').hidden).toBe(true);
   });
 });

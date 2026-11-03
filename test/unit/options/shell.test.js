@@ -67,12 +67,6 @@ function probe() {
   return state;
 }
 
-function deferred() {
-  let resolve;
-  const promise = new Promise((r) => { resolve = r; });
-  return { promise, resolve };
-}
-
 const $ = (id) => document.getElementById(id);
 const flush = () => (vi.isFakeTimers() ? vi.advanceTimersByTimeAsync(0) : new Promise((r) => setTimeout(r, 0)));
 const start = (chrome, sections) => initOptions({ chrome, document, window, sections });
@@ -238,66 +232,6 @@ describe('settings page context', () => {
 
     expect(await section.ctx.commit((s) => { s.maxRecordingTime = 300; })).toBe(true);
     expect(chrome.saves()).toHaveLength(1);
-  });
-
-  it('a failed save restores only its own fields', async () => {
-    const chrome = fakeChrome();
-    const failing = deferred();
-    chrome.script(MSG.SAVE_SETTINGS, failing.promise);
-    const section = probe();
-    const page = await start(chrome, [section.factory]);
-    const first = section.ctx.commit((s) => { s.provider = 'gemini'; s.keys.gemini = 'AIza-new'; });
-    expect(page.settings.provider).toBe('gemini');
-    expect(await section.ctx.commit((s) => { s.keys.openai = 'sk-proj-other'; s.maxRecordingTime = 300; })).toBe(true);
-    failing.resolve({ success: false, error: 'Disk full' });
-    expect(await first).toBe(false);
-    expect(page.settings.provider).toBe('openai');
-    expect(page.settings.keys).toEqual({ openai: 'sk-proj-other', gemini: 'AIza-gemini-5678' });
-    expect(page.settings.maxRecordingTime).toBe(300);
-    expect($('toast').textContent).toBe('Disk full');
-    expect($('toast').dataset.tone).toBe('error');
-  });
-
-  it('a failed save without an error message shows the generic toast', async () => {
-    const chrome = fakeChrome();
-    chrome.script(MSG.SAVE_SETTINGS, null);
-    const section = probe();
-    await start(chrome, [section.factory]);
-    expect(await section.ctx.commit((s) => { s.maxRecordingTime = 300; })).toBe(false);
-    expect($('toast').textContent).toBe('Could not save settings.');
-  });
-
-  it('an external change during a save waits for the save, then re-reads once', async () => {
-    const chrome = fakeChrome();
-    const saving = deferred();
-    chrome.script(MSG.SAVE_SETTINGS, saving.promise);
-    const section = probe();
-    await start(chrome, [section.factory]);
-    const done = section.ctx.commit((s) => { s.maxRecordingTime = 300; });
-    chrome.fire(SETTINGS_CHANGE, 'local');
-    chrome.fire(SETTINGS_CHANGE, 'local');
-    await flush();
-    expect(chrome.count(MSG.GET_SETTINGS)).toBe(1);
-    saving.resolve({ success: true });
-    await done;
-    await flush();
-    expect(chrome.count(MSG.GET_SETTINGS)).toBe(2);
-  });
-
-  it('a re-read that started before a save is dropped and read again', async () => {
-    const stored = storedSettings();
-    const chrome = fakeChrome(stored);
-    const section = probe();
-    const page = await start(chrome, [section.factory]);
-    const reading = deferred();
-    chrome.script(MSG.GET_SETTINGS, reading.promise);
-    chrome.fire(SETTINGS_CHANGE, 'local');
-    await section.ctx.commit((s) => { s.maxRecordingTime = 300; });
-    stored.maxRecordingTime = 300;
-    reading.resolve(storedSettings());
-    await flush();
-    expect(page.settings.maxRecordingTime).toBe(300);
-    expect(chrome.count(MSG.GET_SETTINGS)).toBe(3);
   });
 
   it('typingSave waits 400 ms after the last schedule', async () => {

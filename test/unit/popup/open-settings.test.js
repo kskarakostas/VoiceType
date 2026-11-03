@@ -71,11 +71,24 @@ describe('openSettings', () => {
     expect(apis.tabs.update).toHaveBeenCalledWith(7, { active: true, url: `${ORIGIN}/options.html#modes` });
   });
 
-  it('a tabs.update failure still focuses the window', async () => {
+  it('a tabs.update failure opens a new tab at the route instead', async () => {
     const apis = fakeApis([SETTINGS_TAB]);
     apis.tabs.update.mockRejectedValue(new Error('no tab'));
-    await expect(openSettings(apis, null)).resolves.toBeUndefined();
-    expect(apis.windows.update).toHaveBeenCalledWith(3, { focused: true });
-    expect(apis.tabs.create).not.toHaveBeenCalled();
+    await expect(openSettings(apis, 'modes')).resolves.toBeUndefined();
+    expect(apis.tabs.create).toHaveBeenCalledWith({ url: `${ORIGIN}/options.html#modes` });
+    expect(apis.windows.update).not.toHaveBeenCalled();
+  });
+
+  it('a tabs.update failure for Open settings opens a new tab at #home', async () => {
+    const apis = fakeApis([SETTINGS_TAB]);
+    apis.tabs.update.mockRejectedValue(new Error('no tab'));
+    await openSettings(apis, null);
+    expect(apis.tabs.create).toHaveBeenCalledWith({ url: `${ORIGIN}/options.html#home` });
+  });
+
+  it('a tabs.create failure rejects', async () => {
+    const apis = fakeApis([]);
+    apis.tabs.create.mockRejectedValue(new Error('no tabs'));
+    await expect(openSettings(apis, null)).rejects.toThrow('no tabs');
   });
 });

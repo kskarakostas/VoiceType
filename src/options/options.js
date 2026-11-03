@@ -1,8 +1,8 @@
 // VoiceType settings page, opened in a tab. A trusted extension page: it reads the full settings
 // (keys included), saves only the top-level fields an edit changed, and re-reads when stored
 // settings change, so a tab left open never writes its stale copy over newer data.
-import { freshSettings } from '../shared/defaults.js';
-import { createSettingsClient, changedFields } from '../ui/settings-client.js';
+import { createSettingsClient } from '../ui/settings-client.js';
+import { createSettingsState } from '../ui/settings-state.js';
 import { DEFAULT_ROUTE, parseRoute } from './routes.js';
 import { createProviderSection } from './sections/provider.js';
 import { createRecordingSection } from './sections/recording.js';
@@ -31,8 +31,6 @@ import { createUsageSection } from './sections/usage.js';
 // closed save at once.
 const TYPING_SAVE_MS = 400;
 const LOAD_ERROR = 'Could not load settings. Reload this page.';
-const NOT_LOADED = 'Settings are not loaded. Nothing was saved.';
-const SAVE_ERROR = 'Could not save settings.';
 
 /**
  * Section factories, each given the one PageContext. A section reads `ctx.settings()` and never
@@ -42,33 +40,6 @@ const SAVE_ERROR = 'Could not save settings.';
 const SECTIONS = Object.freeze([
   createProviderSection, createRecordingSection, createSpeechSection, createModesSection, createUsageSection,
 ]);
-
-/**
- * `current` with the fields of `patch` put back to their `snapshot` values; for `keys` only the
- * providers in the patch. Fields other saves changed in the meantime are kept.
- * @param {Settings} current
- * @param {Settings} snapshot
- * @param {Partial<Settings>} patch
- * @returns {Settings}
- */
-function restoreFields(current, snapshot, patch) {
-  const next = { ...current };
-  for (const field of Object.keys(patch)) {
-    if (field === 'keys') {
-      const keys = { ...next.keys };
-      for (const id of Object.keys(patch.keys)) {
-        if (Object.hasOwn(snapshot.keys, id)) keys[id] = snapshot.keys[id];
-        else delete keys[id];
-      }
-      next.keys = keys;
-    } else if (Object.hasOwn(snapshot, field)) {
-      next[field] = snapshot[field];
-    } else {
-      delete next[field];
-    }
-  }
-  return next;
-}
 
 /**
  * Wire the page, route it from the hash, load settings and mount every section.
@@ -90,18 +61,8 @@ export async function initOptions({ chrome, document, window, sections = SECTION
     links: [...document.querySelectorAll('nav a[href^="#"]')],
   };
 
-  let settings = freshSettings();
-  let loaded = false;
   let route = DEFAULT_ROUTE;
   let toastTimer;
-  // Saves in flight, saves started so far, and re-reads started so far. A re-read waits for the
-  // saves in flight and is dropped when a save started while it ran: its copy may predate it.
-  let inFlight = 0;
-  let saveCount = 0;
-  let readCount = 0;
-  let rereadPending = false;
-  let loading = true;
-  let changedWhileLoading = false;
 
   function toast(text, tone = 'info') {
     el.toast.textContent = text;
@@ -147,71 +108,14 @@ export async function initOptions({ chrome, document, window, sections = SECTION
     for (const section of mounted) section.render();
   }
 
-  /**
-   * Apply a change to a copy of the settings, save only the fields it changed, and put those
-   * fields back when the save fails.
-   * @param {(draft: Settings) => void} mutate
-   * @param {string} [successText]
-   * @returns {Promise<boolean>}
-   */
-  async function commit(mutate, successText) {
-    const snapshot = structuredClone(settings);
-    const draft = structuredClone(settings);
-    mutate(draft);
-    const patch = changedFields(snapshot, draft);
-    if (Object.keys(patch).length === 0) return true;
-    if (!loaded) {
-      // Never save from fallback settings: that would write blank keys over the real ones.
-      render();
-      toast(NOT_LOADED, 'error');
-      return false;
-    }
-    settings = draft;
-    render();
-    inFlight += 1;
-    saveCount += 1;
-    const result = await client.save(patch);
-    inFlight -= 1;
-    if (result.success) {
-      if (successText) toast(successText, 'success');
-    } else {
-      settings = restoreFields(settings, snapshot, patch);
-      render();
-      toast(result.error || SAVE_ERROR, 'error');
-    }
-    if (inFlight === 0 && rereadPending) {
-      rereadPending = false;
-      reread();
-    }
-    return result.success;
-  }
-
-  function requestReread() {
-    if (inFlight > 0) rereadPending = true;
-    else reread();
-  }
-
-  // Also runs after this page's own saves; rendering the same settings again changes nothing.
-  async function reread() {
-    const read = ++readCount;
-    const savesBefore = saveCount;
-    const fresh = await client.load();
-    if (read !== readCount) return;
-    if (saveCount !== savesBefore) {
-      requestReread();
-      return;
-    }
-    if (!fresh) return;
-    settings = fresh;
-    render();
-  }
+  const state = createSettingsState({ client, render, toast });
 
   /** @type {PageContext} */
   const ctx = {
     document, window, chrome, mac, $,
-    settings: () => settings,
-    loaded: () => loaded,
-    commit,
+    settings: state.settings,
+    loaded: state.loaded,
+    commit: state.commit,
     send: client.send,
     toast,
     typingSave,
@@ -252,27 +156,16 @@ export async function initOptions({ chrome, document, window, sections = SECTION
     if (document.visibilityState === 'hidden') flushTypingSaves();
   });
 
-  // Load. Subscribe first, so a change while the first read runs is read again after it.
+  // Load.
 
-  client.onExternalChange(() => {
-    if (loading) changedWhileLoading = true;
-    else if (loaded) requestReread();
-  });
-  const stored = await client.load();
-  loading = false;
-  loaded = stored !== null;
-  if (loaded) {
-    settings = stored;
-  } else {
+  if (!(await state.start())) {
     el.bannerText.textContent = LOAD_ERROR;
     el.banner.hidden = false;
   }
-  render();
-  if (loaded && changedWhileLoading) requestReread();
 
   return {
-    get settings() { return settings; },
-    get loaded() { return loaded; },
+    get settings() { return state.settings(); },
+    get loaded() { return state.loaded(); },
     get route() { return route; },
   };
 }

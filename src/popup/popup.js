@@ -3,15 +3,15 @@
 // stored settings change. Everything else lives on the settings page, which it opens (V6).
 import { MSG } from '../shared/messages.js';
 import { formatCost } from '../shared/pricing.js';
-import { freshSettings, orderedModeKeys } from '../shared/defaults.js';
-import { createSettingsClient, changedFields } from '../ui/settings-client.js';
+import { orderedModeKeys } from '../shared/defaults.js';
+import { createSettingsClient } from '../ui/settings-client.js';
+import { createSettingsState } from '../ui/settings-state.js';
 import { openSettings } from './open-settings.js';
 
 /** @typedef {import('../shared/defaults.js').Settings} Settings */
 
 const LOAD_ERROR = 'Could not load settings. Close and reopen the popup.';
-const NOT_LOADED = 'Settings are not loaded. Nothing was saved.';
-const SAVE_ERROR = 'Could not save settings.';
+const OPEN_ERROR = 'Could not open settings.';
 const DEFAULT_MODE_ICON = '🎯';
 
 /**
@@ -30,17 +30,7 @@ export async function initPopup({ chrome, document, window }) {
     openSettings: $('open-settings'), toast: $('toast'),
   };
 
-  let settings = freshSettings();
-  let loaded = false;
   let toastTimer;
-  // Saves in flight, saves started so far, and re-reads started so far, as on the settings page:
-  // a re-read waits for the saves in flight and is dropped when a save started while it ran.
-  let inFlight = 0;
-  let saveCount = 0;
-  let readCount = 0;
-  let rereadPending = false;
-  let loading = true;
-  let changedWhileLoading = false;
 
   function toast(text, tone = 'info') {
     el.toast.textContent = text;
@@ -50,16 +40,22 @@ export async function initPopup({ chrome, document, window }) {
     toastTimer = window.setTimeout(() => { el.toast.hidden = true; }, tone === 'error' ? 6000 : 2500);
   }
 
+  const state = createSettingsState({ client, render, toast });
+  const { commit } = state;
+
   function render() {
+    const settings = state.settings();
+    // Without loaded settings neither status is known; the banner explains.
     const ready = Boolean(settings.keys[settings.provider]?.trim());
-    el.ready.hidden = !ready;
-    el.addKey.hidden = ready;
+    el.ready.hidden = !state.loaded() || !ready;
+    el.addKey.hidden = !state.loaded() || ready;
     for (const radio of el.providerRadios) radio.checked = radio.value === settings.provider;
     renderModes();
   }
 
   // The options are rebuilt only when the mode list or a label changed.
   function renderModes() {
+    const settings = state.settings();
     const options = orderedModeKeys(settings.modes).map((key) => {
       const mode = settings.modes[key];
       return [key, `${mode.icon || DEFAULT_MODE_ICON} ${mode.name}`];
@@ -78,63 +74,6 @@ export async function initPopup({ chrome, document, window }) {
     el.mode.value = settings.activeMode;
   }
 
-  /**
-   * Apply a change to a copy of the settings, save only the fields it changed, and put those
-   * fields back when the save fails. The popup saves only top-level scalar fields.
-   * @param {(draft: Settings) => void} mutate
-   * @param {string} [successText]
-   */
-  async function commit(mutate, successText) {
-    const snapshot = structuredClone(settings);
-    const draft = structuredClone(settings);
-    mutate(draft);
-    const patch = changedFields(snapshot, draft);
-    if (Object.keys(patch).length === 0) return;
-    if (!loaded) {
-      // Never save from fallback settings: that would write blank keys over the real ones.
-      render();
-      toast(NOT_LOADED, 'error');
-      return;
-    }
-    settings = draft;
-    render();
-    inFlight += 1;
-    saveCount += 1;
-    const result = await client.save(patch);
-    inFlight -= 1;
-    if (result.success) {
-      if (successText) toast(successText, 'success');
-    } else {
-      const restored = Object.fromEntries(Object.keys(patch).map((field) => [field, snapshot[field]]));
-      settings = { ...settings, ...restored };
-      render();
-      toast(result.error || SAVE_ERROR, 'error');
-    }
-    if (inFlight === 0 && rereadPending) {
-      rereadPending = false;
-      reread();
-    }
-  }
-
-  // Also runs after the popup's own saves; rendering the same settings again changes nothing.
-  async function reread() {
-    if (inFlight > 0) {
-      rereadPending = true;
-      return;
-    }
-    const read = ++readCount;
-    const savesBefore = saveCount;
-    const fresh = await client.load();
-    if (read !== readCount) return;
-    if (saveCount !== savesBefore) {
-      reread();
-      return;
-    }
-    if (!fresh) return;
-    settings = fresh;
-    render();
-  }
-
   for (const radio of el.providerRadios) {
     radio.addEventListener('change', () => {
       if (radio.checked) commit((s) => { s.provider = radio.value; });
@@ -143,11 +82,17 @@ export async function initPopup({ chrome, document, window }) {
 
   el.mode.addEventListener('change', () => {
     const key = el.mode.value;
-    commit((s) => { s.activeMode = key; }, `Mode: ${settings.modes[key]?.name ?? key}`);
+    commit((s) => { s.activeMode = key; }, `Mode: ${state.settings().modes[key]?.name ?? key}`);
   });
 
+  // The popup closes once the settings tab is open, and stays open to show a failure.
   async function openRoute(route) {
-    await openSettings(chrome, route);
+    try {
+      await openSettings(chrome, route);
+    } catch {
+      toast(OPEN_ERROR, 'error');
+      return;
+    }
     window.close();
   }
 
@@ -162,28 +107,17 @@ export async function initPopup({ chrome, document, window }) {
     el.todayCost.textContent = formatCost(today.estimatedCost || 0);
   }
 
-  // Load. Subscribe first, so a change while the first read runs is read again after it.
+  // Load.
 
-  client.onExternalChange(() => {
-    if (loading) changedWhileLoading = true;
-    else if (loaded) reread();
-  });
-  const stored = await client.load();
-  loading = false;
-  loaded = stored !== null;
-  if (loaded) {
-    settings = stored;
-  } else {
+  if (!(await state.start())) {
     el.bannerText.textContent = LOAD_ERROR;
     el.banner.hidden = false;
   }
-  render();
-  if (loaded && changedWhileLoading) reread();
   await loadUsage();
 
   return {
-    get settings() { return settings; },
-    get loaded() { return loaded; },
+    get settings() { return state.settings(); },
+    get loaded() { return state.loaded(); },
   };
 }
 
