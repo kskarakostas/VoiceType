@@ -35,12 +35,19 @@ export function createHomeSection(ctx) {
       el[key].textContent = view[key];
     }
     el.days.replaceChildren(...view.days.map((day) => {
+      // Screen readers in browse mode skip aria-label on a plain li, so the full text is real
+      // (visually hidden) content and the short label is hidden from them.
       const li = document.createElement('li');
       const label = `${day.name}, ${DAY_STATE_TEXT[day.state]}`;
-      li.textContent = day.label;
+      const shown = document.createElement('span');
+      shown.setAttribute('aria-hidden', 'true');
+      shown.textContent = day.label;
+      const spoken = document.createElement('span');
+      spoken.className = 'visually-hidden';
+      spoken.textContent = label;
+      li.append(shown, spoken);
       li.dataset.state = day.state;
       li.title = label;
-      li.setAttribute('aria-label', label);
       if (day.today) li.setAttribute('aria-current', 'date');
       return li;
     }));

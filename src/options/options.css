@@ -103,7 +103,8 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .stat-value { color: var(--text); font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .stat-detail { color: var(--muted); font-size: 12px; }
 
-/* Day squares: the label and the fill both differ by state, so colour is never the only cue. */
+/* Day squares: each state has its own border (solid fill, solid outline, dashed outline) and the
+   full state is in the square's hidden text and title, so colour is never the only cue. */
 .days { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; padding: 0; list-style: none; }
 .days li {
   display: grid;
@@ -118,7 +119,7 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
   font-weight: 600;
 }
 .days li[data-state="dictated"] { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
-.days li[data-state="upcoming"] { border: 1px dashed var(--border); color: var(--muted); }
+.days li[data-state="upcoming"] { border: 1px dashed var(--border-strong); color: var(--muted); }
 .days li[aria-current="date"] { outline: 2px solid var(--text); outline-offset: 2px; }
 
 /* Narrow windows: the sidebar stacks above the content. */

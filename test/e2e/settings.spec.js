@@ -180,7 +180,8 @@ test('Home counts the words of a dictation', async () => {
 
   const page = await context.newPage();
   await page.goto(extensionUrl('options.html#home'));
-  // The stub's transcript is two words; Home reloads when the usage log lands.
+  // The stub's transcript is two words. The worker logs usage before it answers, so the log is
+  // written before the page opens: this covers Home's load on mount.
   await expect(page.locator('#home-words-week')).toHaveText('2');
   await expect(page.locator('#home-days li[aria-current="date"]')).toHaveAttribute('data-state', 'dictated');
 });

@@ -68,6 +68,10 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 const text = (id) => $(id).textContent;
 const shown = () => STATE_IDS.filter((id) => !$(id).hidden);
 const todayLi = () => $('home-days').querySelector('li[aria-current="date"]');
+/** The square's visible label, hidden from screen readers. */
+const shownLabel = (li) => li.querySelector('span[aria-hidden="true"]').textContent;
+/** The text a screen reader reads for a square. */
+const spokenLabel = (li) => li.querySelector('span.visually-hidden').textContent;
 
 /** Open the settings page at Home with only the Home section mounted. */
 async function start(chrome) {
@@ -116,12 +120,22 @@ describe('Home', () => {
     expect(text('home-cost-per-1k')).toBe('$0.04');
     const days = [...$('home-days').querySelectorAll('li')];
     expect(days).toHaveLength(7);
-    expect(days.map((li) => li.textContent)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+    expect(days.map(shownLabel)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
     expect($('home-days').querySelectorAll('[aria-current]')).toHaveLength(1);
     expect(todayLi().dataset.state).toBe('dictated');
-    expect(todayLi().getAttribute('aria-label')).toMatch(/day, dictated$/);
-    expect(todayLi().title).toBe(todayLi().getAttribute('aria-label'));
+    expect(spokenLabel(todayLi())).toMatch(/day, dictated$/);
+    expect(todayLi().title).toBe(spokenLabel(todayLi()));
     expect(text('home-days-count')).toBe('1 of 7 days');
+  });
+
+  it('the cards are headed divs, not six region landmarks', async () => {
+    await start(fakeChrome());
+    const cards = [...$('home-stats').querySelectorAll('.card.stat')];
+    expect(cards.map((c) => c.querySelector('h3').textContent)).toEqual(
+      ['Time saved', 'Words', 'Speaking speed', 'Refined by a mode', 'Days dictated', 'Cost'],
+    );
+    for (const card of cards) expect(card.tagName).toBe('DIV');
+    expect($('home-stats').querySelectorAll('section, [aria-labelledby], [role="region"]')).toHaveLength(0);
   });
 
   it('day squares name their state in words, not only by colour', async () => {
@@ -133,7 +147,10 @@ describe('Home', () => {
       let expected = 'dictated';
       if (i < today) expected = 'not dictated';
       if (i > today) expected = 'still to come';
-      expect(li.getAttribute('aria-label')).toBe(`${name}, ${expected}`);
+      expect(spokenLabel(li)).toBe(`${name}, ${expected}`);
+      expect(li.title).toBe(`${name}, ${expected}`);
+      expect(li.hasAttribute('aria-label')).toBe(false);
+      expect(li.children).toHaveLength(2);
       expect(li.dataset.state).toBe(i < today ? 'missed' : i > today ? 'upcoming' : 'dictated');
     });
     expect($('home-days').getAttribute('aria-label')).toBe('Days dictated this week');
