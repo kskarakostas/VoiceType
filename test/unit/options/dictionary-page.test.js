@@ -13,6 +13,8 @@ import { CONFIRM_GUARD_MS } from '../../../src/ui/form.js';
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/options/options.html'), 'utf8');
 const SETTINGS_CHANGE = { settings: { newValue: {} } };
 const REMOVE_PROMPT = 'Click again to remove this group and its terms';
+const FIRST_BEAT_MS = 400;
+const HEARTBEAT_MS = 20000;
 
 function storedSettings(dictionary = {}) {
   const s = freshSettings();
@@ -37,6 +39,7 @@ function fakeChrome(stored = storedSettings()) {
   return {
     sent,
     saves: () => sent.filter((m) => m.action === MSG.SAVE_SETTINGS).map((m) => m.settings),
+    count: (action) => sent.filter((m) => m.action === action).length,
     script(action, ...responses) { queues.set(action, [...(queues.get(action) || []), ...responses]); },
     fire(changes, area) { for (const listener of [...changeListeners]) listener(changes, area); },
     runtime: {
@@ -70,6 +73,11 @@ function start(chrome, sections) {
 function typeInto(el, value) {
   el.value = value;
   el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function press(el) {
+  const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+  el.dispatchEvent(event);
+  return event;
 }
 function pressEnter(el) {
   const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
@@ -392,11 +400,26 @@ describe('dictionary page removing terms', () => {
     expect(document.activeElement).toBe(input('el'));
   });
 
-  it('pressing the mouse on a chip leaves the field focused, so the click lands on that chip', async () => {
-    await start(fakeChrome(storedSettings({ any: ['a'] })));
-    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
-    chipButton('a').dispatchEvent(event);
-    expect(event.defaultPrevented).toBe(true);
+  it('pressing the mouse on a button leaves the field focused, so the click lands on it', async () => {
+    await start(fakeChrome(storedSettings({ any: ['a'], el: [] })));
+    expect(press(chipButton('a')).defaultPrevented).toBe(true);
+    expect(press(removeGroup('any')).defaultPrevented).toBe(true);
+    expect(press(removeGroup('el')).defaultPrevented).toBe(true);
+    expect(press($('dictionary-add-group')).defaultPrevented).toBe(true);
+  });
+
+  it('a held key on a chip removes one term', async () => {
+    await start(fakeChrome(storedSettings({ any: ['a', 'b'] })));
+    const held = (init) => {
+      const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+      chipButton('a').dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    expect(held({ key: 'Enter', repeat: true })).toBe(true);
+    expect(held({ key: ' ', repeat: true })).toBe(true);
+    expect(held({ key: 'Enter' })).toBe(false);
+    expect(held({ key: ' ' })).toBe(false);
+    expect(held({ key: 'Tab', repeat: true })).toBe(false);
   });
 
   it('a chip click adds the text in the field first, then removes, then moves focus', async () => {
@@ -427,6 +450,22 @@ describe('dictionary page removing terms', () => {
     button.click();
     await flush();
     expect(chrome.saves()).toEqual([{ dictionary: {} }]);
+    expect(card('el')).toBeNull();
+    expect(document.activeElement).toBe(input('any'));
+  });
+
+  it('Remove group adds the text of its focused field before the card goes, so the card stays gone', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome(storedSettings({ el: ['a'] }));
+    await start(chrome);
+    input('el').focus();
+    typeInto(input('el'), 'typed');
+    const button = removeGroup('el');
+    button.click();
+    await vi.advanceTimersByTimeAsync(CONFIRM_GUARD_MS);
+    button.click();
+    await flush();
+    expect(chrome.saves()).toEqual([{ dictionary: { el: ['a', 'typed'] } }, { dictionary: {} }]);
     expect(card('el')).toBeNull();
     expect(document.activeElement).toBe(input('any'));
   });
@@ -462,6 +501,15 @@ describe('dictionary page languages', () => {
     expect(groups()).toEqual(['any', 'el', 'de']);
     expect(document.activeElement).toBe(input('de'));
     expect(languages()).toEqual(['en', 'es', 'fr', 'it', 'pt']);
+  });
+
+  it('Add language rebuilds a select that kept focus through the press', async () => {
+    await start(fakeChrome());
+    $('dictionary-language').focus();
+    $('dictionary-language').value = 'de';
+    $('dictionary-add-group').click();
+    expect(document.activeElement).toBe(input('de'));
+    expect(languages()).not.toContain('de');
   });
 
   it('hides Add language when every language is present', async () => {
@@ -503,6 +551,110 @@ describe('dictionary page languages', () => {
     expect(chrome.saves()).toEqual([]);
     expect(chips('en')).toEqual(['a']);
     expect(document.activeElement).toBe(input('en'));
+  });
+});
+
+describe('dictionary page heartbeat', () => {
+  const beats = (chrome) => chrome.count(MSG.GET_SETTINGS) - 1;
+
+  it('the heartbeat runs only while a field holds text', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome();
+    await start(chrome);
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 2);
+    expect(beats(chrome)).toBe(0);
+
+    typeInto(input('any'), 'Pal');
+    await vi.advanceTimersByTimeAsync(FIRST_BEAT_MS - 1);
+    typeInto(input('any'), 'Palo');
+    await vi.advanceTimersByTimeAsync(FIRST_BEAT_MS - 1);
+    expect(beats(chrome)).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(beats(chrome)).toBe(1);
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS - 1);
+    expect(beats(chrome)).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(beats(chrome)).toBe(2);
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+    expect(beats(chrome)).toBe(3);
+
+    pressEnter(input('any'));
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 3);
+    expect(chrome.saves()).toEqual([{ dictionary: { any: ['Palo'] } }]);
+    expect(beats(chrome)).toBe(3);
+
+    typeInto(input('any'), 'again');
+    await vi.advanceTimersByTimeAsync(FIRST_BEAT_MS);
+    expect(beats(chrome)).toBe(4);
+    typeInto(input('any'), '');
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 3);
+    expect(beats(chrome)).toBe(4);
+  });
+
+  it('text emptied before the first beat sends none, and spaces alone are no text', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome();
+    await start(chrome);
+    typeInto(input('any'), 'x');
+    typeInto(input('any'), '  ');
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+    expect(beats(chrome)).toBe(0);
+  });
+
+  it('refused text keeps it going, until the field empties', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome(storedSettings({ el: ['Noesis'] }));
+    await start(chrome);
+    typeInto(input('any'), 'noesis');
+    pressEnter(input('any'));
+    await vi.advanceTimersByTimeAsync(FIRST_BEAT_MS + HEARTBEAT_MS);
+    expect(input('any').value).toBe('noesis');
+    expect(beats(chrome)).toBe(2);
+    typeInto(input('any'), '');
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 3);
+    expect(beats(chrome)).toBe(2);
+  });
+
+  it('text in any field keeps it going when another field empties', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome(storedSettings({ el: [] }));
+    await start(chrome);
+    typeInto(input('any'), 'a');
+    typeInto(input('el'), 'b');
+    await vi.advanceTimersByTimeAsync(FIRST_BEAT_MS);
+    expect(beats(chrome)).toBe(1);
+    pressEnter(input('any'));
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+    expect(input('el').value).toBe('b');
+    expect(beats(chrome)).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a failed save that puts text back starts it again', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome();
+    chrome.script(MSG.SAVE_SETTINGS, { success: false, error: 'x' });
+    await start(chrome);
+    typeInto(input('any'), 'Palowise');
+    pressEnter(input('any'));
+    await flush();
+    expect(input('any').value).toBe('Palowise');
+    await vi.advanceTimersByTimeAsync(FIRST_BEAT_MS);
+    expect(beats(chrome)).toBe(1);
+  });
+
+  it('it stops when the card holding the text goes', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome(storedSettings({ el: [] }));
+    await start(chrome);
+    typeInto(input('el'), 'b');
+    await vi.advanceTimersByTimeAsync(FIRST_BEAT_MS);
+    expect(beats(chrome)).toBe(1);
+    externalChange(chrome, {});
+    await flush();
+    expect(card('el')).toBeNull();
+    const after = chrome.count(MSG.GET_SETTINGS);
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 3);
+    expect(chrome.count(MSG.GET_SETTINGS)).toBe(after);
   });
 });
 

@@ -1,6 +1,7 @@
 // End-to-end coverage for the settings page and the quick-panel popup in the built extension:
-// route opening with tab reuse, saves that survive closing the tab, the pill following a change
-// made on the page, Reset to defaults, and Home counting a dictation. Run with
+// route opening with tab reuse, saves that survive closing the tab, a mouse press on the
+// Dictionary's buttons, the pill following a change made on the page, Reset to defaults, and Home
+// counting a dictation. Run with
 // `npm run test:e2e`, which builds dist/ first.
 import { test, expect } from '@playwright/test';
 import { migrateSettings } from '../../src/shared/defaults.js';
@@ -58,6 +59,18 @@ async function openSettingsPage(route) {
   return page;
 }
 
+/**
+ * Stores `dictionary` over the current settings.
+ * @param {Record<string, string[]>} dictionary
+ */
+async function seedDictionary(dictionary) {
+  const seed = { ...(await storedSettings()), dictionary };
+  await serviceWorker.evaluate((s) => chrome.storage.local.set({ settings: s }), seed);
+}
+
+/** A press long enough for what a blur does at mousedown to land before the mouse comes up. */
+const PRESS_MS = 60;
+
 /** Opens popup.html as a page; its buttons close it, so callers ignore its closing. */
 async function openPopup() {
   const page = await context.newPage();
@@ -112,6 +125,55 @@ test('a value typed on the settings page survives closing the tab one second lat
   await expect.poll(async () => (await storedSettings()).dictionary.any).toEqual(['Palowise']);
   const reopened = await openSettingsPage('dictionary');
   await expect(reopened.locator('.chip-text')).toHaveText('Palowise');
+});
+
+test('a value typed on the settings page survives closing the tab with the worker asleep', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const page = await openSettingsPage('dictionary');
+
+  const cdp = await context.newCDPSession(page);
+  const statuses = [];
+  cdp.on('ServiceWorker.workerVersionUpdated', ({ versions }) => statuses.push(...versions.map((v) => v.runningStatus)));
+  await cdp.send('ServiceWorker.enable');
+  await cdp.send('ServiceWorker.stopAllWorkers');
+  await expect.poll(() => statuses.at(-1)).toBe('stopped');
+
+  await page.locator('#dictionary-input-any').pressSequentially('Palowise');
+  await page.waitForTimeout(CLOSE_AFTER_MS);
+  await page.close();
+
+  await expect.poll(async () => (await storedSettings()).dictionary.any).toEqual(['Palowise']);
+});
+
+test('a press on Add language lands while the field above it adds its text', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const page = await openSettingsPage('dictionary');
+  const field = page.locator('#dictionary-input-any');
+  await page.locator('#dictionary-language').selectOption('de');
+  await field.pressSequentially('Palowise');
+
+  await page.locator('#dictionary-add-group').click({ delay: PRESS_MS });
+
+  await expect.poll(async () => (await storedSettings()).dictionary).toEqual({ any: ['Palowise'], de: [] });
+  await expect(page.locator('#dictionary-input-de')).toBeFocused();
+  await expect(page.locator('#dictionary-language option[value="de"]')).toHaveCount(0);
+});
+
+test('Remove group lands under a field with text, and the group stays gone', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  await seedDictionary({ el: ['Noesis'] });
+  const page = await openSettingsPage('dictionary');
+  const button = page.locator('.dictionary-group[data-group="el"] [data-role="remove-group"]');
+  await page.locator('#dictionary-input-el').pressSequentially('Palowise');
+
+  await button.click({ delay: PRESS_MS });
+  await expect(button).toHaveAttribute('data-confirming', 'true');
+  await page.waitForTimeout(CONFIRM_GUARD_MS + 100);
+  await button.click({ delay: PRESS_MS });
+
+  await expect(page.locator('.dictionary-group[data-group="el"]')).toHaveCount(0);
+  await expect(page.locator('#dictionary-input-any')).toBeFocused();
+  await expect.poll(async () => (await storedSettings()).dictionary).toEqual({});
 });
 
 test('a key pasted on the settings page survives closing the tab one second later', async () => {
