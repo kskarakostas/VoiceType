@@ -1,4 +1,4 @@
-// Settings, Recording: length limits, silence auto-stop and the hotkey recorder. Moved from the
+// Settings, Recording: length limits, silence auto-stop and the hotkey recorder. Ported from the
 // 2.2 popup unchanged in behaviour; changes save through ctx.commit.
 import { AUTO_STOP_CHOICES } from '../../shared/defaults.js';
 import { formatChord, chordFromEvent } from '../../shared/chord.js';

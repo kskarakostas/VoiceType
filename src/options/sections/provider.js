@@ -1,5 +1,5 @@
 // Settings, Provider: the provider switch and one key row per provider with Test and Clear.
-// Moved from the 2.2 popup unchanged in behaviour; keys save through ctx.commit.
+// Ported from the 2.2 popup unchanged in behaviour; keys save through ctx.commit.
 import { MSG } from '../../shared/messages.js';
 import { PROVIDERS } from '../../shared/models.js';
 

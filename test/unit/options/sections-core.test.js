@@ -98,12 +98,13 @@ afterEach(() => {
 });
 
 describe('settings page core sections layout', () => {
-  it('each route holds its card, with an h2 heading and the popup ids', async () => {
+  it('each route holds one card, without a heading that repeats the route, and the popup ids', async () => {
     await start(fakeChrome(), 'settings/provider');
-    const cards = (route) => [...document.querySelectorAll(`section[data-route="${route}"] .card h2`)].map((h) => h.textContent.trim());
-    expect(cards('settings/provider')).toEqual(['Provider']);
-    expect(cards('settings/recording')).toEqual(['Recording']);
-    expect(cards('settings/speech')).toEqual(['Speech']);
+    for (const route of ['settings/provider', 'settings/recording', 'settings/speech']) {
+      const section = document.querySelector(`section[data-route="${route}"]`);
+      expect(section.querySelectorAll('.card'), route).toHaveLength(1);
+      expect(section.querySelectorAll('h2'), route).toHaveLength(0);
+    }
     const inRoute = (route, id) => document.querySelector(`section[data-route="${route}"]`).contains($(id));
     for (const id of ['key-row-openai', 'key-openai', 'test-openai', 'clear-openai', 'key-row-gemini', 'key-gemini', 'spend-hint']) {
       expect(inRoute('settings/provider', id), id).toBe(true);

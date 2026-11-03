@@ -308,6 +308,88 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .languages legend { margin-bottom: 6px; padding: 0; }
 .check-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 8px; }
 
+/* Modes */
+
+.mode-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.mode { display: flex; gap: 4px; }
+
+.mode-select {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mode-select:hover { background: var(--surface-2); }
+.mode-select[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.mode-icon { width: 22px; font-size: 16px; line-height: 1; text-align: center; }
+.mode-text { flex: 1; display: grid; gap: 1px; min-width: 0; }
+.mode-name { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; font-weight: 600; }
+
+.mode-badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.mode-preview {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mode-check { color: var(--accent); }
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+
+.editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.editor h3 { font-size: 13px; font-weight: 700; }
+.editor-row { display: grid; grid-template-columns: 64px 1fr; gap: 8px; }
+.editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.editor-actions .btn-danger { margin-right: auto; }
+
+/* Usage */
+
+.usage { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.usage th, .usage td { padding: 6px 4px; text-align: right; }
+.usage thead th { color: var(--muted); font-weight: 600; }
+.usage tbody th { color: var(--text-2); font-weight: 600; text-align: left; }
+.usage tbody tr + tr > * { border-top: 1px solid var(--border); }
+.usage tr.total td { font-weight: 700; }
+.usage .by-provider { border-top: 2px solid var(--border); }
+
 /* Toast: independent of the banner, which stays until the popup is reopened. */
 
 .toast {

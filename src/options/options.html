@@ -61,6 +61,35 @@
 
         <section data-route="modes" aria-labelledby="h-modes" hidden>
           <h1 id="h-modes" tabindex="-1">Modes</h1>
+          <div class="card">
+            <div class="card-head">
+              <button type="button" class="btn btn-quiet" id="add-mode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Add mode</button>
+            </div>
+            <ul class="mode-list" id="mode-list" aria-labelledby="h-modes"></ul>
+            <div class="editor" id="mode-editor" hidden>
+              <h3 id="editor-title">Edit mode</h3>
+              <div class="editor-row">
+                <div class="field">
+                  <label class="field-label" for="mode-icon">Icon</label>
+                  <input type="text" id="mode-icon" maxlength="8" placeholder="Emoji">
+                </div>
+                <div class="field">
+                  <label class="field-label" for="mode-name">Name</label>
+                  <input type="text" id="mode-name" maxlength="40" placeholder="Meeting notes">
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label" for="mode-prompt">Instructions for the text model</label>
+                <textarea id="mode-prompt" rows="5" placeholder="Leave empty for raw transcription."></textarea>
+                <p class="hint">Applied to the transcript after speech recognition. Empty means the transcript is inserted as is.</p>
+              </div>
+              <div class="editor-actions">
+                <button type="button" class="btn btn-danger" id="delete-mode" hidden>Delete</button>
+                <button type="button" class="btn btn-quiet" id="close-mode">Close</button>
+                <button type="button" class="btn btn-primary" id="create-mode" hidden>Create mode</button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section data-route="dictionary" aria-labelledby="h-dictionary" hidden>
@@ -68,10 +97,9 @@
           <p class="placeholder">Coming in a later update. Until then, edit your vocabulary in <a href="#settings/speech">Settings, Speech</a>.</p>
         </section>
 
-        <section data-route="settings/provider" aria-labelledby="h-settings-provider" hidden>
-          <h1 id="h-settings-provider" tabindex="-1">Provider</h1>
-          <section class="card" aria-labelledby="h-provider">
-            <h2 id="h-provider"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2"/><path d="m17 6 2 2"/><path d="m14 9 2 2"/></svg>Provider</h2>
+        <section data-route="settings/provider" aria-labelledby="h-provider" hidden>
+          <h1 id="h-provider" tabindex="-1">Provider</h1>
+          <div class="card">
             <div class="segmented" role="radiogroup" aria-labelledby="h-provider">
               <label class="segment"><input type="radio" name="provider" value="openai"><span>OpenAI</span></label>
               <label class="segment"><input type="radio" name="provider" value="gemini"><span>Gemini</span></label>
@@ -93,13 +121,12 @@
               </div>
             </div>
             <p class="hint hint-warning" id="spend-hint" hidden>Set a spending limit on your provider account.</p>
-          </section>
+          </div>
         </section>
 
         <section data-route="settings/recording" aria-labelledby="h-settings-recording" hidden>
           <h1 id="h-settings-recording" tabindex="-1">Recording</h1>
-          <section class="card" aria-labelledby="h-recording">
-            <h2 id="h-recording"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 2h6"/></svg>Recording</h2>
+          <div class="card">
             <div class="grid-2">
               <div class="field">
                 <label class="field-label" for="min-time">Minimum length</label>
@@ -130,13 +157,12 @@
               </div>
             </div>
             <p class="hint" id="hotkey-hint" aria-live="polite">Tap to toggle, hold to talk.</p>
-          </section>
+          </div>
         </section>
 
         <section data-route="settings/speech" aria-labelledby="h-settings-speech" hidden>
           <h1 id="h-settings-speech" tabindex="-1">Speech</h1>
-          <section class="card" aria-labelledby="h-speech">
-            <h2 id="h-speech"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg>Speech</h2>
+          <div class="card">
             <fieldset class="languages">
               <legend class="field-label">Spoken languages</legend>
               <div class="check-grid" id="languages"></div>
@@ -147,7 +173,7 @@
               <textarea id="keywords" rows="4" spellcheck="false" placeholder="One term per line: names, jargon, product names" aria-describedby="keyword-count"></textarea>
               <p class="hint" id="keyword-count">0 of 100 terms</p>
             </div>
-          </section>
+          </div>
         </section>
 
         <section data-route="settings/sites" aria-labelledby="h-settings-sites" hidden>
@@ -167,6 +193,34 @@
 
         <section data-route="settings/usage" aria-labelledby="h-settings-usage" hidden>
           <h1 id="h-settings-usage" tabindex="-1">Usage and data</h1>
+          <section class="card" aria-labelledby="h-usage">
+            <div class="card-head">
+              <h2 id="h-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11"/><path d="M10 20V5"/><path d="M16 20v-6"/><path d="M21 20H3"/></svg>Usage</h2>
+              <button type="button" class="btn btn-quiet" id="refresh-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>Refresh</button>
+            </div>
+            <table class="usage">
+              <thead>
+                <tr><td></td><th scope="col">Sessions</th><th scope="col">Audio</th><th scope="col">Cost</th></tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Today</th><td id="usage-today-sessions">0</td><td id="usage-today-audio">0:00</td><td id="usage-today-cost">$0.00</td></tr>
+                <tr><th scope="row">7 days</th><td id="usage-week-sessions">0</td><td id="usage-week-audio">0:00</td><td id="usage-week-cost">$0.00</td></tr>
+                <tr class="total"><th scope="row">All time</th><td id="usage-total-sessions">0</td><td id="usage-total-audio">0:00</td><td id="usage-total-cost">$0.00</td></tr>
+              </tbody>
+              <tbody class="by-provider">
+                <tr><th scope="row">OpenAI</th><td id="usage-openai-sessions">0</td><td id="usage-openai-audio">0:00</td><td id="usage-openai-cost">$0.00</td></tr>
+                <tr><th scope="row">Gemini</th><td id="usage-gemini-sessions">0</td><td id="usage-gemini-audio">0:00</td><td id="usage-gemini-cost">$0.00</td></tr>
+              </tbody>
+            </table>
+            <p class="hint">Estimates from list prices. Provider rows cover all time. Check your provider dashboard for billing.</p>
+            <div class="card-actions">
+              <button type="button" class="btn btn-danger" id="clear-usage">Clear history</button>
+            </div>
+          </section>
+          <div class="card">
+            <button type="button" class="btn btn-danger btn-block" id="reset" aria-describedby="reset-hint">Reset to defaults</button>
+            <p class="hint" id="reset-hint">Resets modes and prompts, recording limits, silence auto-stop, the hotkey, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode. Keeps your API keys, provider, spoken languages, dictionary and site rules.</p>
+          </div>
         </section>
       </main>
 

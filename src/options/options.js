@@ -7,11 +7,13 @@ import { DEFAULT_ROUTE, parseRoute } from './routes.js';
 import { createProviderSection } from './sections/provider.js';
 import { createRecordingSection } from './sections/recording.js';
 import { createSpeechSection } from './sections/speech.js';
+import { createModesSection } from './sections/modes.js';
+import { createUsageSection } from './sections/usage.js';
 
 /** @typedef {import('../shared/defaults.js').Settings} Settings */
 /**
  * @typedef {{ readonly pending: boolean, schedule(): void, cancel(): void, flush(): unknown }} TypingSave
- * @typedef {{ render(): void, typingSaves?: TypingSave[] }} Section
+ * @typedef {{ render(): void, typingSaves?: TypingSave[], beforeReset?(): void }} Section
  * @typedef {{
  *   document: Document, window: Window, chrome: typeof chrome, mac: boolean,
  *   $: (id: string) => HTMLElement,
@@ -20,6 +22,7 @@ import { createSpeechSection } from './sections/speech.js';
  *   send: (message: object) => Promise<any|null>,
  *   toast: (text: string, tone?: 'info'|'success'|'error') => void,
  *   typingSave: (save: () => unknown) => TypingSave,
+ *   beforeReset: () => void,
  *   setTimer: (fn: () => void, ms: number) => number, clearTimer: (id: number) => void,
  * }} PageContext
  */
@@ -36,7 +39,9 @@ const SAVE_ERROR = 'Could not save settings.';
  * mutates it; every change goes through `ctx.commit`. Its `render` must not write a focused field.
  * @type {ReadonlyArray<(ctx: PageContext) => Section>}
  */
-const SECTIONS = Object.freeze([createProviderSection, createRecordingSection, createSpeechSection]);
+const SECTIONS = Object.freeze([
+  createProviderSection, createRecordingSection, createSpeechSection, createModesSection, createUsageSection,
+]);
 
 /**
  * `current` with the fields of `patch` put back to their `snapshot` values; for `keys` only the
@@ -210,6 +215,8 @@ export async function initOptions({ chrome, document, window, sections = SECTION
     send: client.send,
     toast,
     typingSave,
+    // Reset to defaults calls this before it commits, so sections can close open editors.
+    beforeReset: () => { for (const section of mounted) section.beforeReset?.(); },
     setTimer,
     clearTimer,
   };

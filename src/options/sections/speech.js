@@ -1,4 +1,4 @@
-// Settings, Speech: spoken languages and the vocabulary, which edits `dictionary.any`. Moved from
+// Settings, Speech: spoken languages and the vocabulary, which edits `dictionary.any`. Ported from
 // the 2.2 popup unchanged in behaviour; changes save through ctx.commit.
 import {
   DICTIONARY_ANY, SPOKEN_LANGUAGES, MAX_KEYWORDS, countTerms, flattenDictionary, setGroupTerms,
