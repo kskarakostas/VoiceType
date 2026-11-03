@@ -1,0 +1,108 @@
+/* VoiceType settings page: the sidebar and content layout, on top of base.css. Colours come from
+   the base.css tokens only. */
+
+.layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+/* Sidebar: fixed at the left while the content scrolls. */
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100vh;
+  padding: 16px 12px;
+  overflow-y: auto;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.brand-mark svg { width: 18px; height: 18px; }
+.brand-name { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.tagline { color: var(--muted); font-size: 12px; }
+
+.nav-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+
+.nav-list a {
+  display: block;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.nav-list a:hover { background: var(--surface-2); color: var(--text); }
+.nav-list a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
+
+.nav-group { margin-top: 10px; }
+
+.nav-group-label {
+  display: block;
+  margin-bottom: 2px;
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sidebar-footer {
+  display: grid;
+  gap: 2px;
+  margin-top: auto;
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.links { display: flex; gap: 16px; margin-top: 4px; }
+.links a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.links a:hover { text-decoration: underline; }
+
+/* Content */
+
+.content { width: 100%; max-width: 760px; padding: 24px 32px; }
+.content .banner { margin: 0 0 16px; }
+main { display: grid; gap: 12px; }
+main section { display: grid; gap: 12px; }
+main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.placeholder { color: var(--muted); font-size: 13px; }
+.placeholder a { color: var(--accent); font-weight: 600; }
+.footnote { margin-top: 24px; color: var(--muted); font-size: 12px; }
+
+.toast { left: auto; max-width: 360px; }
+
+/* Narrow windows: the sidebar stacks above the content. */
+
+@media (max-width: 719.98px) {
+  .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+
+  .sidebar {
+    position: static;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .content { padding: 16px; }
+}

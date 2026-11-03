@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VoiceType settings</title>
+  <link rel="stylesheet" href="base.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Settings">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v3"/></svg>
+        </span>
+        <div>
+          <p class="brand-name">VoiceType</p>
+          <p class="tagline">BYOK dictation</p>
+        </div>
+      </div>
+      <ul class="nav-list">
+        <li><a href="#home">Home</a></li>
+        <li><a href="#modes">Modes</a></li>
+        <li><a href="#dictionary">Dictionary</a></li>
+        <li class="nav-group" data-group="settings">
+          <span class="nav-group-label" id="nav-group-settings">Settings</span>
+          <ul class="nav-list" aria-labelledby="nav-group-settings">
+            <li><a href="#settings/provider">Provider</a></li>
+            <li><a href="#settings/recording">Recording</a></li>
+            <li><a href="#settings/speech">Speech</a></li>
+            <li><a href="#settings/sites">Sites</a></li>
+            <li><a href="#settings/appearance">Appearance</a></li>
+            <li><a href="#settings/sound">Sound and clipboard</a></li>
+            <li><a href="#settings/usage">Usage and data</a></li>
+          </ul>
+        </li>
+      </ul>
+      <footer class="sidebar-footer">
+        <p><span id="version">Version</span></p>
+        <p>by K. S. Karakostas</p>
+        <p class="links">
+          <a href="https://github.com/kskarakostas/VoiceType" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/kskarakostas/VoiceType/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy</a>
+        </p>
+      </footer>
+    </nav>
+
+    <div class="content">
+      <div class="banner" id="banner" role="alert" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+        <p id="banner-text"></p>
+      </div>
+
+      <main>
+        <section data-route="home" aria-labelledby="h-home">
+          <h1 id="h-home" tabindex="-1">Home</h1>
+          <p class="placeholder">Coming in a later update.</p>
+        </section>
+
+        <section data-route="modes" aria-labelledby="h-modes" hidden>
+          <h1 id="h-modes" tabindex="-1">Modes</h1>
+        </section>
+
+        <section data-route="dictionary" aria-labelledby="h-dictionary" hidden>
+          <h1 id="h-dictionary" tabindex="-1">Dictionary</h1>
+          <p class="placeholder">Coming in a later update. Until then, edit your vocabulary in <a href="#settings/speech">Settings, Speech</a>.</p>
+        </section>
+
+        <section data-route="settings/provider" aria-labelledby="h-settings-provider" hidden>
+          <h1 id="h-settings-provider" tabindex="-1">Provider</h1>
+        </section>
+
+        <section data-route="settings/recording" aria-labelledby="h-settings-recording" hidden>
+          <h1 id="h-settings-recording" tabindex="-1">Recording</h1>
+        </section>
+
+        <section data-route="settings/speech" aria-labelledby="h-settings-speech" hidden>
+          <h1 id="h-settings-speech" tabindex="-1">Speech</h1>
+        </section>
+
+        <section data-route="settings/sites" aria-labelledby="h-settings-sites" hidden>
+          <h1 id="h-settings-sites" tabindex="-1">Sites</h1>
+          <p class="placeholder">Coming in a later update.</p>
+        </section>
+
+        <section data-route="settings/appearance" aria-labelledby="h-settings-appearance" hidden>
+          <h1 id="h-settings-appearance" tabindex="-1">Appearance</h1>
+          <p class="placeholder">Coming in a later update.</p>
+        </section>
+
+        <section data-route="settings/sound" aria-labelledby="h-settings-sound" hidden>
+          <h1 id="h-settings-sound" tabindex="-1">Sound and clipboard</h1>
+          <p class="placeholder">Coming in a later update.</p>
+        </section>
+
+        <section data-route="settings/usage" aria-labelledby="h-settings-usage" hidden>
+          <h1 id="h-settings-usage" tabindex="-1">Usage and data</h1>
+        </section>
+      </main>
+
+      <p class="footnote">Changes save automatically.</p>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="options.js"></script>
+</body>
+</html>

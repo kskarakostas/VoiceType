@@ -6,7 +6,10 @@ const SRC = join(import.meta.dirname, '../../../src');
 const BASE_CSS = readFileSync(join(SRC, 'ui/base.css'), 'utf8');
 const POPUP_CSS = readFileSync(join(SRC, 'popup/popup.css'), 'utf8');
 const POPUP_HTML = readFileSync(join(SRC, 'popup/popup.html'), 'utf8');
-const STYLESHEETS = { 'base.css': BASE_CSS, 'popup.css': POPUP_CSS };
+const OPTIONS_CSS = readFileSync(join(SRC, 'options/options.css'), 'utf8');
+const OPTIONS_HTML = readFileSync(join(SRC, 'options/options.html'), 'utf8');
+const STYLESHEETS = { 'base.css': BASE_CSS, 'popup.css': POPUP_CSS, 'options.css': OPTIONS_CSS };
+const PAGES = { popup: POPUP_HTML, options: OPTIONS_HTML };
 
 describe('extension page stylesheets and markup', () => {
   function tokens(block) {
@@ -61,14 +64,23 @@ describe('extension page stylesheets and markup', () => {
     expect(BASE_CSS).toContain('@media (prefers-color-scheme: dark)');
   });
 
-  it('popup.html links base.css before popup.css', () => {
-    const base = POPUP_HTML.indexOf('<link rel="stylesheet" href="base.css">');
-    expect(base).toBeGreaterThan(0);
-    expect(POPUP_HTML.indexOf('<link rel="stylesheet" href="popup.css">')).toBeGreaterThan(base);
+  it('each page links base.css before its own stylesheet', () => {
+    for (const [page, HTML] of Object.entries(PAGES)) {
+      const base = HTML.indexOf('<link rel="stylesheet" href="base.css">');
+      expect(base, page).toBeGreaterThan(0);
+      expect(HTML.indexOf(`<link rel="stylesheet" href="${page}.css">`), page).toBeGreaterThan(base);
+    }
   });
 
-  it('popup.html carries no emoji and no inline handlers', () => {
-    expect(POPUP_HTML).not.toMatch(/\p{Extended_Pictographic}/u);
-    expect(POPUP_HTML).not.toMatch(/\son[a-z]+=/i);
+  it('each page carries no emoji and no inline handlers', () => {
+    for (const [page, HTML] of Object.entries(PAGES)) {
+      expect(HTML, page).not.toMatch(/\p{Extended_Pictographic}/u);
+      expect(HTML, page).not.toMatch(/\son[a-z]+=/i);
+    }
+  });
+
+  it('options.css adds no colour token', () => {
+    expect(OPTIONS_CSS).not.toMatch(/--[\w-]+\s*:/);
+    expect(OPTIONS_CSS).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(/);
   });
 });

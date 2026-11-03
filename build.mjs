@@ -15,6 +15,7 @@ const ENTRIES = {
   background: 'src/background/index.js',
   content: 'src/content/index.js',
   popup: 'src/popup/popup.js',
+  options: 'src/options/options.js',
   offscreen: 'src/offscreen/offscreen.js',
   permission: 'src/offscreen/permission.js',
 };
@@ -25,6 +26,8 @@ const STATICS = [
   ['src/popup/popup.html', 'popup.html'],
   ['src/ui/base.css', 'base.css'],
   ['src/popup/popup.css', 'popup.css'],
+  ['src/options/options.html', 'options.html'],
+  ['src/options/options.css', 'options.css'],
   ['src/offscreen/offscreen.html', 'offscreen.html'],
   ['src/offscreen/permission.html', 'permission.html'],
   ['icons/icon16.png', 'icons/icon16.png'],

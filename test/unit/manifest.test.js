@@ -16,6 +16,10 @@ describe('manifest', () => {
     expect(manifest.minimum_chrome_version).toBe('140');
   });
 
+  it('opens the settings page in a tab', () => {
+    expect(manifest.options_ui).toEqual({ page: 'options.html', open_in_tab: true });
+  });
+
   it('declares no commands; the hotkey lives in the content script', () => {
     expect(manifest).not.toHaveProperty('commands');
   });
