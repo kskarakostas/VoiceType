@@ -9,6 +9,7 @@ import { createRecordingSection } from './sections/recording.js';
 import { createSpeechSection } from './sections/speech.js';
 import { createModesSection } from './sections/modes.js';
 import { createUsageSection } from './sections/usage.js';
+import { createHomeSection } from './sections/home.js';
 
 /** @typedef {import('../shared/defaults.js').Settings} Settings */
 /**
@@ -24,6 +25,7 @@ import { createUsageSection } from './sections/usage.js';
  *   typingSave: (save: () => unknown) => TypingSave,
  *   beforeReset: () => void,
  *   setTimer: (fn: () => void, ms: number) => number, clearTimer: (id: number) => void,
+ *   onUsageChange: (listener: () => void) => () => void,
  * }} PageContext
  */
 
@@ -38,7 +40,8 @@ const LOAD_ERROR = 'Could not load settings. Reload this page.';
  * @type {ReadonlyArray<(ctx: PageContext) => Section>}
  */
 const SECTIONS = Object.freeze([
-  createProviderSection, createRecordingSection, createSpeechSection, createModesSection, createUsageSection,
+  createHomeSection, createProviderSection, createRecordingSection, createSpeechSection, createModesSection,
+  createUsageSection,
 ]);
 
 /**
@@ -108,6 +111,27 @@ export async function initOptions({ chrome, document, window, sections = SECTION
     for (const section of mounted) section.render();
   }
 
+  /**
+   * Call `listener` when the stored usage log changes and when the tab becomes visible again,
+   * so usage shown on a tab left open never goes stale.
+   * @param {() => void} listener
+   * @returns {() => void} unsubscribe
+   */
+  function onUsageChange(listener) {
+    const onChanged = (changes, areaName) => {
+      if (areaName === 'local' && Object.hasOwn(changes, 'usageLog')) listener();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') listener();
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      chrome.storage.onChanged.removeListener(onChanged);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }
+
   const state = createSettingsState({ client, render, toast });
 
   /** @type {PageContext} */
@@ -123,6 +147,7 @@ export async function initOptions({ chrome, document, window, sections = SECTION
     beforeReset: () => { for (const section of mounted) section.beforeReset?.(); },
     setTimer,
     clearTimer,
+    onUsageChange,
   };
   const mounted = sections.map((factory) => factory(ctx));
 

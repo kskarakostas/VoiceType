@@ -1,10 +1,11 @@
 // End-to-end coverage for the settings page and the quick-panel popup in the built extension:
 // route opening with tab reuse, saves that survive closing the tab, the pill following a change
-// made on the page, and Reset to defaults. Run with `npm run test:e2e`, which builds dist/ first.
+// made on the page, Reset to defaults, and Home counting a dictation. Run with
+// `npm run test:e2e`, which builds dist/ first.
 import { test, expect } from '@playwright/test';
 import { migrateSettings } from '../../src/shared/defaults.js';
 import { CONFIRM_GUARD_MS } from '../../src/ui/form.js';
-import { launchExtension, seedSettings, openFields, pillQuery, focusField, DUMMY_KEY } from './helpers.js';
+import { launchExtension, seedSettings, openFields, pillQuery, focusField, dictate, DUMMY_KEY, TRANSCRIPT } from './helpers.js';
 
 /** The acceptance budget: closing the tab this long after typing keeps the value (spec 6.1). */
 const CLOSE_AFTER_MS = 1000;
@@ -167,4 +168,19 @@ test('Reset keeps keys, dictionary and site rules', async () => {
   expect(after.keys).toEqual(seed.keys);
   expect(after.dictionary).toEqual(seed.dictionary);
   expect(after.siteRules).toEqual(seed.siteRules);
+});
+
+test('Home counts the words of a dictation', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const fields = await openFields(context);
+  const textarea = fields.locator('#ta');
+  await focusField(fields, textarea);
+  await dictate(fields);
+  await expect(textarea).toHaveValue(TRANSCRIPT);
+
+  const page = await context.newPage();
+  await page.goto(extensionUrl('options.html#home'));
+  // The stub's transcript is two words; Home reloads when the usage log lands.
+  await expect(page.locator('#home-words-week')).toHaveText('2');
+  await expect(page.locator('#home-days li[aria-current="date"]')).toHaveAttribute('data-state', 'dictated');
 });

@@ -145,10 +145,10 @@ describe('settings page shell', () => {
   it('later-lane pages show their placeholder', async () => {
     await start(fakeChrome());
     const text = (id) => [...document.querySelectorAll(`section[data-route="${id}"] .placeholder`)].map((p) => p.textContent.trim());
-    for (const id of ['home', 'settings/sites', 'settings/appearance', 'settings/sound']) expect(text(id), id).toEqual([PLACEHOLDER]);
+    for (const id of ['settings/sites', 'settings/appearance', 'settings/sound']) expect(text(id), id).toEqual([PLACEHOLDER]);
     expect(text('dictionary')).toEqual([DICTIONARY_PLACEHOLDER]);
     expect(document.querySelector('section[data-route="dictionary"] .placeholder a').getAttribute('href')).toBe('#settings/speech');
-    for (const id of ['modes', 'settings/provider', 'settings/recording', 'settings/speech', 'settings/usage']) expect(text(id), id).toEqual([]);
+    for (const id of ['home', 'modes', 'settings/provider', 'settings/recording', 'settings/speech', 'settings/usage']) expect(text(id), id).toEqual([]);
   });
 
   it('the footer shows the version and the byline', async () => {

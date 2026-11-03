@@ -158,7 +158,8 @@ describe('settings page usage', () => {
     chrome.script(MSG.GET_USAGE, { ...structuredClone(USAGE), today: bucket(4, 75, 0.05) }, null);
     $('refresh-usage').click();
     await flush();
-    expect(chrome.count(MSG.GET_USAGE)).toBe(2);
+    // Home and the table each load once on mount; Refresh reloads only the table.
+    expect(chrome.count(MSG.GET_USAGE)).toBe(3);
     expect($('usage-today-sessions').textContent).toBe('4');
     expect($('usage-today-audio').textContent).toBe('1:15');
     $('refresh-usage').click();
@@ -181,7 +182,8 @@ describe('settings page usage', () => {
     button.click();
     await flush();
     expect(chrome.count(MSG.CLEAR_USAGE)).toBe(1);
-    expect(chrome.count(MSG.GET_USAGE)).toBe(2);
+    // Home and the table on mount, then the table after clearing.
+    expect(chrome.count(MSG.GET_USAGE)).toBe(3);
     expect($('toast').textContent).toBe('Usage history cleared');
     expect(button.textContent).toBe('Clear history');
   });
@@ -214,7 +216,28 @@ describe('settings page usage', () => {
     button.click();
     await flush();
     expect($('toast').textContent).toBe('Could not clear usage history.');
-    expect(chrome.count(MSG.GET_USAGE)).toBe(1);
+    // Home and the table on mount only: a failed clear does not reload.
+    expect(chrome.count(MSG.GET_USAGE)).toBe(2);
+  });
+
+  it('the usage table reloads on a usageLog change', async () => {
+    const chrome = fakeChrome();
+    await start(chrome, 'settings/usage');
+    expect(chrome.count(MSG.GET_USAGE)).toBe(2);
+    const next = { ...structuredClone(USAGE), today: bucket(5, 125, 0.07) };
+    // Home and the table both reload; each takes one of the queued replies.
+    chrome.script(MSG.GET_USAGE, next, structuredClone(next));
+    chrome.fire({ usageLog: { newValue: {} } }, 'local');
+    await flush();
+    expect(chrome.count(MSG.GET_USAGE)).toBe(4);
+    expect($('usage-today-sessions').textContent).toBe('5');
+    expect($('usage-today-audio').textContent).toBe('2:05');
+    expect($('usage-today-cost').textContent).toBe('$0.07');
+
+    chrome.fire({ usageLog: { newValue: {} } }, 'sync');
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect(chrome.count(MSG.GET_USAGE)).toBe(4);
   });
 });
 

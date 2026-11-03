@@ -84,7 +84,7 @@ export function createUsageSection(ctx) {
   });
 
   loadUsage();
+  ctx.onUsageChange(loadUsage);
 
-  // The table does not depend on settings; it loads once and on Refresh or Clear history.
   return { render() {} };
 }

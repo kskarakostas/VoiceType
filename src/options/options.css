@@ -92,6 +92,35 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 
 .toast { left: auto; max-width: 360px; }
 
+/* Home */
+
+.home-line { color: var(--muted); font-size: 13px; }
+.home { display: grid; gap: 10px; }
+.home > h2 { color: var(--text-2); font-size: 15px; font-weight: 700; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+.stat { display: grid; align-content: start; gap: 4px; }
+.stat h3 { color: var(--text-2); font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.stat-value { color: var(--text); font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.stat-detail { color: var(--muted); font-size: 12px; }
+
+/* Day squares: the label and the fill both differ by state, so colour is never the only cue. */
+.days { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; padding: 0; list-style: none; }
+.days li {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.days li[data-state="dictated"] { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.days li[data-state="upcoming"] { border: 1px dashed var(--border); color: var(--muted); }
+.days li[aria-current="date"] { outline: 2px solid var(--text); outline-offset: 2px; }
+
 /* Narrow windows: the sidebar stacks above the content. */
 
 @media (max-width: 719.98px) {
