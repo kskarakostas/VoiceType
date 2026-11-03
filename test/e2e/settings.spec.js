@@ -1,0 +1,170 @@
+// End-to-end coverage for the settings page and the quick-panel popup in the built extension:
+// route opening with tab reuse, saves that survive closing the tab, the pill following a change
+// made on the page, and Reset to defaults. Run with `npm run test:e2e`, which builds dist/ first.
+import { test, expect } from '@playwright/test';
+import { migrateSettings } from '../../src/shared/defaults.js';
+import { CONFIRM_GUARD_MS } from '../../src/ui/form.js';
+import { launchExtension, seedSettings, openFields, pillQuery, focusField, DUMMY_KEY } from './helpers.js';
+
+/** The acceptance budget: closing the tab this long after typing keeps the value (spec 6.1). */
+const CLOSE_AFTER_MS = 1000;
+/** The pill shows a mode chosen on the settings page within this long (spec 6.1). */
+const PILL_SYNC_MS = 1000;
+const PASTED_KEY = 'sk-e2e-pasted-key';
+
+test.describe.configure({ mode: 'serial' });
+
+/** @type {import('@playwright/test').BrowserContext} */
+let context;
+/** @type {import('@playwright/test').Worker} */
+let serviceWorker;
+let extensionId = '';
+/** @type {() => Promise<void>} */
+let close;
+
+test.beforeAll(async () => {
+  ({ context, serviceWorker, extensionId, close } = await launchExtension());
+});
+
+test.afterAll(async () => {
+  await close?.();
+});
+
+test.afterEach(async () => {
+  // Every case starts with no settings tab open; the launch page stays.
+  for (const page of context.pages()) {
+    if (/^(http|chrome-extension):/.test(page.url())) await page.close();
+  }
+});
+
+const extensionUrl = (path) => `chrome-extension://${extensionId}/${path}`;
+
+const settingsPages = () => context.pages().filter((page) => page.url().startsWith(extensionUrl('options.html')));
+
+/** The stored settings, keys included, as the service worker reads them. */
+const storedSettings = () => serviceWorker.evaluate(async () => (await chrome.storage.local.get('settings')).settings);
+
+/**
+ * Opens the settings page at a route and waits until it has loaded the stored settings: the
+ * first render builds the mode rows, and a failed load shows the banner.
+ * @param {string} route
+ */
+async function openSettingsPage(route) {
+  const page = await context.newPage();
+  await page.goto(extensionUrl(`options.html#${route}`));
+  await expect(page.locator('#mode-list .mode-select').first()).toBeAttached();
+  await expect(page.locator('#banner')).toBeHidden();
+  return page;
+}
+
+/** Opens popup.html as a page; its buttons close it, so callers ignore its closing. */
+async function openPopup() {
+  const page = await context.newPage();
+  await page.goto(extensionUrl('popup.html'));
+  return page;
+}
+
+/**
+ * Whether the tab showing the settings page is the active tab of its window.
+ * @returns {Promise<boolean[]>} one entry per settings tab
+ */
+const settingsTabsActive = () => serviceWorker.evaluate(async (base) => {
+  const contexts = await chrome.runtime.getContexts({ contextTypes: ['TAB'] });
+  const tabs = contexts.filter((c) => c.documentUrl?.split('#')[0] === base);
+  return Promise.all(tabs.map(async (c) => (await chrome.tabs.get(c.tabId)).active));
+}, extensionUrl('options.html'));
+
+test('the popup opens a route and reuses the settings tab', async () => {
+  await seedSettings(serviceWorker, '');
+  const first = await openPopup();
+  const [settingsPage] = await Promise.all([
+    context.waitForEvent('page', { predicate: (page) => page.url().startsWith(extensionUrl('options.html')) }),
+    first.getByRole('button', { name: 'Open settings' }).click(),
+  ]);
+  await expect(settingsPage).toHaveURL(extensionUrl('options.html#home'));
+  await expect(settingsPage.locator('section[data-route="home"]')).toBeVisible();
+  await settingsPage.evaluate(() => { window.__marker = 1; });
+
+  const second = await openPopup();
+  // The new popup tab is in front, so the focus check below is not vacuous.
+  await expect.poll(settingsTabsActive).toEqual([false]);
+  await second.getByRole('button', { name: 'Add API key' }).click();
+
+  await expect(settingsPage).toHaveURL(extensionUrl('options.html#settings/provider'));
+  expect(settingsPages()).toHaveLength(1);
+  expect(settingsPages()[0]).toBe(settingsPage);
+  expect(await settingsPage.evaluate(() => window.__marker)).toBe(1);
+  await expect(settingsPage.locator('section[data-route="settings/provider"]')).toBeVisible();
+  await expect.poll(settingsTabsActive).toEqual([true]);
+});
+
+test('a value typed on the settings page survives closing the tab one second later', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const page = await openSettingsPage('settings/speech');
+  const keywords = page.locator('#keywords');
+  await expect(keywords).toHaveValue('');
+
+  await keywords.pressSequentially('Palowise');
+  await page.waitForTimeout(CLOSE_AFTER_MS);
+  await page.close();
+
+  await expect.poll(async () => (await storedSettings()).dictionary.any).toEqual(['Palowise']);
+  const reopened = await openSettingsPage('settings/speech');
+  await expect(reopened.locator('#keywords')).toHaveValue('Palowise');
+});
+
+test('a key pasted on the settings page survives closing the tab one second later', async () => {
+  await seedSettings(serviceWorker, '');
+  const page = await openSettingsPage('settings/provider');
+  const key = page.locator('#key-openai');
+  await expect(key).toHaveAttribute('placeholder', 'sk-...');
+
+  await key.fill(PASTED_KEY);
+  await page.waitForTimeout(CLOSE_AFTER_MS);
+  await page.close();
+
+  await expect.poll(async () => (await storedSettings()).keys.openai).toBe(PASTED_KEY);
+  // The field never shows a saved key; its placeholder masks it.
+  const reopened = await openSettingsPage('settings/provider');
+  await expect(reopened.locator('#key-openai')).toHaveAttribute('placeholder', 'sk-e…-key (saved)');
+  await expect(reopened.locator('#key-openai')).toHaveValue('');
+});
+
+test('the pill reflects a mode chosen on the settings page within one second', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const fields = await openFields(context);
+  await focusField(fields, fields.locator('#ta'));
+  await expect.poll(() => pillQuery(fields, 'button[aria-label^="Mode: Default."]')).not.toBeNull();
+
+  const page = await openSettingsPage('modes');
+  await page.locator('button[data-focus-key="select:email"]').click();
+
+  await expect.poll(() => pillQuery(fields, 'button[aria-label^="Mode: Email."]'), { timeout: PILL_SYNC_MS }).not.toBeNull();
+  expect((await storedSettings()).activeMode).toBe('email');
+});
+
+test('Reset keeps keys, dictionary and site rules', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const seed = {
+    ...(await storedSettings()),
+    dictionary: { any: ['Palowise'], de: ['Karakostas'] },
+    siteRules: { 'example.com': { hidePill: true, mode: 'email' } },
+    pillStyle: 'dot',
+  };
+  expect(migrateSettings(seed)).toBe(seed);
+  await serviceWorker.evaluate((s) => chrome.storage.local.set({ settings: s }), seed);
+
+  const page = await openSettingsPage('settings/usage');
+  const reset = page.locator('#reset');
+  await reset.click();
+  await expect(reset).toHaveAttribute('data-confirming', 'true');
+  // A second click inside the guard is ignored; wait past it.
+  await page.waitForTimeout(CONFIRM_GUARD_MS + 100);
+  await reset.click();
+
+  await expect.poll(async () => (await storedSettings()).pillStyle).toBe('pill');
+  const after = await storedSettings();
+  expect(after.keys).toEqual(seed.keys);
+  expect(after.dictionary).toEqual(seed.dictionary);
+  expect(after.siteRules).toEqual(seed.siteRules);
+});
