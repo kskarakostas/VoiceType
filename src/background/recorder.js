@@ -22,7 +22,8 @@ export const COPY_TIMEOUT_MS = 1000;
  * Internally a session also holds the id of its offscreen capture: reports that name any other
  * capture are stale (a cancelled recording finishing late) and are dropped. It also holds the
  * `sounds` and `alwaysCopy` settings, read once at start, `liveAt`, when the recording went live,
- * and `unseen`: its frame reported the indicator out of sight, so frame 0 is mirroring it.
+ * `unseen`: its frame reported the indicator out of sight, so frame 0 is mirroring it, and
+ * `mirrorLost`: frame 0 had no receiver for the last mirror message.
  * @typedef {import('../shared/messages.js').StartResponse} StartResponse
  */
 
@@ -37,7 +38,7 @@ export const COPY_TIMEOUT_MS = 1000;
  * }} deps
  */
 export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermissionPage, getSettings, dictate }) {
-  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null, sounds: boolean, alwaysCopy: boolean, unseen: boolean, liveAt: number })} */
+  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null, sounds: boolean, alwaysCopy: boolean, unseen: boolean, mirrorLost: boolean, liveAt: number })} */
   let session = null;
   /** @type {Endpoint|null} */
   let pendingPermission = null;
@@ -55,9 +56,13 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
 
   const topOf = (s) => ({ tabId: s.endpoint.tabId, frameId: 0 });
 
-  /** Tell frame 0 what to show for this session. Fire and forget: the mirror never decides a session. */
+  /**
+   * Tell frame 0 what to show for this session. The mirror never decides a session, and a page still
+   * loading has no receiver yet: mirrorLost has onLevel send it again.
+   */
   function mirror(s, state) {
-    toTab(topOf(s), { action: MSG.RECORDING_MIRROR, state, elapsedMs: Date.now() - s.liveAt }).catch(() => {});
+    toTab(topOf(s), { action: MSG.RECORDING_MIRROR, state, elapsedMs: Date.now() - s.liveAt })
+      .then((delivered) => { s.mirrorLost = !delivered; }, () => {});
   }
 
   /** End a session that reached recording: every such exit comes through here, so a mirror goes with it. */
@@ -212,7 +217,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       const s = {
         endpoint: { ...endpoint }, state: 'starting', modeKey: 'default', minSec: 0,
         captureId: crypto.randomUUID(), stopRequested: false, starting: null, sounds: false, alwaysCopy: false,
-        unseen: false, liveAt: 0,
+        unseen: false, mirrorLost: false, liveAt: 0,
       };
       session = s;
       s.starting = begin(s, tabUrl);
@@ -252,7 +257,9 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
         // No receiver: the frame navigated or closed, so nobody is left to stop this recording.
         if (!delivered && session === s && s.state === 'recording') return drop(s);
       }, () => {});
-      if (s.unseen) toTab(topOf(s), { action: MSG.AUDIO_LEVEL, level }).catch(() => {});
+      if (!s.unseen) return;
+      if (s.mirrorLost) mirror(s, 'recording');
+      else toTab(topOf(s), { action: MSG.AUDIO_LEVEL, level }).catch(() => {});
     },
 
     /**

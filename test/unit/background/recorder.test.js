@@ -514,6 +514,92 @@ describe('mirror', () => {
     expect(t.result()).toEqual({ endpoint: FRAME, action: MSG.DICTATION_RESULT, ...RESULT });
   });
 
+  describe('a mirror message frame 0 was not ready for', () => {
+    const topLevels = (t) => toTop(t).filter((m) => m.action === MSG.AUDIO_LEVEL);
+    /** Frame 0 has no receiver for its first `lost` mirror messages. */
+    function lose(t, lost) {
+      let left = lost;
+      t.deps.toTab.mockImplementation(async (endpoint, message) => {
+        if (endpoint.frameId !== TOP.frameId || message.action !== MSG.RECORDING_MIRROR || left === 0) return true;
+        left -= 1;
+        return false;
+      });
+    }
+
+    it('goes again at the next level, once, and then levels flow', async () => {
+      const t = await recording();
+      lose(t, 1);
+      t.recorder.onFrameSight(FRAME, false);
+      await flush();
+      expect(states(t)).toEqual(['recording']);
+
+      t.recorder.onLevel(0.2, t.id());
+      await flush();
+      expect(states(t)).toEqual(['recording', 'recording']);
+      expect(topLevels(t)).toEqual([]);
+
+      t.recorder.onLevel(0.3, t.id());
+      await flush();
+      expect(states(t)).toEqual(['recording', 'recording']);
+      expect(topLevels(t).map((m) => m.level)).toEqual([0.3]);
+    });
+
+    it('keeps going until one lands', async () => {
+      const t = await recording();
+      lose(t, 3);
+      t.recorder.onFrameSight(FRAME, false);
+      await flush();
+      for (const level of [0.1, 0.2, 0.3, 0.4]) {
+        t.recorder.onLevel(level, t.id());
+        await flush();
+      }
+      expect(states(t)).toEqual(['recording', 'recording', 'recording', 'recording']);
+      expect(topLevels(t).map((m) => m.level)).toEqual([0.4]);
+    });
+
+    it('a delivered one never goes again', async () => {
+      const t = await unseen();
+      await flush();
+      t.recorder.onLevel(0.2, t.id());
+      t.recorder.onLevel(0.3, t.id());
+      await flush();
+      expect(states(t)).toEqual(['recording']);
+      expect(topLevels(t).map((m) => m.level)).toEqual([0.2, 0.3]);
+    });
+
+    it('carries the time since the recording went live', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const t = await recording();
+      lose(t, 1);
+      t.recorder.onFrameSight(FRAME, false);
+      await flush();
+      vi.setSystemTime(Date.now() + 4000);
+      t.recorder.onLevel(0.2, t.id());
+      expect(mirrored(t).at(-1).elapsedMs).toBe(4000);
+    });
+
+    it('does not go again once the indicator is back in sight', async () => {
+      const t = await recording();
+      lose(t, 1);
+      t.recorder.onFrameSight(FRAME, false);
+      await flush();
+      t.recorder.onFrameSight(FRAME, true);
+      await flush();
+      t.recorder.onLevel(0.2, t.id());
+      await flush();
+      expect(states(t)).toEqual(['recording', 'idle']);
+    });
+
+    it('free still sends idle', async () => {
+      const t = await recording();
+      lose(t, 1);
+      t.recorder.onFrameSight(FRAME, false);
+      await flush();
+      await t.recorder.cancel(FRAME);
+      expect(states(t)).toEqual(['recording', 'idle']);
+    });
+  });
+
   const stopThen = (run) => async (t) => {
     await t.recorder.stop(FRAME);
     await run(t);
