@@ -469,8 +469,13 @@ for (const { scroller, pointer, viewport } of MENU_SCROLLERS) {
     const scrollTop = () => pillCall(page, scroller, 'function () { return this.scrollTop; }');
 
     await page.mouse.move(over.x, over.y);
-    await page.mouse.wheel(0, WHEEL_PX);
-    await expect.poll(scrollTop, { message: `${scroller} scrolled` }).toBeGreaterThan(0);
+    // In the poll: a wheel that crosses a raise can be dropped, and this test is about keeping the scroll.
+    // Only while nothing moved, so no wheel is still landing when `scrolled` is read below.
+    await expect.poll(async () => {
+      const top = await scrollTop();
+      if (top === 0) await page.mouse.wheel(0, WHEEL_PX);
+      return top;
+    }, { message: `${scroller} scrolled` }).toBeGreaterThan(0);
     const scrolled = await scrollTop();
     await page.waitForTimeout(ACROSS_RAISES_MS);
 
