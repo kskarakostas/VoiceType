@@ -19,7 +19,8 @@ export const COPY_TIMEOUT_MS = 1000;
  * @typedef {{ endpoint: Endpoint, state: 'starting'|'recording'|'processing', modeKey: string, minSec: number }} Session
  * Internally a session also holds the id of its offscreen capture: reports that name any other
  * capture are stale (a cancelled recording finishing late) and are dropped. It also holds the
- * `sounds` and `alwaysCopy` settings, read once at start.
+ * `sounds` and `alwaysCopy` settings, read once at start, `liveAt`, when the recording went live,
+ * and `unseen`: its frame reported the indicator out of sight, so frame 0 is mirroring it.
  * @typedef {import('../shared/messages.js').StartResponse} StartResponse
  */
 
@@ -34,7 +35,7 @@ export const COPY_TIMEOUT_MS = 1000;
  * }} deps
  */
 export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermissionPage, getSettings, dictate }) {
-  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null, sounds: boolean, alwaysCopy: boolean })} */
+  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null, sounds: boolean, alwaysCopy: boolean, unseen: boolean, liveAt: number })} */
   let session = null;
   /** @type {Endpoint|null} */
   let pendingPermission = null;
@@ -44,6 +45,21 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     && session.endpoint.tabId === endpoint.tabId && session.endpoint.frameId === endpoint.frameId;
   /** The current session, when this offscreen report came from its capture. */
   const reporter = (captureId) => (session !== null && captureId === session.captureId ? session : null);
+
+  const topOf = (s) => ({ tabId: s.endpoint.tabId, frameId: 0 });
+
+  /** Tell frame 0 what to show for this session. Fire and forget: the mirror never decides a session. */
+  function mirror(s, state) {
+    toTab(topOf(s), { action: MSG.RECORDING_MIRROR, state, elapsedMs: Date.now() - s.liveAt }).catch(() => {});
+  }
+
+  /** End a session that reached recording: every such exit comes through here, so a mirror goes with it. */
+  function free(s) {
+    if (session === s) session = null;
+    if (!s.unseen) return;
+    s.unseen = false;
+    mirror(s, 'idle');
+  }
 
   /** Play a cue when the session has sounds on. Fire and forget: a cue never delays or fails a dictation. */
   function cue(s, name) {
@@ -82,14 +98,14 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
    */
   async function drop(s) {
     if (session !== s) return;
-    session = null;
+    free(s);
     await discard(s.captureId);
   }
 
   /** Free the session and tell its frame that the recording failed. */
   async function failSession(s) {
     if (session !== s) return;
-    session = null;
+    free(s);
     cue(s, 'error');
     await toTab(s.endpoint, { action: MSG.RECORDING_STATE, state: 'idle', reason: 'error', notice: FAILED_NOTICE });
   }
@@ -97,6 +113,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   /** Ask the offscreen document for the audio; it arrives as OFFSCREEN_DONE. */
   async function finish(s) {
     s.state = 'processing';
+    if (s.unseen) mirror(s, 'processing');
     try {
       await toOffscreen({ action: MSG.OFFSCREEN_STOP, discard: false, captureId: s.captureId });
     } catch {
@@ -152,6 +169,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     }
     if (reply?.ok) {
       s.state = 'recording';
+      s.liveAt = Date.now();
       if (s.stopRequested) await finish(s);
       else cue(s, 'start');
       return { ok: true };
@@ -187,6 +205,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       const s = {
         endpoint: { ...endpoint }, state: 'starting', modeKey: 'default', minSec: 0,
         captureId: crypto.randomUUID(), stopRequested: false, starting: null, sounds: false, alwaysCopy: false,
+        unseen: false, liveAt: 0,
       };
       session = s;
       s.starting = begin(s, tabUrl);
@@ -226,6 +245,20 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
         // No receiver: the frame navigated or closed, so nobody is left to stop this recording.
         if (!delivered && session === s && s.state === 'recording') return drop(s);
       }, () => {});
+      if (s.unseen) toTab(topOf(s), { action: MSG.AUDIO_LEVEL, level }).catch(() => {});
+    },
+
+    /**
+     * A frame cannot draw outside itself: while its indicator is out of sight, frame 0 shows one.
+     * @param {Endpoint} endpoint
+     * @param {boolean} seen
+     */
+    onFrameSight(endpoint, seen) {
+      if (!owns(endpoint) || endpoint.frameId === 0) return;
+      const s = session;
+      if (s.state === 'starting' || s.unseen !== seen) return;
+      s.unseen = !seen;
+      mirror(s, seen ? 'idle' : s.state);
     },
 
     /** @param {import('../shared/messages.js').OffscreenDone} payload */
@@ -234,8 +267,9 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       if (!s) return;
       if (payload?.reason !== 'user') {
         s.state = 'processing';
+        if (s.unseen) mirror(s, 'processing');
         const delivered = await toTab(s.endpoint, { action: MSG.RECORDING_STATE, state: 'processing', reason: payload?.reason });
-        if (!delivered && session === s) session = null;
+        if (!delivered && session === s) free(s);
         if (session !== s) return; // the frame is gone or the owner cancelled: no provider call
       }
       s.state = 'processing';
@@ -257,7 +291,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
           message = { ...message, copied: live && s.alwaysCopy ? await copyResult(message.text) : null };
         }
       }
-      if (session === s) session = null;
+      free(s);
       await toTab(s.endpoint, { action: MSG.DICTATION_RESULT, ...message });
     },
 
@@ -268,7 +302,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       // A stop before the first chunk, a double tap for one, is too short and no failure. Only a
       // user stop qualifies: an auto-stop leaves the frame recording, and it would drop this result.
       if (payload.empty === true && s.state === 'processing' && Number(payload.durationSec) < s.minSec) {
-        session = null;
+        free(s);
         await toTab(s.endpoint, { action: MSG.DICTATION_RESULT, ...TOO_SHORT });
         return;
       }

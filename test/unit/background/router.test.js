@@ -41,6 +41,7 @@ beforeEach(() => {
       onDone: vi.fn(async () => {}),
       onOffscreenError: vi.fn(async () => {}),
       onPermissionResult: vi.fn(async () => {}),
+      onFrameSight: vi.fn(),
     },
     identify: vi.fn((sender) => sender?.kind ?? 'unknown'),
   };
@@ -339,6 +340,26 @@ describe('recorder delegation', () => {
     expect(deps.recorder.onPermissionResult).toHaveBeenLastCalledWith({ granted: true });
     await handle({ action: MSG.PERMISSION_RESULT, granted: 'yes' }, POPUP);
     expect(deps.recorder.onPermissionResult).toHaveBeenLastCalledWith({ granted: false });
+  });
+
+  it('a frame reporting its sight goes to the recorder as a boolean', async () => {
+    expect(await handle({ action: MSG.FRAME_SIGHT, seen: true }, CONTENT)).toEqual({ ok: true });
+    expect(deps.recorder.onFrameSight).toHaveBeenLastCalledWith({ tabId: 7, frameId: 3 }, true);
+    for (const seen of [false, 'yes', 1, undefined]) {
+      expect(await handle({ action: MSG.FRAME_SIGHT, seen }, CONTENT)).toEqual({ ok: true });
+      expect(deps.recorder.onFrameSight).toHaveBeenLastCalledWith({ tabId: 7, frameId: 3 }, false);
+    }
+  });
+
+  it('only content may report its sight', async () => {
+    for (const sender of [POPUP, OFFSCREEN, STRANGER]) {
+      expect(await handle({ action: MSG.FRAME_SIGHT, seen: true }, sender)).toEqual(NOT_ALLOWED);
+    }
+    expect(deps.recorder.onFrameSight).not.toHaveBeenCalled();
+  });
+
+  it('the mirror message is no router action', async () => {
+    expect(await handle({ action: MSG.RECORDING_MIRROR, state: 'idle', elapsedMs: 0 }, CONTENT)).toBeUndefined();
   });
 });
 

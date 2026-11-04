@@ -343,6 +343,269 @@ describe('levels', () => {
   });
 });
 
+describe('mirror', () => {
+  const FRAME = { tabId: 1, frameId: 7 };
+  const OTHER_FRAME = { tabId: 1, frameId: 9 };
+  const TOP = { tabId: 1, frameId: 0 };
+  const IDLE = { endpoint: TOP, action: MSG.RECORDING_MIRROR, state: 'idle', elapsedMs: expect.any(Number) };
+
+  const toTop = (t) => t.tabMessages().filter((m) => m.endpoint.tabId === TOP.tabId && m.endpoint.frameId === TOP.frameId);
+  const mirrored = (t) => toTop(t).filter((m) => m.action === MSG.RECORDING_MIRROR);
+  const states = (t) => mirrored(t).map((m) => m.state);
+  const idles = (t) => mirrored(t).filter((m) => m.state === 'idle');
+  /** No receiver in the recording frame; frame 0 still answers. */
+  const frameGone = (t) => t.deps.toTab.mockImplementation(async (endpoint) => endpoint.frameId !== FRAME.frameId);
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function recording(over) {
+    const t = setup(over);
+    await t.recorder.start(FRAME);
+    return t;
+  }
+
+  async function unseen(over) {
+    const t = await recording(over);
+    t.recorder.onFrameSight(FRAME, false);
+    return t;
+  }
+
+  it('onFrameSight(false) sends recording to frame 0', async () => {
+    const t = await unseen();
+    expect(mirrored(t)).toEqual([{ endpoint: TOP, action: MSG.RECORDING_MIRROR, state: 'recording', elapsedMs: expect.any(Number) }]);
+  });
+
+  it('elapsedMs counts from the moment the recording went live', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const t = await recording();
+    vi.setSystemTime(Date.now() + 5000);
+    t.recorder.onFrameSight(FRAME, false);
+    expect(mirrored(t)[0].elapsedMs).toBe(5000);
+  });
+
+  it('ignored from frame 0', async () => {
+    const t = setup();
+    await t.recorder.start(TOP);
+    t.recorder.onFrameSight(TOP, false);
+    expect(mirrored(t)).toEqual([]);
+  });
+
+  it('ignored from another frame', async () => {
+    const t = await recording();
+    t.recorder.onFrameSight(OTHER_FRAME, false);
+    expect(mirrored(t)).toEqual([]);
+  });
+
+  it('ignored with no session', () => {
+    const t = setup();
+    t.recorder.onFrameSight(FRAME, false);
+    expect(t.deps.toTab).not.toHaveBeenCalled();
+  });
+
+  it('ignored while starting', async () => {
+    const pending = deferred();
+    const t = setup({ startReply: () => pending.promise });
+    const start = t.recorder.start(FRAME);
+    await vi.waitFor(() => expect(t.ids()).toHaveLength(1));
+    t.recorder.onFrameSight(FRAME, false);
+    expect(mirrored(t)).toEqual([]);
+    pending.resolve({ ok: true });
+    await start;
+    await t.recorder.stop(FRAME);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(mirrored(t)).toEqual([]);
+  });
+
+  it('ignored when repeated', async () => {
+    const t = await unseen();
+    t.recorder.onFrameSight(FRAME, false);
+    expect(states(t)).toEqual(['recording']);
+    t.recorder.onFrameSight(FRAME, true);
+    t.recorder.onFrameSight(FRAME, true);
+    expect(states(t)).toEqual(['recording', 'idle']);
+  });
+
+  it('seen from the start sends nothing', async () => {
+    const t = await recording();
+    t.recorder.onFrameSight(FRAME, true);
+    expect(mirrored(t)).toEqual([]);
+  });
+
+  it('onFrameSight(true) sends idle', async () => {
+    const t = await unseen();
+    t.recorder.onFrameSight(FRAME, true);
+    expect(mirrored(t).at(-1)).toEqual(IDLE);
+  });
+
+  it('out of sight during processing mirrors processing', async () => {
+    const pending = deferred();
+    const t = await recording();
+    t.deps.dictate.mockReturnValueOnce(pending.promise);
+    await t.recorder.stop(FRAME);
+    const finished = t.recorder.onDone(done({ captureId: t.id() }));
+    t.recorder.onFrameSight(FRAME, false);
+    expect(states(t)).toEqual(['processing']);
+    pending.resolve({ ...DICTATION });
+    await finished;
+    expect(states(t)).toEqual(['processing', 'idle']);
+  });
+
+  it('stop while unseen sends processing', async () => {
+    const t = await unseen();
+    await t.recorder.stop(FRAME);
+    expect(states(t)).toEqual(['recording', 'processing']);
+  });
+
+  it('an auto-stop while unseen sends processing', async () => {
+    const pending = deferred();
+    const t = await unseen();
+    t.deps.dictate.mockReturnValueOnce(pending.promise);
+    const finished = t.recorder.onDone(done({ reason: 'silence', captureId: t.id() }));
+    await flush();
+    expect(states(t)).toEqual(['recording', 'processing']);
+    pending.resolve({ ...DICTATION });
+    await finished;
+  });
+
+  it('levels go to frame 0 only while unseen', async () => {
+    const t = await recording();
+    const levels = () => toTop(t).filter((m) => m.action === MSG.AUDIO_LEVEL);
+    t.recorder.onLevel(0.1, t.id());
+    expect(levels()).toEqual([]);
+    t.recorder.onFrameSight(FRAME, false);
+    t.recorder.onLevel(0.2, t.id());
+    expect(levels()).toEqual([{ endpoint: TOP, action: MSG.AUDIO_LEVEL, level: 0.2 }]);
+    t.recorder.onFrameSight(FRAME, true);
+    t.recorder.onLevel(0.3, t.id());
+    expect(levels()).toHaveLength(1);
+    await flush();
+    expect(t.recorder.session.state).toBe('recording');
+  });
+
+  it.each([
+    ['no receiver', async () => false],
+    ['a rejection', async () => { throw new Error('gone'); }],
+  ])('a failed delivery to frame 0 never drops the session: %s', async (_name, top) => {
+    const t = await unseen();
+    t.deps.toTab.mockImplementation(async (endpoint, message) => (endpoint.frameId === TOP.frameId ? top(message) : true));
+    t.recorder.onLevel(0.2, t.id());
+    t.recorder.onFrameSight(FRAME, true);
+    t.recorder.onFrameSight(FRAME, false);
+    await flush();
+    expect(t.recorder.session.state).toBe('recording');
+    await t.recorder.stop(FRAME);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.result()).toEqual({ endpoint: FRAME, action: MSG.DICTATION_RESULT, ...RESULT });
+  });
+
+  const stopThen = (run) => async (t) => {
+    await t.recorder.stop(FRAME);
+    await run(t);
+  };
+  const EXITS = [
+    ['result', stopThen((t) => t.recorder.onDone(done({ captureId: t.id() })))],
+    ['too short', stopThen((t) => t.recorder.onDone(done({ durationSec: 0.4, captureId: t.id() })))],
+    ['dictate threw', stopThen((t) => {
+      t.deps.dictate.mockRejectedValueOnce(new Error('bug'));
+      return t.recorder.onDone(done({ captureId: t.id() }));
+    })],
+    ['empty capture', stopThen((t) => t.recorder.onOffscreenError({ error: 'Recording failed.', captureId: t.id(), empty: true, durationSec: 0.05 }))],
+    ['failure', (t) => t.recorder.onOffscreenError({ error: 'Recording failed.', captureId: t.id() })],
+    ['failure while processing', stopThen((t) => t.recorder.onOffscreenError({ error: 'Recording failed.', captureId: t.id() }))],
+    ['finish failed', (t) => {
+      answer(t.deps, MSG.OFFSCREEN_STOP, async () => { throw new Error('gone'); });
+      return t.recorder.stop(FRAME);
+    }],
+    ['cancel', (t) => t.recorder.cancel(FRAME)],
+    ['cancel while processing', stopThen((t) => t.recorder.cancel(FRAME))],
+    ['frame gone', async (t) => {
+      frameGone(t);
+      t.recorder.onLevel(0.2, t.id());
+      await flush();
+    }],
+    ['frame gone at auto-stop', (t) => {
+      frameGone(t);
+      return t.recorder.onDone(done({ reason: 'silence', captureId: t.id() }));
+    }],
+    ['auto-stop into a result', (t) => t.recorder.onDone(done({ reason: 'maxTime', captureId: t.id() }))],
+    ['tab closed', (t) => {
+      t.deps.toTab.mockResolvedValue(false);
+      return t.recorder.onTabRemoved(TOP.tabId);
+    }],
+    ['tab closed while processing, at the result', stopThen(async (t) => {
+      t.deps.toTab.mockResolvedValue(false);
+      await t.recorder.onTabRemoved(TOP.tabId);
+      await t.recorder.onDone(done({ captureId: t.id() }));
+    })],
+  ];
+
+  it.each(EXITS)('one idle to frame 0 at exit: %s', async (_name, exit) => {
+    const t = await unseen();
+    await exit(t);
+    await flush();
+    expect(t.recorder.session).toBeNull();
+    expect(idles(t)).toEqual([IDLE]);
+    expect(mirrored(t).at(-1)).toEqual(IDLE);
+  });
+
+  it.each(EXITS)('no mirror, no message at exit: %s', async (_name, exit) => {
+    const t = await recording();
+    await exit(t);
+    await flush();
+    expect(t.recorder.session).toBeNull();
+    expect(toTop(t)).toEqual([]);
+  });
+
+  it('a frame seen again before the exit sends no second idle', async () => {
+    const t = await unseen();
+    t.recorder.onFrameSight(FRAME, true);
+    await t.recorder.cancel(FRAME);
+    await flush();
+    expect(idles(t)).toEqual([IDLE]);
+  });
+
+  it('a cancel during the dictation sends one idle, not another at the result', async () => {
+    const pending = deferred();
+    const t = await unseen();
+    t.deps.dictate.mockReturnValueOnce(pending.promise);
+    await t.recorder.stop(FRAME);
+    const finished = t.recorder.onDone(done({ captureId: t.id() }));
+    await t.recorder.cancel(FRAME);
+    expect(idles(t)).toEqual([IDLE]);
+    pending.resolve({ ...DICTATION });
+    await finished;
+    await flush();
+    expect(idles(t)).toEqual([IDLE]);
+  });
+
+  it('a late result of a mirrored session leaves the next session alone', async () => {
+    const pending = deferred();
+    const t = await unseen();
+    t.deps.dictate.mockReturnValueOnce(pending.promise);
+    await t.recorder.stop(FRAME);
+    const finished = t.recorder.onDone(done({ captureId: t.id() }));
+    await t.recorder.cancel(FRAME);
+    await t.recorder.start(FRAME);
+    t.recorder.onFrameSight(FRAME, false);
+    pending.resolve({ ...DICTATION });
+    await finished;
+    await flush();
+    expect(t.recorder.session.state).toBe('recording');
+    expect(states(t)).toEqual(['recording', 'processing', 'idle', 'recording']);
+  });
+
+  it('a second session mirrors again', async () => {
+    const t = await unseen();
+    await t.recorder.cancel(FRAME);
+    await t.recorder.start(FRAME);
+    t.recorder.onFrameSight(FRAME, false);
+    await t.recorder.cancel(FRAME);
+    expect(states(t)).toEqual(['recording', 'idle', 'recording', 'idle']);
+  });
+});
+
 describe('results', () => {
   it('delivers the dictation to the session frame after freeing the session', async () => {
     const { deps, recorder, tabMessages, id } = setup();

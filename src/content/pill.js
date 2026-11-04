@@ -13,7 +13,8 @@ import { orderedModeKeys, PILL_STYLES } from '../shared/defaults.js';
  * @typedef {'idle'|'recording'|'processing'|'done'|'error'} PillState
  * @typedef {{ onRec: () => void, onStatusClick: () => void, onMenuOpen: () => void,
  *   onMode: (key: string) => void, onUseActive: () => void, onProvider: (id: string) => void,
- *   onTargetLang: (lang: string) => void }} PillHandlers
+ *   onTargetLang: (lang: string) => void, onSight?: (seen: boolean) => void }} PillHandlers
+ * Without onSight the pill watches nothing.
  * @typedef {{ todayCost: number, todaySessions: number, totalCost: number }} PillUsage
  */
 
@@ -22,6 +23,9 @@ export const PILL_SIZE = Object.freeze({ width: 140, height: 30 });
 
 /** Size of the Minimal indicator; `.mini` in pill.css has the same width and height. */
 export const MINI_SIZE = Object.freeze({ width: 92, height: 28 });
+
+/** Least share of the indicator in the top-level viewport that counts as seen. */
+export const SIGHT_THRESHOLD = 0.5;
 
 /** How long a non-sticky status stays, by tone. */
 export const STATUS_MS = Object.freeze({ error: 6000, warning: 6000, info: 2500, success: 2500 });
@@ -100,9 +104,14 @@ export class Pill {
   #menuOpen = false;
   /** The open menu as rendered: its side of the pill and its vertical extent. */
   #menuBox = { placement: 'below', top: 0, bottom: 0 };
+  /** @type {IntersectionObserver|null} */
+  #sightObserver = null;
+  /** @type {HTMLElement|null} */
+  #sightTarget = null;
+  #seen = true;
 
   /**
-   * @param {PillHandlers} handlers
+   * @param {PillHandlers} handlers An empty object is only valid for a Minimal pill, which has no controls.
    * @param {{ doc?: Document, shadowMode?: 'open'|'closed' }} [options] `open` is for tests only.
    */
   constructor(handlers, { doc = document, shadowMode = 'closed' } = {}) {
@@ -155,7 +164,7 @@ export class Pill {
     doc.documentElement.append(host);
     this.#host = host;
     this.#root = root;
-    // A pill with no field has no watcher to tell it the window changed.
+    // A pill at a field has a watcher; nothing else tells the corner or Minimal the window changed.
     doc.defaultView?.addEventListener('resize', this.#onResize);
   }
 
@@ -191,6 +200,7 @@ export class Pill {
     this.#els.wrap.dataset.style = style;
     if (style === 'minimal') this.closeMenu();
     this.#replace();
+    this.#syncSight();
   }
 
   /**
@@ -207,6 +217,7 @@ export class Pill {
     mini.setAttribute('aria-label', state === 'processing' ? 'VoiceType is processing' : 'VoiceType is recording');
     rec.setAttribute('aria-label', state === 'recording' ? 'Stop recording' : 'Start recording');
     this.#replace();
+    this.#syncSight();
     if (state === 'recording') {
       setIcon(recIcon, 'stop');
       if (previous !== 'recording') {
@@ -324,13 +335,47 @@ export class Pill {
     clearTimeout(this.#statusTimer);
     this.#timerId = null;
     this.#statusTimer = null;
+    this.#sightObserver?.disconnect();
     this.#doc.defaultView?.removeEventListener('resize', this.#onResize);
     this.#host?.remove();
     this.#shown = false;
     this.#destroyed = true;
   }
 
-  #onResize = () => this.#replace();
+  #onResize = () => {
+    if (this.#anchor === null || this.#style === 'minimal') this.#replace();
+  };
+
+  /** @param {IntersectionObserverEntry[]} entries */
+  #onSightEntries = (entries) => {
+    const entry = entries.at(-1);
+    const seen = entry.isIntersecting && entry.intersectionRatio >= SIGHT_THRESHOLD;
+    if (seen === this.#seen) return;
+    this.#seen = seen;
+    this.#handlers.onSight(seen);
+  };
+
+  /**
+   * Watch the indicator that shows, for recording and processing only: statuses stay in the frame.
+   * This asks the browser, as `visible` cannot: it holds in Minimal for a done or error with no status.
+   */
+  #syncSight() {
+    const live = this.#state === 'recording' || this.#state === 'processing';
+    const { pill, mini } = this.#els;
+    const showing = this.#style === 'minimal' ? mini : pill;
+    const target = live && this.#handlers.onSight ? showing : null;
+    if (target === this.#sightTarget) return;
+    this.#sightTarget = target;
+    this.#sightObserver?.disconnect();
+    this.#sightObserver = null;
+    if (!target) {
+      this.#seen = true;
+      return;
+    }
+    const win = this.#doc.defaultView;
+    this.#sightObserver = new win.IntersectionObserver(this.#onSightEntries, { threshold: SIGHT_THRESHOLD });
+    this.#sightObserver.observe(target);
+  }
 
   #onKeyDown = (event) => {
     if (event.key !== 'Escape' || !this.#menuOpen) return;

@@ -436,6 +436,108 @@ describe('wiring', () => {
   });
 });
 
+describe('a frame out of sight', () => {
+  /** @type {{ callback: (entries: object[]) => void, targets: Element[] }[]} */
+  let observers;
+
+  class FakeObserver {
+    targets = [];
+    disconnect = vi.fn();
+
+    constructor(callback) {
+      this.callback = callback;
+      observers.push(this);
+    }
+
+    observe(el) {
+      this.targets.push(el);
+    }
+  }
+
+  const deliver = (t, message) => [...t.listeners].forEach((fn) => fn(message));
+  const mirrorMessage = (state, elapsedMs = 5000) => ({ action: MSG.RECORDING_MIRROR, state, elapsedMs });
+  const miniOf = (host) => host.shadowRoot.querySelector('.mini');
+
+  async function record() {
+    document.getElementById('field').focus();
+    await flush();
+    shadow().querySelector('.rec').click();
+    await flush();
+  }
+
+  beforeEach(() => {
+    observers = [];
+    window.IntersectionObserver = FakeObserver;
+  });
+
+  afterEach(() => {
+    delete window.IntersectionObserver;
+    vi.unstubAllGlobals();
+  });
+
+  it('a subframe reports its sight to the service worker', async () => {
+    vi.stubGlobal('top', {});
+    const t = installChrome();
+    await loadInstance();
+    await record();
+    expect(observers).toHaveLength(1);
+    observers[0].callback([{ isIntersecting: false, intersectionRatio: 0 }]);
+    await flush();
+    expect(t.chrome.runtime.sendMessage).toHaveBeenCalledWith({ action: MSG.FRAME_SIGHT, seen: false });
+  });
+
+  it('the top frame watches nothing', async () => {
+    installChrome();
+    await loadInstance();
+    await record();
+    expect(shadow().querySelector('.rec').getAttribute('aria-label')).toBe('Stop recording');
+    expect(observers).toEqual([]);
+  });
+
+  it('a mirror message shows Minimal in a host of its own and idle removes it', async () => {
+    const t = installChrome();
+    document.getElementById('field').focus();
+    await loadInstance();
+    expect(hosts()).toHaveLength(1);
+    deliver(t, mirrorMessage('recording', 65000));
+    expect(hosts()).toHaveLength(2);
+    const mini = miniOf(hosts()[1]);
+    expect(hosts()[1].shadowRoot.querySelector('.vt').dataset.style).toBe('minimal');
+    expect(mini.dataset.state).toBe('recording');
+    expect(mini.querySelector('.mini-time').textContent).toBe('01:05');
+    expect(hosts()[0].shadowRoot.querySelector('.vt').hidden).toBe(false);
+    deliver(t, mirrorMessage('processing'));
+    expect(mini.dataset.state).toBe('processing');
+    deliver(t, mirrorMessage('idle'));
+    expect(hosts()).toHaveLength(1);
+  });
+
+  it('a level reaches the mirror', async () => {
+    const t = installChrome();
+    await loadInstance();
+    deliver(t, mirrorMessage('recording'));
+    deliver(t, { action: MSG.AUDIO_LEVEL, level: 0.5 });
+    expect(miniOf(hosts()[0]).style.getPropertyValue('--vt-level')).toBe('0.5');
+  });
+
+  it('a level still reaches the frame that records', async () => {
+    const t = installChrome();
+    await loadInstance();
+    await record();
+    deliver(t, { action: MSG.AUDIO_LEVEL, level: 0.5 });
+    expect(shadow().querySelector('.pill').style.getPropertyValue('--vt-level')).toBe('0.5');
+  });
+
+  it('teardown removes the mirror', async () => {
+    const t = installChrome();
+    await loadInstance();
+    deliver(t, mirrorMessage('recording'));
+    expect(hosts()).toHaveLength(1);
+    document.dispatchEvent(new CustomEvent('voicetype:teardown'));
+    expect(hosts()).toHaveLength(0);
+  });
+});
+
 describe('first settings answer', () => {
   const site = (hidePill, mode = null) => ({ ...structuredClone(SETTINGS), site: { hidePill, mode } });
   const field = () => document.getElementById('field');

@@ -25,6 +25,8 @@ export const MSG = Object.freeze({
   SET_SITE_RULE: 'setSiteRule',
   OFFSCREEN_CUE: 'offscreenCue',
   OFFSCREEN_COPY: 'offscreenCopy',
+  FRAME_SIGHT: 'frameSight',
+  RECORDING_MIRROR: 'recordingMirror',
 });
 
 /**
@@ -52,4 +54,8 @@ export const MSG = Object.freeze({
  * The rule of the top-level page. Content scripts get this one rule, never `siteRules`.
  * @typedef {{ hidePill: boolean, mode: string|null }} SiteState
  * @typedef {import('./defaults.js').PublicSettings & { site: SiteState }} ContentSettings
+ * A subframe's recording indicator came into or went out of the top-level viewport.
+ * @typedef {{ seen: boolean }} FrameSight
+ * What frame 0 shows for a subframe recording out of sight.
+ * @typedef {{ state: 'recording'|'processing'|'idle', elapsedMs: number }} RecordingMirror
  */

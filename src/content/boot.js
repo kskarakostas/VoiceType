@@ -10,6 +10,7 @@ import { watchAnchor } from './anchor.js';
 import { createChordTracker } from './hotkey.js';
 import { Pill } from './pill.js';
 import { createController } from './controller.js';
+import { createMirror } from './mirror.js';
 
 const TEARDOWN_EVENT = 'voicetype:teardown';
 
@@ -28,6 +29,7 @@ export function boot({
   document.dispatchEvent(new CustomEvent(TEARDOWN_EVENT));
 
   let chord = DEFAULT_SETTINGS.hotkey;
+  const inSubframe = window !== window.top;
 
   const pill = new Pill({
     onRec: () => { controller.toggle(); },
@@ -37,6 +39,13 @@ export function boot({
     onUseActive: () => { controller.useActiveMode(); },
     onProvider: (id) => { controller.choose({ provider: id }); },
     onTargetLang: (lang) => { controller.choose({ translateTargetLang: lang }); },
+    ...(inSubframe && { onSight: (seen) => { send({ action: MSG.FRAME_SIGHT, seen }); } }),
+  });
+
+  const mirror = createMirror({
+    makePill: () => new Pill({}),
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (id) => clearTimeout(id),
   });
 
   const controller = createController({
@@ -56,7 +65,7 @@ export function boot({
   const tracker = createChordTracker({ getChord: () => chord });
   /** The extension is gone under this page: only the terminal notice is left, and keys go to the page. */
   let orphan = false;
-  /** The first settings read has settled. Until then focus shows no idle pill: this may be a hidden site. */
+  /** The first settings read has settled. Until then focus shows no idle pill: this may be a Minimal page. */
   let booted = false;
 
   function becomeOrphan() {
@@ -181,12 +190,15 @@ export function boot({
 
   function onMessage(message) {
     if (message?.action === MSG.SETTINGS_CHANGED) trackHotkey(message.settings);
+    if (message?.action === MSG.RECORDING_MIRROR) mirror.update(message);
+    if (message?.action === MSG.AUDIO_LEVEL) mirror.level(message.level);
     controller.handleMessage(message);
     return false;
   }
 
   function teardown() {
     controller.teardown();
+    mirror.destroy();
     document.removeEventListener('focusin', onFocusIn, true);
     document.removeEventListener('focusout', onFocusOut, true);
     window.removeEventListener('keydown', onKeyDown, true);

@@ -16,6 +16,7 @@ import { ProviderError, redact } from './providers/errors.js';
  *   onDone: (payload: import('../shared/messages.js').OffscreenDone) => Promise<void>,
  *   onOffscreenError: (payload: import('../shared/messages.js').OffscreenError) => Promise<void>,
  *   onPermissionResult: (payload: { granted: boolean }) => Promise<void>,
+ *   onFrameSight: (endpoint: Endpoint, seen: boolean) => void,
  * }} RecorderPort
  */
 
@@ -94,6 +95,7 @@ const ACCESS = new Map([
   [MSG.PERMISSION_RESULT, ['extension']],
   [MSG.SET_SITE_MODE, ['content']],
   [MSG.SET_SITE_RULE, ['extension']],
+  [MSG.FRAME_SIGHT, ['content']],
 ]);
 
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
@@ -246,6 +248,10 @@ export function createRouter({ storage, validateKey, summarize, recorder, identi
 
       case MSG.PERMISSION_RESULT:
         await recorder.onPermissionResult({ granted: request.granted === true });
+        return { ok: true };
+
+      case MSG.FRAME_SIGHT:
+        recorder.onFrameSight(endpointOf(sender), request.seen === true);
         return { ok: true };
 
       default:

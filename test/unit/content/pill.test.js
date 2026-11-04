@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Pill, PILL_SIZE, MINI_SIZE, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
+import { Pill, PILL_SIZE, MINI_SIZE, SIGHT_THRESHOLD, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
 import { computePillPosition, EDGE } from '../../../src/content/position.js';
 
 // A path, not a URL literal: jsdom replaces the global URL, and the web transform rewrites
@@ -1135,6 +1135,15 @@ describe('styles', () => {
       expect(q(pill, '.pill').style.top).toBe('454px');
     });
 
+    it('leaves a pill at a field to its watcher, so an open menu stays open', () => {
+      const { pill } = makePill();
+      pill.renderMenu(settings(), null);
+      pill.show(BOTTOM_FIELD);
+      pill.openMenu();
+      resizeTo(500);
+      expect(pill.menuOpen).toBe(true);
+    });
+
     it('moves the status with what it sits on', () => {
       const { pill } = minimal();
       pill.show(FIELD);
@@ -1215,6 +1224,160 @@ describe('styles', () => {
     pill.setStatus(HOSTILE, { tone: 'error', sticky: true });
     expect(statusEl(pill).textContent).toBe(HOSTILE);
     expect(q(pill, '.status img')).toBeNull();
+  });
+});
+
+describe('sight', () => {
+  /** @type {{ callback: (entries: object[]) => void, options: object, targets: Element[], disconnect: import('vitest').Mock }[]} */
+  let observers;
+
+  class FakeObserver {
+    targets = [];
+    disconnect = vi.fn();
+
+    constructor(callback, options) {
+      this.callback = callback;
+      this.options = options;
+      observers.push(this);
+    }
+
+    observe(el) {
+      this.targets.push(el);
+    }
+  }
+
+  const entry = (seen, ratio = seen ? 1 : 0) => ({ isIntersecting: seen, intersectionRatio: ratio });
+  const report = (...entries) => observers.at(-1).callback(entries);
+
+  function watched() {
+    const onSight = vi.fn();
+    const pill = new Pill({ ...handlers(), onSight }, { shadowMode: 'open' });
+    pill.show(null);
+    return { pill, onSight };
+  }
+
+  beforeEach(() => {
+    observers = [];
+    window.IntersectionObserver = FakeObserver;
+  });
+
+  afterEach(() => {
+    delete window.IntersectionObserver;
+  });
+
+  it('no handler, no observer', () => {
+    const { pill } = makePill();
+    pill.show(null);
+    pill.setState('recording');
+    pill.setStyle('minimal');
+    expect(observers).toEqual([]);
+  });
+
+  it('watches only while recording or processing', () => {
+    const { pill } = watched();
+    expect(observers).toEqual([]);
+    pill.setState('recording');
+    expect(observers).toHaveLength(1);
+    pill.setState('processing');
+    expect(observers).toHaveLength(1);
+    expect(observers[0].disconnect).not.toHaveBeenCalled();
+    pill.setState('idle');
+    expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['done', 'error'])('stops watching at %s: statuses stay in the frame', (state) => {
+    const { pill } = watched();
+    pill.setState('processing');
+    pill.setState(state);
+    expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('watches the element that shows', () => {
+    const { pill } = watched();
+    pill.setState('recording');
+    expect(observers[0].targets).toEqual([q(pill, '.pill')]);
+    pill.setStyle('minimal');
+    expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
+    expect(observers[1].targets).toEqual([q(pill, '.mini')]);
+    pill.setStyle('pill');
+    expect(observers[2].targets).toEqual([q(pill, '.pill')]);
+  });
+
+  it('starts on .mini when Minimal is set first', () => {
+    const { pill } = watched();
+    pill.setStyle('minimal');
+    expect(observers).toEqual([]);
+    pill.setState('recording');
+    expect(observers[0].targets).toEqual([q(pill, '.mini')]);
+  });
+
+  it('keeps its observer when a style change leaves the same element', () => {
+    const { pill } = watched();
+    pill.setStyle('pill');
+    pill.setState('recording');
+    pill.setStyle('dot');
+    expect(observers).toHaveLength(1);
+    expect(observers[0].disconnect).not.toHaveBeenCalled();
+  });
+
+  it('threshold is SIGHT_THRESHOLD', () => {
+    const { pill } = watched();
+    pill.setState('recording');
+    expect(SIGHT_THRESHOLD).toBe(0.5);
+    expect(observers[0].options).toEqual({ threshold: SIGHT_THRESHOLD });
+  });
+
+  it('reports only changes', () => {
+    const { pill, onSight } = watched();
+    pill.setState('recording');
+    for (const seen of [true, true, false, false, true]) report(entry(seen));
+    expect(onSight.mock.calls).toEqual([[false], [true]]);
+  });
+
+  it('takes the last entry of a batch', () => {
+    const { pill, onSight } = watched();
+    pill.setState('recording');
+    report(entry(false), entry(true));
+    expect(onSight).not.toHaveBeenCalled();
+    report(entry(true), entry(false));
+    expect(onSight.mock.calls).toEqual([[false]]);
+  });
+
+  it('counts an element under the threshold as out of sight', () => {
+    const { pill, onSight } = watched();
+    pill.setState('recording');
+    report(entry(true, SIGHT_THRESHOLD - 0.01));
+    expect(onSight.mock.calls).toEqual([[false]]);
+    report(entry(true, SIGHT_THRESHOLD));
+    expect(onSight.mock.calls).toEqual([[false], [true]]);
+  });
+
+  it('a new recording starts from seen', () => {
+    const { pill, onSight } = watched();
+    pill.setState('recording');
+    report(entry(false));
+    pill.setState('idle');
+    pill.setState('recording');
+    report(entry(true));
+    expect(onSight.mock.calls).toEqual([[false]]);
+    report(entry(false));
+    expect(onSight.mock.calls).toEqual([[false], [false]]);
+  });
+
+  it('a retarget during a recording keeps what was reported', () => {
+    const { pill, onSight } = watched();
+    pill.setState('recording');
+    report(entry(false));
+    pill.setStyle('minimal');
+    report(entry(false));
+    expect(onSight.mock.calls).toEqual([[false]]);
+  });
+
+  it('destroy disconnects', () => {
+    const { pill } = watched();
+    pill.setState('recording');
+    pill.destroy();
+    expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
   });
 });
 
