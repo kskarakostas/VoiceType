@@ -235,6 +235,7 @@ Blocked it by mistake? Open `chrome://settings/content/microphone`, remove Voice
 - If you clicked somewhere else before the text arrived, or the field disappeared, the text is copied to the clipboard and the pill says so. It never lands in a different field.
 - If the text arrives while you are in another window or tab, or after you dictated into a field inside an embedded frame (an iframe) and then clicked into the page, it waits until you come back to that field and is inserted then. Until then the pill says "Return to the field to insert, or click here to copy." If you dictated into a field on the page and then clicked into a field inside an embedded frame, the text is copied to the clipboard instead.
 - With no field focused (hotkey only), the text is copied to the clipboard.
+- If the tab closed, or left for a page VoiceType cannot run on, before the text arrived, the text is copied to the clipboard. No status can tell you, as the page is gone.
 - Google Docs does not accept inserted text; VoiceType copies it and you paste with `Ctrl+V`.
 - In rich editors (Gmail, Notion, Slack, ChatGPT, Facebook, claude.ai and others), if VoiceType cannot confirm the insert, the text is also on the clipboard. It is never inserted twice.
 - In text boxes, one `Ctrl+Z` removes exactly the dictated text.
@@ -337,6 +338,7 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 | **"VoiceType was turned off or updated. Reload this page."** | VoiceType was turned off on `chrome://extensions`, or that tab could not be switched to the new version. Turn VoiceType on if it is off, then reload the page |
 | **Text went to the clipboard** | Focus moved before the text arrived, or the site does not accept inserted text. Paste with `Ctrl+V` |
 | **Transcription fails** | Check your API key and account balance |
+| **VoiceType is off after an update** | A packed or store install stays off until you accept the new permission: open the Chrome menu, click the VoiceType line, then **Accept permissions**. Loading the new build unpacked asks nothing |
 | **Names or jargon come out wrong** | Add them on the Dictionary page, spelled as they should appear |
 | **Mixed-language speech comes out garbled** | Tick every language you speak under Settings, Speech, Spoken languages |
 | **Poor quality** | Speak clearly, reduce background noise, or try the other provider |

@@ -13,8 +13,8 @@
 
 ### Changed
 - The toolbar popup is now a quick panel: status, provider, active mode, this site's rule, today's sessions and cost, and Open settings. Everything else moved to the settings page.
-- The vocabulary list became the Dictionary. Your terms move into its All languages group. A browser taken back to 2.2.0 after this update shows an empty vocabulary.
-- New permission: `clipboardWrite`, "Modify data you copy and paste". Always copy needs it, and it also ends the stall under Fixed. VoiceType does not read the clipboard.
+- The vocabulary list became the Dictionary. Your terms move into its All languages group. A browser taken back to 2.2.0 after this update shows an empty vocabulary; coming forward again keeps your dictionary and site rules.
+- New permission: `clipboardWrite`, "Modify data you copy and paste". Always copy needs it, and it also ends the stall under Fixed. VoiceType does not read the clipboard. A packed or store install stays off after the update until you accept it from the Chrome menu; an unpacked build asks nothing.
 - Reset to defaults also keeps your dictionary and site rules. Custom modes are deleted as before, so a site rule that uses one loses its mode.
 - A site's rule goes by hostname, with leading `www.` and trailing dots dropped.
 
@@ -24,6 +24,9 @@
 - A recording now stays indicated with its field out of view: the pill moves to the corner instead of going away.
 - A recording in an embedded frame stays indicated when the frame is out of sight, hidden or covered: a small indicator shows at the bottom of the page.
 - The indicator stays on top of modal dialogs, popovers and fullscreen elements, which used to paint over it, so a recording could run with nothing on screen. Under a modal dialog it can be seen but not clicked; the hotkey still works.
+- The indicator stays in its place on a page that sets `zoom` on its root, where it could end up off screen, and it comes back if the page removes it.
+- A result whose tab closed, or left for a page VoiceType cannot run on, goes to the clipboard instead of being lost.
+- REC or the hotkey on "Could not insert. Click here to copy the text." now copies the text. It used to clear the status and strand the transcript.
 - A click on the left of the pill's mode button now opens the menu. The collapsed dot used to take that click.
 
 ## 2.2.0 (2026-09-28)
