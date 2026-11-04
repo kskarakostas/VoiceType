@@ -536,6 +536,18 @@ describe('a frame out of sight', () => {
     document.dispatchEvent(new CustomEvent('voicetype:teardown'));
     expect(hosts()).toHaveLength(0);
   });
+
+  it('pagehide removes the mirror, so the back-forward cache keeps no false recording', async () => {
+    const t = installChrome();
+    await loadInstance();
+    deliver(t, mirrorMessage('recording'));
+    expect(hosts()).toHaveLength(1);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(hosts()).toHaveLength(0);
+    expect(t.sent()).not.toContain(MSG.CANCEL_RECORDING);
+    deliver(t, { action: MSG.AUDIO_LEVEL, level: 0.5 });
+    expect(hosts()).toHaveLength(0);
+  });
 });
 
 describe('first settings answer', () => {

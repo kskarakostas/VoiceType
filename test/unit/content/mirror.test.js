@@ -84,6 +84,16 @@ describe('mirror', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('a level after destroy neither reaches the pill nor rearms the timer', () => {
+    const { mirror, makePill, pills } = setup();
+    mirror.update(message('recording'));
+    mirror.destroy();
+    mirror.level(0.4);
+    expect(pills[0].setLevel).not.toHaveBeenCalled();
+    expect(makePill).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('expires after PROCESSING_TIMEOUT_MS of silence', () => {
     const { mirror, pills } = setup();
     mirror.update(message('recording'));

@@ -157,6 +157,8 @@ export function boot({
 
   function onPageHide(event) {
     if (!isTrusted(event)) return;
+    // The worker's idle would reach the next document, and a restored page would show a false recording.
+    mirror.destroy();
     if (controller.state !== 'starting' && controller.state !== 'recording') return;
     send({ action: MSG.CANCEL_RECORDING });
     // The page may come back from the back-forward cache; do not leave it showing a recording.
