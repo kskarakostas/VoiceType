@@ -195,7 +195,7 @@ Rows 10.1, 10.5, 10.6, 10.7 and 10.8 ran on each style; 10.3 on Dot.
 
 ## 11. Review fixes
 
-The guard against a press while a result is landing has unit tests only: its window is under 300 ms, too short to aim at.
+The guard against a press while a result is landing has unit tests only: no harness hits the window.
 
 | # | Run | How | Expected | Result |
 |---|-----|-----|----------|--------|
