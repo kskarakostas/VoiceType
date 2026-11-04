@@ -78,7 +78,9 @@ describe('runDictation', () => {
   it('missing key throws before any network call', async () => {
     const adapters = fakeAdapters();
     const settings = settingsWith(); settings.keys.openai = '';
-    await expect(runDictation({ ...base, modeKey: 'default', settings }, adapters)).rejects.toMatchObject({ code: 'no_key' });
+    await expect(runDictation({ ...base, modeKey: 'default', settings }, adapters)).rejects.toMatchObject({
+      code: 'no_key', message: 'OpenAI API key not set. Add it in VoiceType settings.',
+    });
     expect(adapters.openai.transcribe).not.toHaveBeenCalled();
   });
 

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { createRecorder } from '../../../src/background/recorder.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { createRecorder, COPY_TIMEOUT_MS } from '../../../src/background/recorder.js';
 import { MSG } from '../../../src/shared/messages.js';
 import { freshSettings } from '../../../src/shared/defaults.js';
 
@@ -11,6 +11,8 @@ const BUSY = { ok: false, reason: 'busy', error: 'VoiceType is busy in another t
 const NEEDS_PERMISSION = { ok: false, reason: 'needsPermission', error: 'Allow the microphone in the VoiceType tab that just opened, then press REC again.' };
 const DENIED = { ok: false, reason: 'denied', error: 'Microphone blocked for VoiceType. Allow it at chrome://settings/content/microphone.' };
 const DICTATION = { success: true, text: 'final', raw: 'raw', cost: 0.001, warning: null };
+const RESULT = { ...DICTATION, copied: null };
+const CANCELLED = { ok: false, reason: 'micError', error: 'Recording cancelled.' };
 const stopOf = (captureId) => ({ action: MSG.OFFSCREEN_STOP, discard: false, captureId });
 const discardOf = (captureId) => ({ action: MSG.OFFSCREEN_STOP, discard: true, captureId });
 const done = (over = {}) => ({ audioBase64: 'QUJD', mimeType: 'audio/webm', durationSec: 4.2, reason: 'user', ...over });
@@ -44,7 +46,25 @@ function setup({ startReply = { ok: true }, settings: patch = {} } = {}) {
   /** Capture ids of the offscreen starts so far; id() is the latest. */
   const ids = () => offscreenMessages().filter((m) => m.action === MSG.OFFSCREEN_START).map((m) => m.captureId);
   const id = () => ids().at(-1);
-  return { deps, recorder, settings, offscreenMessages, tabMessages, ids, id };
+  /** Every cue sent so far, in order. */
+  const cues = () => offscreenMessages().filter((m) => m.action === MSG.OFFSCREEN_CUE).map((m) => m.cue);
+  const copies = () => offscreenMessages().filter((m) => m.action === MSG.OFFSCREEN_COPY);
+  const result = () => tabMessages().find((m) => m.action === MSG.DICTATION_RESULT);
+  return { deps, recorder, settings, offscreenMessages, tabMessages, ids, id, cues, copies, result };
+}
+
+/** Answer one offscreen action with `reply`; every other message keeps the fake's answer. */
+function answer(deps, action, reply) {
+  const base = deps.toOffscreen.getMockImplementation();
+  deps.toOffscreen.mockImplementation((message) => (message.action === action ? reply() : base(message)));
+}
+
+/** One recording from A through a finished dictation, with every fire-and-forget send landed. */
+async function dictation(t, over = {}) {
+  await t.recorder.start(A);
+  await t.recorder.stop(A);
+  await t.recorder.onDone(done({ captureId: t.id(), ...over }));
+  await flush();
 }
 
 describe('start', () => {
@@ -140,7 +160,7 @@ describe('start', () => {
 
   it('noKey when the active provider has only whitespace', async () => {
     const { deps, recorder } = setup({ settings: { keys: { openai: '   ', gemini: 'AQ.gemini-key' } } });
-    expect(await recorder.start(A)).toEqual({ ok: false, reason: 'noKey', error: 'Add an API key in the VoiceType popup.' });
+    expect(await recorder.start(A)).toEqual({ ok: false, reason: 'noKey', error: 'Add an API key in VoiceType settings.' });
     expect(recorder.session).toBeNull();
     expect(deps.ensureOffscreen).not.toHaveBeenCalled();
     expect(deps.toOffscreen).not.toHaveBeenCalled();
@@ -332,7 +352,7 @@ describe('results', () => {
     deps.toTab.mockImplementation(async () => { sessionAtDelivery = recorder.session; return true; });
     await recorder.onDone(done({ captureId: id() }));
     expect(deps.dictate).toHaveBeenCalledWith({ audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 4.2 });
-    expect(tabMessages()).toEqual([{ endpoint: A_CHILD, action: MSG.DICTATION_RESULT, ...DICTATION }]);
+    expect(tabMessages()).toEqual([{ endpoint: A_CHILD, action: MSG.DICTATION_RESULT, ...RESULT }]);
     expect(sessionAtDelivery).toBeNull();
     expect(recorder.session).toBeNull();
   });
@@ -354,7 +374,7 @@ describe('results', () => {
       await recorder.onDone(done({ reason, captureId: id() }));
       expect(tabMessages()).toEqual([
         { endpoint: A, action: MSG.RECORDING_STATE, state: 'processing', reason },
-        { endpoint: A, action: MSG.DICTATION_RESULT, ...DICTATION },
+        { endpoint: A, action: MSG.DICTATION_RESULT, ...RESULT },
       ]);
       expect(deps.toTab.mock.invocationCallOrder[0]).toBeLessThan(deps.dictate.mock.invocationCallOrder[0]);
       expect(recorder.session).toBeNull();
@@ -440,7 +460,7 @@ describe('stale captures', () => {
     await recorder.onDone(done({ captureId: idB }));
     expect(deps.dictate).toHaveBeenCalledTimes(1);
     expect(deps.dictate).toHaveBeenCalledWith(expect.objectContaining({ audioBase64: 'QUJD' }));
-    expect(tabMessages()).toEqual([{ endpoint: B, action: MSG.DICTATION_RESULT, ...DICTATION }]);
+    expect(tabMessages()).toEqual([{ endpoint: B, action: MSG.DICTATION_RESULT, ...RESULT }]);
   });
 
   it('an error or level with a stale or missing id is ignored', async () => {
@@ -580,5 +600,491 @@ describe('permission and tabs', () => {
     await recorder.onTabRemoved(1);
     await recorder.onPermissionResult({ granted: true });
     expect(tabMessages()).toEqual([]);
+  });
+});
+
+describe('cues', () => {
+  const SOUNDS = { settings: { sounds: true } };
+  const NEEDS = { ok: false, reason: 'needsPermission', error: 'Microphone permission needed.' };
+
+  it('cue row 1: another frame, or processing: busy', async () => {
+    const t = setup(SOUNDS);
+    await t.recorder.start(A);
+    expect(await t.recorder.start(B)).toEqual(BUSY);
+    await t.recorder.stop(A);
+    expect(await t.recorder.start(A)).toEqual(BUSY);
+    await flush();
+    expect(t.cues()).toEqual(['start']);
+  });
+
+  it('cue row 2: same frame asks again', async () => {
+    const t = setup(SOUNDS);
+    await Promise.all([t.recorder.start(A), t.recorder.start(A)]);
+    expect(await t.recorder.start(A)).toEqual({ ok: true });
+    await flush();
+    expect(t.cues()).toEqual(['start']);
+  });
+
+  it('cue row 3: getSettings failed', async () => {
+    const t = setup(SOUNDS);
+    t.deps.getSettings.mockRejectedValueOnce(new Error('storage down'));
+    await t.recorder.start(A);
+    await flush();
+    expect(t.cues()).toEqual([]);
+  });
+
+  it('cue row 4: freed while reading settings', async () => {
+    const t = setup(SOUNDS);
+    const pending = deferred();
+    t.deps.getSettings.mockImplementationOnce(() => pending.promise);
+    const started = t.recorder.start(A);
+    await t.recorder.cancel(A);
+    pending.resolve(t.settings);
+    expect(await started).toEqual(CANCELLED);
+    await flush();
+    expect(t.cues()).toEqual([]);
+  });
+
+  it('cue row 5: no key', async () => {
+    const t = setup({ settings: { sounds: true, keys: { openai: '', gemini: '' } } });
+    expect((await t.recorder.start(A)).reason).toBe('noKey');
+    await flush();
+    expect(t.cues()).toEqual([]);
+    expect(t.deps.ensureOffscreen).not.toHaveBeenCalled();
+  });
+
+  it('cue row 6: ensureOffscreen or OFFSCREEN_START threw', async () => {
+    const created = setup(SOUNDS);
+    created.deps.ensureOffscreen.mockRejectedValueOnce(new Error('Invalid reason'));
+    expect((await created.recorder.start(A)).reason).toBe('micError');
+    await flush();
+    expect(created.cues()).toEqual(['error']);
+
+    const sent = setup({ ...SOUNDS, startReply: () => { throw new Error('gone'); } });
+    expect((await sent.recorder.start(A)).reason).toBe('micError');
+    await flush();
+    expect(sent.cues()).toEqual(['error']);
+  });
+
+  it('cue row 7: freed while starting', async () => {
+    for (const reply of [{ ok: true }, NEEDS, { ...CANCELLED, cancelled: true }]) {
+      const pending = deferred();
+      const t = setup({ ...SOUNDS, startReply: () => pending.promise });
+      const started = t.recorder.start(A);
+      await vi.waitFor(() => expect(t.ids()).toHaveLength(1));
+      await t.recorder.cancel(A);
+      pending.resolve(reply);
+      expect(await started).toStrictEqual(CANCELLED);
+      await flush();
+      expect(t.cues()).toEqual([]);
+    }
+  });
+
+  it('cue row 8: capture live, no stop queued', async () => {
+    const t = setup(SOUNDS);
+    await t.recorder.start(A);
+    await flush();
+    expect(t.cues()).toEqual(['start']);
+  });
+
+  it('cue row 9: capture live, stop already queued', async () => {
+    const pending = deferred();
+    const t = setup({ ...SOUNDS, startReply: () => pending.promise });
+    const started = t.recorder.start(A);
+    await vi.waitFor(() => expect(t.ids()).toHaveLength(1));
+    await t.recorder.stop(A);
+    pending.resolve({ ok: true });
+    await started;
+    await flush();
+    expect(t.cues()).toEqual([]);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    await flush();
+    expect(t.cues()).toEqual(['stop', 'done']);
+  });
+
+  it('cue row 10: needsPermission', async () => {
+    const t = setup({ ...SOUNDS, startReply: NEEDS });
+    expect(await t.recorder.start(A)).toEqual(NEEDS_PERMISSION);
+    await flush();
+    expect(t.cues()).toEqual([]);
+  });
+
+  it('cue row 11: denied', async () => {
+    const t = setup({ ...SOUNDS, startReply: { ok: false, reason: 'denied', error: 'Microphone blocked.' } });
+    expect(await t.recorder.start(A)).toEqual(DENIED);
+    await flush();
+    expect(t.cues()).toEqual(['error']);
+  });
+
+  it('cue row 12: micError from the capture', async () => {
+    const t = setup({ ...SOUNDS, startReply: { ok: false, reason: 'micError', error: 'No microphone found.' } });
+    expect(await t.recorder.start(A)).toEqual({ ok: false, reason: 'micError', error: 'No microphone found.' });
+    await flush();
+    expect(t.cues()).toEqual(['error']);
+  });
+
+  it('cue row 13: micError with cancelled: true from the capture', async () => {
+    const t = setup({ ...SOUNDS, startReply: { ...CANCELLED, cancelled: true } });
+    expect(await t.recorder.start(A)).toStrictEqual(CANCELLED);
+    await flush();
+    expect(t.cues()).toEqual([]);
+  });
+
+  it('cue row 14: CANCEL_RECORDING', async () => {
+    const t = setup(SOUNDS);
+    await t.recorder.start(A);
+    await t.recorder.cancel(A);
+    await flush();
+    expect(t.cues()).toEqual(['start']);
+  });
+
+  it('cue row 15: no receiver on a level, or the tab closed', async () => {
+    const level = setup(SOUNDS);
+    await level.recorder.start(A);
+    level.deps.toTab.mockResolvedValueOnce(false);
+    level.recorder.onLevel(0.2, level.id());
+    await vi.waitFor(() => expect(level.recorder.session).toBeNull());
+    await flush();
+    expect(level.cues()).toEqual(['start']);
+
+    const closed = setup(SOUNDS);
+    await closed.recorder.start(A);
+    await closed.recorder.onTabRemoved(A.tabId);
+    await flush();
+    expect(closed.recorder.session).toBeNull();
+    expect(closed.cues()).toEqual(['start']);
+  });
+
+  it('cue row 16: too short', async () => {
+    const t = setup(SOUNDS);
+    await dictation(t, { durationSec: 0.4 });
+    expect(t.result().error).toBe('Too short, ignored');
+    expect(t.cues()).toEqual(['start']);
+  });
+
+  it('cue row 17: processing starts (user stop, max time, silence, track ended)', async () => {
+    for (const reason of ['user', 'maxTime', 'silence', 'ended']) {
+      const t = setup(SOUNDS);
+      const pending = deferred();
+      t.deps.dictate.mockImplementationOnce(() => pending.promise);
+      await t.recorder.start(A);
+      if (reason === 'user') await t.recorder.stop(A);
+      const finished = t.recorder.onDone(done({ reason, captureId: t.id() }));
+      await vi.waitFor(() => expect(t.deps.dictate).toHaveBeenCalled());
+      await flush();
+      expect(t.cues()).toEqual(['start', 'stop']);
+      pending.resolve({ ...DICTATION });
+      await finished;
+    }
+  });
+
+  it('cue row 18: auto-stop with no receiver, or freed meanwhile', async () => {
+    const gone = setup(SOUNDS);
+    await gone.recorder.start(A);
+    gone.deps.toTab.mockResolvedValueOnce(false);
+    await gone.recorder.onDone(done({ reason: 'silence', captureId: gone.id() }));
+    await flush();
+    expect(gone.deps.dictate).not.toHaveBeenCalled();
+    expect(gone.cues()).toEqual(['start']);
+
+    const freed = setup(SOUNDS);
+    const pending = deferred();
+    await freed.recorder.start(A);
+    freed.deps.toTab.mockImplementationOnce(() => pending.promise);
+    const finished = freed.recorder.onDone(done({ reason: 'silence', captureId: freed.id() }));
+    await freed.recorder.cancel(A);
+    pending.resolve(true);
+    await finished;
+    await flush();
+    expect(freed.deps.dictate).not.toHaveBeenCalled();
+    expect(freed.cues()).toEqual(['start']);
+  });
+
+  it('cue row 19: dictate succeeded', async () => {
+    const t = setup(SOUNDS);
+    await dictation(t);
+    expect(t.cues()).toEqual(['start', 'stop', 'done']);
+    const delivery = t.deps.toTab.mock.invocationCallOrder.at(-1);
+    expect(t.deps.ensureOffscreen.mock.invocationCallOrder.at(-1)).toBeLessThan(delivery);
+  });
+
+  it('cue row 20: dictate failed or threw, "No speech detected." included', async () => {
+    const failed = setup(SOUNDS);
+    failed.deps.dictate.mockResolvedValueOnce({ success: false, error: 'No speech detected.', tone: 'error' });
+    await dictation(failed);
+    expect(failed.result()).toMatchObject({ success: false, error: 'No speech detected.' });
+    expect(failed.cues()).toEqual(['start', 'stop', 'error']);
+
+    const threw = setup(SOUNDS);
+    threw.deps.dictate.mockRejectedValueOnce(new Error('bug'));
+    await dictation(threw);
+    expect(threw.result().success).toBe(false);
+    expect(threw.cues()).toEqual(['start', 'stop', 'error']);
+  });
+
+  it('cue row 21: freed while dictate ran', async () => {
+    for (const outcome of [{ ...DICTATION }, { success: false, error: 'No speech detected.', tone: 'error' }]) {
+      const t = setup({ settings: { sounds: true, alwaysCopy: true } });
+      const pending = deferred();
+      t.deps.dictate.mockImplementationOnce(() => pending.promise);
+      await t.recorder.start(A);
+      await t.recorder.stop(A);
+      const finished = t.recorder.onDone(done({ captureId: t.id() }));
+      await vi.waitFor(() => expect(t.deps.dictate).toHaveBeenCalled());
+      await t.recorder.cancel(A);
+      pending.resolve(outcome);
+      await finished;
+      await flush();
+      expect(t.cues()).toEqual(['start', 'stop']);
+      expect(t.copies()).toEqual([]);
+    }
+  });
+
+  it('cue row 22: the offscreen stop failed', async () => {
+    const t = setup(SOUNDS);
+    answer(t.deps, MSG.OFFSCREEN_STOP, async () => { throw new Error('gone'); });
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    await flush();
+    expect(t.recorder.session).toBeNull();
+    expect(t.cues()).toEqual(['start', 'error']);
+  });
+
+  it('cue row 23: OFFSCREEN_ERROR', async () => {
+    const t = setup(SOUNDS);
+    await t.recorder.start(A);
+    await t.recorder.onOffscreenError({ error: 'Recording failed.', captureId: t.id() });
+    await flush();
+    expect(t.cues()).toEqual(['start', 'error']);
+  });
+
+  it('cue row 24: permission result', async () => {
+    const t = setup({ ...SOUNDS, startReply: NEEDS });
+    await t.recorder.start(A);
+    await t.recorder.onPermissionResult({ granted: true });
+    await t.recorder.start(A);
+    await t.recorder.onPermissionResult({ granted: false });
+    await flush();
+    expect(t.cues()).toEqual([]);
+  });
+
+  it('sounds off: no cue message on any path', async () => {
+    const t = setup();
+    await dictation(t);
+    t.deps.dictate.mockRejectedValueOnce(new Error('bug'));
+    await dictation(t);
+    await dictation(t, { durationSec: 0.4 });
+    await t.recorder.start(A);
+    await t.recorder.onOffscreenError({ error: 'Recording failed.', captureId: t.id() });
+    await flush();
+    expect(t.ids()).toHaveLength(4);
+    expect(t.tabMessages()).toHaveLength(4);
+    expect(t.cues()).toEqual([]);
+  });
+
+  it('each cue fires once', async () => {
+    const t = setup(SOUNDS);
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    await t.recorder.stop(A);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    await flush();
+    expect(t.cues()).toEqual(['start', 'stop', 'done']);
+  });
+
+  it('a cue never delays a start', async () => {
+    const t = setup(SOUNDS);
+    answer(t.deps, MSG.OFFSCREEN_CUE, () => new Promise(() => {}));
+    expect(await t.recorder.start(A)).toEqual({ ok: true });
+    await t.recorder.stop(A);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.result()).toMatchObject({ success: true, text: 'final' });
+  });
+
+  it('a rejected cue is swallowed', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      const t = setup(SOUNDS);
+      answer(t.deps, MSG.OFFSCREEN_CUE, async () => { throw new Error('no document'); });
+      await dictation(t);
+      expect(t.cues()).toEqual(['start', 'stop', 'done']);
+      expect(t.result()).toMatchObject({ success: true });
+      await flush();
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
+  it('a cue reopens the document', async () => {
+    const t = setup(SOUNDS);
+    await t.recorder.start(A);
+    await flush();
+    await t.recorder.stop(A);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    await flush();
+    const ensures = t.deps.ensureOffscreen.mock.invocationCallOrder.map((order) => ({ order, step: 'ensure' }));
+    const sends = t.offscreenMessages().map((m, i) => ({ order: t.deps.toOffscreen.mock.invocationCallOrder[i], step: m.action }));
+    const steps = [...ensures, ...sends].sort((a, b) => a.order - b.order).map((entry) => entry.step);
+    expect(steps).toEqual([
+      'ensure', MSG.OFFSCREEN_START,
+      'ensure', MSG.OFFSCREEN_CUE,
+      MSG.OFFSCREEN_STOP,
+      'ensure', MSG.OFFSCREEN_CUE,
+      'ensure', MSG.OFFSCREEN_CUE,
+    ]);
+  });
+
+  it('settings are fixed at start', async () => {
+    const on = setup({ settings: { sounds: true, alwaysCopy: true } });
+    await on.recorder.start(A);
+    Object.assign(on.settings, { sounds: false, alwaysCopy: false });
+    await on.recorder.stop(A);
+    await on.recorder.onDone(done({ captureId: on.id() }));
+    await flush();
+    expect(on.cues()).toEqual(['start', 'stop', 'done']);
+    expect(on.result().copied).toBe(true);
+
+    const off = setup();
+    await off.recorder.start(A);
+    Object.assign(off.settings, { sounds: true, alwaysCopy: true });
+    await off.recorder.stop(A);
+    await off.recorder.onDone(done({ captureId: off.id() }));
+    await flush();
+    expect(off.cues()).toEqual([]);
+    expect(off.copies()).toEqual([]);
+    expect(off.result().copied).toBeNull();
+  });
+
+  it('the public session never shows the cue or copy settings', async () => {
+    const t = setup({ settings: { sounds: true, alwaysCopy: true } });
+    await t.recorder.start(A);
+    expect(t.recorder.session).toStrictEqual({ endpoint: A, state: 'recording', modeKey: 'email', minSec: 1 });
+  });
+});
+
+describe('always-copy', () => {
+  const COPY = { settings: { alwaysCopy: true } };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('both off: no copy, copied is null', async () => {
+    const t = setup();
+    await dictation(t);
+    expect(t.offscreenMessages().map((m) => m.action)).toEqual([MSG.OFFSCREEN_START, MSG.OFFSCREEN_STOP]);
+    expect(t.deps.ensureOffscreen).toHaveBeenCalledTimes(1);
+    expect(t.result()).toMatchObject({ success: true, copied: null });
+  });
+
+  it('the copy goes first', async () => {
+    const t = setup(COPY);
+    await dictation(t);
+    const sendAt = t.offscreenMessages().findIndex((m) => m.action === MSG.OFFSCREEN_COPY);
+    const deliveryAt = t.deps.toTab.mock.calls.findIndex(([, m]) => m.action === MSG.DICTATION_RESULT);
+    expect(t.offscreenMessages()[sendAt]).toEqual({ action: MSG.OFFSCREEN_COPY, text: 'final' });
+    expect(t.deps.toOffscreen.mock.invocationCallOrder[sendAt]).toBeLessThan(t.deps.toTab.mock.invocationCallOrder[deliveryAt]);
+    expect(t.result()).toMatchObject({ success: true, copied: true });
+  });
+
+  it('a refused copy', async () => {
+    for (const reply of [{ ok: false }, undefined]) {
+      const t = setup(COPY);
+      answer(t.deps, MSG.OFFSCREEN_COPY, async () => reply);
+      await dictation(t);
+      expect(t.result()).toMatchObject({ success: true, text: 'final', copied: false });
+    }
+  });
+
+  it('a thrown copy', async () => {
+    const t = setup(COPY);
+    answer(t.deps, MSG.OFFSCREEN_COPY, async () => { throw new Error('no document'); });
+    await dictation(t);
+    expect(t.result()).toMatchObject({ success: true, copied: false });
+  });
+
+  it('a copy with no document', async () => {
+    const t = setup(COPY);
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    t.deps.ensureOffscreen.mockRejectedValueOnce(new Error('Invalid reason'));
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.copies()).toEqual([]);
+    expect(t.result()).toMatchObject({ success: true, copied: false });
+  });
+
+  it('a stuck copy waits 1 s, then delivers', async () => {
+    vi.useFakeTimers();
+    const t = setup(COPY);
+    answer(t.deps, MSG.OFFSCREEN_COPY, () => new Promise(() => {}));
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    const finished = t.recorder.onDone(done({ captureId: t.id() }));
+    await vi.advanceTimersByTimeAsync(COPY_TIMEOUT_MS - 1);
+    expect(t.copies()).toHaveLength(1);
+    expect(t.result()).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    await finished;
+    expect(t.result()).toMatchObject({ success: true, copied: false });
+    expect(COPY_TIMEOUT_MS).toBe(1000);
+  });
+
+  it('a finished copy leaves no timer behind', async () => {
+    vi.useFakeTimers();
+    const t = setup(COPY);
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.result().copied).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('a closed tab still gets its copy', async () => {
+    const t = setup({ settings: { sounds: true, alwaysCopy: true } });
+    const pending = deferred();
+    t.deps.dictate.mockImplementationOnce(() => pending.promise);
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    const finished = t.recorder.onDone(done({ captureId: t.id() }));
+    await vi.waitFor(() => expect(t.deps.dictate).toHaveBeenCalled());
+    await t.recorder.onTabRemoved(A.tabId);
+    t.deps.toTab.mockResolvedValue(false);
+    pending.resolve({ ...DICTATION });
+    await finished;
+    await flush();
+    expect(t.copies()).toEqual([{ action: MSG.OFFSCREEN_COPY, text: 'final' }]);
+    expect(t.cues()).toEqual(['start', 'stop', 'done']);
+    expect(t.recorder.session).toBeNull();
+  });
+
+  it('the session stays busy during the copy', async () => {
+    const t = setup(COPY);
+    const pending = deferred();
+    answer(t.deps, MSG.OFFSCREEN_COPY, () => pending.promise);
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    const finished = t.recorder.onDone(done({ captureId: t.id() }));
+    await vi.waitFor(() => expect(t.copies()).toHaveLength(1));
+    expect(await t.recorder.start(B)).toEqual(BUSY);
+    expect(t.recorder.session.state).toBe('processing');
+    pending.resolve({ ok: true });
+    await finished;
+    expect(t.recorder.session).toBeNull();
+    expect(t.result().copied).toBe(true);
+  });
+
+  it('no copy on failure or too short', async () => {
+    const t = setup(COPY);
+    t.deps.dictate.mockResolvedValueOnce({ success: false, error: 'No speech detected.', tone: 'error' });
+    await dictation(t);
+    t.deps.dictate.mockRejectedValueOnce(new Error('bug'));
+    await dictation(t);
+    await dictation(t, { durationSec: 0.4 });
+    expect(t.copies()).toEqual([]);
+    const results = t.tabMessages().filter((m) => m.action === MSG.DICTATION_RESULT);
+    expect(results).toHaveLength(3);
+    for (const message of results) expect(message).not.toHaveProperty('copied');
   });
 });

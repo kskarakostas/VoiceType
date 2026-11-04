@@ -5,18 +5,20 @@ import { MSG } from '../shared/messages.js';
 import { ruleFor } from '../shared/sites.js';
 
 const BUSY = 'VoiceType is busy in another tab. Try again in a moment.';
-const NO_KEY = 'Add an API key in the VoiceType popup.';
+const NO_KEY = 'Add an API key in VoiceType settings.';
 const NEEDS_PERMISSION = 'Allow the microphone in the VoiceType tab that just opened, then press REC again.';
 const DENIED = 'Microphone blocked for VoiceType. Allow it at chrome://settings/content/microphone.';
 const MIC_ERROR = 'Could not start the microphone.';
 const CANCELLED = 'Recording cancelled.';
 const FAILED_NOTICE = Object.freeze({ text: 'Recording failed. Try again.', tone: 'error' });
+export const COPY_TIMEOUT_MS = 1000;
 
 /**
  * @typedef {{ tabId: number, frameId: number }} Endpoint
  * @typedef {{ endpoint: Endpoint, state: 'starting'|'recording'|'processing', modeKey: string, minSec: number }} Session
  * Internally a session also holds the id of its offscreen capture: reports that name any other
- * capture are stale (a cancelled recording finishing late) and are dropped.
+ * capture are stale (a cancelled recording finishing late) and are dropped. It also holds the
+ * `sounds` and `alwaysCopy` settings, read once at start.
  * @typedef {import('../shared/messages.js').StartResponse} StartResponse
  */
 
@@ -31,7 +33,7 @@ const FAILED_NOTICE = Object.freeze({ text: 'Recording failed. Try again.', tone
  * }} deps
  */
 export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermissionPage, getSettings, dictate }) {
-  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null })} */
+  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null, sounds: boolean, alwaysCopy: boolean })} */
   let session = null;
   /** @type {Endpoint|null} */
   let pendingPermission = null;
@@ -41,6 +43,28 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     && session.endpoint.tabId === endpoint.tabId && session.endpoint.frameId === endpoint.frameId;
   /** The current session, when this offscreen report came from its capture. */
   const reporter = (captureId) => (session !== null && captureId === session.captureId ? session : null);
+
+  /** Play a cue when the session has sounds on. Fire and forget: a cue never delays or fails a dictation. */
+  function cue(s, name) {
+    if (!s.sounds) return;
+    ensureOffscreen().then(() => toOffscreen({ action: MSG.OFFSCREEN_CUE, cue: name })).catch(() => {});
+  }
+
+  /**
+   * Copy a result, waiting at most COPY_TIMEOUT_MS: a stuck copy never holds back a paid transcript.
+   * @param {string} text
+   * @returns {Promise<boolean>} True only when the offscreen document confirmed the copy.
+   */
+  async function copyResult(text) {
+    let timer;
+    const expired = new Promise((resolve) => { timer = setTimeout(resolve, COPY_TIMEOUT_MS, false); });
+    const copied = ensureOffscreen()
+      .then(() => toOffscreen({ action: MSG.OFFSCREEN_COPY, text }))
+      .then((reply) => reply?.ok === true, () => false);
+    const result = await Promise.race([copied, expired]);
+    clearTimeout(timer);
+    return result;
+  }
 
   /** Stop a capture without a result. The microphone is released; errors are irrelevant here. */
   async function discard(captureId) {
@@ -65,6 +89,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   async function failSession(s) {
     if (session !== s) return;
     session = null;
+    cue(s, 'error');
     await toTab(s.endpoint, { action: MSG.RECORDING_STATE, state: 'idle', reason: 'error', notice: FAILED_NOTICE });
   }
 
@@ -103,6 +128,8 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     }
     s.modeKey = ruleFor(settings, tabUrl).mode ?? settings.activeMode;
     s.minSec = settings.minRecordingTime;
+    s.sounds = settings.sounds === true;
+    s.alwaysCopy = settings.alwaysCopy === true;
 
     let reply = null;
     try {
@@ -125,6 +152,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     if (reply?.ok) {
       s.state = 'recording';
       if (s.stopRequested) await finish(s);
+      else cue(s, 'start');
       return { ok: true };
     }
     session = null;
@@ -137,6 +165,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       }
       return fail('needsPermission', NEEDS_PERMISSION);
     }
+    if (reply?.cancelled !== true) cue(s, 'error');
     if (reply?.reason === 'denied') return fail('denied', DENIED);
     return fail('micError', typeof reply?.error === 'string' && reply.error ? reply.error : MIC_ERROR);
   }
@@ -156,7 +185,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       // Reserve synchronously so a start from another frame during the awaits below is busy.
       const s = {
         endpoint: { ...endpoint }, state: 'starting', modeKey: 'default', minSec: 0,
-        captureId: crypto.randomUUID(), stopRequested: false, starting: null,
+        captureId: crypto.randomUUID(), stopRequested: false, starting: null, sounds: false, alwaysCopy: false,
       };
       session = s;
       s.starting = begin(s, tabUrl);
@@ -215,10 +244,16 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       if (durationSec < s.minSec) {
         message = { success: false, error: 'Too short, ignored', tone: 'warning' };
       } else {
+        cue(s, 'stop');
         try {
           message = await dictate({ audioBase64: payload.audioBase64, mimeType: payload.mimeType, modeKey: s.modeKey, durationSec });
         } catch {
           message = { success: false, error: 'Something went wrong. Try again.', tone: 'error' };
+        }
+        const live = session === s;
+        if (live) cue(s, message.success ? 'done' : 'error');
+        if (message.success) {
+          message = { ...message, copied: live && s.alwaysCopy ? await copyResult(message.text) : null };
         }
       }
       if (session === s) session = null;

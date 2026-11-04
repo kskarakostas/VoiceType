@@ -48,7 +48,7 @@ export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeK
   const provider = Object.hasOwn(adapters, settings.provider) ? settings.provider : 'openai';
   const key = trimmed(settings.keys?.[provider]);
   if (!key) {
-    throw new ProviderError(`${PROVIDERS[provider].label} API key not set. Click the extension icon to add it.`, { code: 'no_key' });
+    throw new ProviderError(`${PROVIDERS[provider].label} API key not set. Add it in VoiceType settings.`, { code: 'no_key' });
   }
   const mode = settings.modes?.[modeKey] || settings.modes?.default || { prompt: '' };
   const adapter = adapters[provider];
