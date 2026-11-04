@@ -19,6 +19,16 @@ const TRANSCRIPT_DELAY_MS = 1500;
 const VIEWPORT = { width: 1280, height: 2000 };
 /** Set after the click: at scroll 0 both frames of fields.html are below this fold. */
 const SHORT_VIEWPORT = { width: 1280, height: 500 };
+/** With TALL_FRAME_PX, the bottom centre of the frame is far below the fold. */
+const TALL_VIEWPORT = { width: 1280, height: 600 };
+const TALL_FRAME_PX = 3000;
+const TALL_FRAME_SITES = [
+  ['Minimal', { pillStyle: 'minimal' }],
+  ['a hidden site', { siteRules: { localhost: HIDE_ONLY } }],
+];
+/** Longer than the sight observer's delay, or a flip would go unreported. */
+const FLIP_BEAT_MS = 200;
+const OVERLAY = 'position: fixed; inset: 0; z-index: 2147483646; background: #fff;';
 /** How long a field stays clicked before Minimal counts as showing nothing. */
 const NO_PILL_MS = 500;
 /** The acceptance budget of a change made in the settings. */
@@ -364,7 +374,7 @@ test('a page that lost the focus shows a new style on the way back to the field'
   const page = await openPage();
   const field = page.locator('#ta');
   await focusField(page, field);
-  await context.newPage();
+  const other = await context.newPage();
 
   await loseWindowFocus(page);
   await expect.poll(() => widthOf(page, '.body'), { message: 'idle pill hidden' }).toBe(0);
@@ -376,6 +386,7 @@ test('a page that lost the focus shows a new style on the way back to the field'
   await field.click();
 
   await expect.poll(() => widthOf(page, '.body'), { timeout: PILL_SYNC_MS }).toBeGreaterThan(OPEN_WIDTH);
+  await other.close();
 });
 
 for (const [from, to] of [['dot', 'minimal'], ['minimal', 'dot']]) {
@@ -523,6 +534,71 @@ async function recordInFrame({ url, selector, style = 'dot' }) {
   return { page, frame, field };
 }
 
+/**
+ * @param {import('@playwright/test').Page} page
+ * @param {string} selector
+ * @param {string} property
+ * @param {string} value
+ */
+const setStyle = (page, selector, property, value) => page.evaluate(([s, p, v]) => {
+  document.querySelector(s).style[p] = v;
+}, [selector, property, value]);
+
+/** Ways to hide a frame from the user that leave its geometry in the viewport. */
+const COVERS = [
+  {
+    what: 'opacity 0 on the iframe',
+    cover: (page, selector) => setStyle(page, selector, 'opacity', '0'),
+    undo: (page, selector) => setStyle(page, selector, 'opacity', ''),
+  },
+  {
+    what: 'visibility hidden on the iframe',
+    cover: (page, selector) => setStyle(page, selector, 'visibility', 'hidden'),
+    undo: (page, selector) => setStyle(page, selector, 'visibility', ''),
+  },
+  {
+    what: 'an opaque overlay above the iframe',
+    cover: (page) => page.evaluate((css) => {
+      const overlay = document.createElement('div');
+      overlay.id = 'overlay';
+      overlay.style.cssText = css;
+      document.documentElement.append(overlay);
+    }, OVERLAY),
+    undo: (page) => page.evaluate(() => document.getElementById('overlay').remove()),
+  },
+];
+
+/**
+ * The page holds one frame, 3000 px tall, in a 600 px window, with the field near its top.
+ * @param {string} url
+ */
+async function openTallFrame(url) {
+  const page = await openPage();
+  await page.setViewportSize(TALL_VIEWPORT);
+  const src = `${url}?tall`;
+  await page.evaluate(({ frameSrc, height }) => {
+    const iframe = document.createElement('iframe');
+    iframe.src = frameSrc;
+    iframe.style.cssText = `display: block; width: 100%; height: ${height}px; border: 0;`;
+    document.body.replaceChildren(iframe);
+  }, { frameSrc: src, height: TALL_FRAME_PX });
+  const frame = await frameAt(page, src);
+  await frame.locator('#frame-ta').click();
+  return { page, frame };
+}
+
+/**
+ * The element lies inside the window. Its box is in page coordinates.
+ * @param {{ x: number, y: number, width: number, height: number }} box
+ */
+function expectInTallViewport(box) {
+  expect(box.width).toBeGreaterThan(0);
+  expect(box.y - box.height / 2).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height / 2).toBeLessThanOrEqual(TALL_VIEWPORT.height);
+  expect(box.x - box.width / 2).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width / 2).toBeLessThanOrEqual(TALL_VIEWPORT.width);
+}
+
 for (const [name, url, selector] of FRAMES) {
   test(`mirror, ${name}: no mirror while the frame pill is in view`, async () => {
     const { page } = await recordInFrame({ url, selector });
@@ -620,16 +696,61 @@ for (const [name, url, selector] of FRAMES) {
     expect(await mirrorQuery(page, MINI)).not.toBeNull();
   });
 
+  for (const { what, cover, undo } of COVERS) {
+    test(`mirror, ${name}: ${what} brings it up, undoing it takes it away`, async () => {
+      const { page, frame } = await recordInFrame({ url, selector });
+      await expectNoMirrorFor(page, 300);
+
+      await cover(page, selector);
+
+      await pollMirror(page, true);
+      expectAtBottomCentre(await mirrorQuery(page, MINI), await viewportBox(page));
+
+      await undo(page, selector);
+
+      await pollMirror(page, false);
+      await waitForPill(frame, STOP);
+    });
+  }
+
+  for (const [site, overrides] of TALL_FRAME_SITES) {
+    test(`a tall ${name} frame on ${site}: a refusal shows by the field`, async () => {
+      await seedSettings(serviceWorker, '', overrides);
+      const { page, frame } = await openTallFrame(url);
+
+      await expect(async () => {
+        await page.keyboard.press(HOTKEY);
+        await expect.poll(() => pillStatus(frame), { timeout: PILL_SYNC_MS }).toContain('Add an API key');
+      }).toPass({ timeout: 15_000 });
+
+      expectInTallViewport(await pillQuery(frame, STATUS));
+    });
+
+    test(`a tall ${name} frame on ${site}: Done shows by the field`, async () => {
+      await seedSettings(serviceWorker, DUMMY_KEY, overrides);
+      const { page, frame } = await openTallFrame(url);
+
+      await startWithHotkey(page, frame, { indicator: MINI });
+      expectAtBottomCentre(await pillQuery(frame, MINI), await viewportBox(frame));
+      await page.waitForTimeout(RECORD_MS);
+      await page.keyboard.press(HOTKEY);
+
+      await expect(frame.locator('#frame-ta')).toHaveValue(TRANSCRIPT);
+      await expect.poll(() => pillStatus(frame)).toMatch(/^Done /);
+      expectInTallViewport(await pillQuery(frame, STATUS));
+    });
+  }
+
   test(`mirror, ${name}: rapid scroll out and back leaves no indicator`, async () => {
     const { page } = await recordInFrame({ url, selector });
 
-    const removed = await page.evaluate(async (s) => {
+    const removed = await page.evaluate(async ({ s, beatMs }) => {
       let gone = 0;
       const hosts = new MutationObserver((records) => {
         for (const { removedNodes } of records) gone += removedNodes.length;
       });
       hosts.observe(document.documentElement, { childList: true });
-      const beat = () => new Promise((resolve) => { setTimeout(resolve, 60); });
+      const beat = () => new Promise((resolve) => { setTimeout(resolve, beatMs); });
       for (let flip = 0; flip < 6; flip += 1) {
         window.scrollTo(0, 0);
         await beat();
@@ -638,7 +759,7 @@ for (const [name, url, selector] of FRAMES) {
       }
       hosts.disconnect();
       return gone;
-    }, selector);
+    }, { s: selector, beatMs: FLIP_BEAT_MS });
 
     // Only a mirror ever leaves: each one removed came up and went during the flips.
     expect(removed).toBeGreaterThan(0);

@@ -40,7 +40,7 @@ export function boot({
     onProvider: (id) => { controller.choose({ provider: id }); },
     onTargetLang: (lang) => { controller.choose({ translateTargetLang: lang }); },
     ...(inSubframe && { onSight: (seen) => { send({ action: MSG.FRAME_SIGHT, seen }); } }),
-  });
+  }, { statusAtField: inSubframe });
 
   const mirror = createMirror({
     // Frame 0's host first: at the same z-index the later host paints on top, so no status hides the mirror.

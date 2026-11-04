@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Pill, PILL_SIZE, MINI_SIZE, SIGHT_THRESHOLD, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
+import { Pill, PILL_SIZE, MINI_SIZE, SIGHT_THRESHOLD, SIGHT_DELAY_MS, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
 import { computePillPosition, EDGE } from '../../../src/content/position.js';
 
 // A path, not a URL literal: jsdom replaces the global URL, and the web transform rewrites
@@ -1241,6 +1241,94 @@ describe('styles', () => {
     });
   });
 
+  describe('a status by the field in a subframe', () => {
+    /** Beside the field, then beside it with no room on the left, then above it, then below it. */
+    const ANCHORS = [
+      ['left', { top: 300, left: 400, width: 200, height: 30 }],
+      ['right', { top: 300, left: 40, width: 200, height: 30 }],
+      ['above', { top: 300, left: 40, width: 960, height: 30 }],
+      ['below', { top: 10, left: 40, width: 960, height: 30 }],
+    ];
+    const OUT_OF_VIEW = { top: 2000, left: 400, width: 200, height: 30 };
+
+    /** A pill with the status up: Minimal in a subframe unless the options say otherwise. */
+    function statusAt(anchor, { style = 'minimal', statusAtField = true, h = handlers(), status = {} } = {}) {
+      const pill = new Pill(h, { shadowMode: 'open', statusAtField });
+      pill.setStyle(style);
+      pill.show(anchor);
+      statusEl(pill).getBoundingClientRect = STATUS_200;
+      pill.setStatus('Add an API key in VoiceType settings.', { tone: 'error', sticky: true, ...status });
+      return pill;
+    }
+    const placed = (pill) => {
+      const { top, left } = statusEl(pill).style;
+      return { top, left, side: statusEl(pill).dataset.side };
+    };
+
+    it.each(ANCHORS)('takes the side and alignment Dot uses: %s', (_, anchor) => {
+      expect(placed(statusAt(anchor))).toEqual(placed(statusAt(anchor, { style: 'dot', statusAtField: false })));
+    });
+
+    it('sits at the field, far from the bottom centre', () => {
+      const pill = statusAt(ANCHORS[0][1]);
+      expect(statusEl(pill).dataset.side).toBe('below');
+      expect(statusEl(pill).style.top).toBe('336px');
+    });
+
+    it('with no anchor it stays at the bottom centre', () => {
+      expect(placed(statusAt(null))).toEqual(placed(statusAt(null, { statusAtField: false })));
+      expect(statusEl(statusAt(null)).style.top).toBe('752px');
+    });
+
+    it('with the anchor out of view it stays at the bottom centre', () => {
+      expect(placed(statusAt(OUT_OF_VIEW))).toEqual(placed(statusAt(OUT_OF_VIEW, { statusAtField: false })));
+      expect(statusEl(statusAt(OUT_OF_VIEW)).style.top).toBe('752px');
+    });
+
+    it('with the option off it stays at the bottom centre, the frame 0 rule', () => {
+      const pill = statusAt(ANCHORS[0][1], { statusAtField: false });
+      expect(statusEl(pill).style.left).toBe('412px');
+      expect(statusEl(pill).style.top).toBe('752px');
+    });
+
+    it('is off by default', () => {
+      const { pill } = minimal();
+      pill.show(ANCHORS[0][1]);
+      statusEl(pill).getBoundingClientRect = STATUS_200;
+      pill.setStatus('Hello', { sticky: true });
+      expect(statusEl(pill).style.top).toBe('752px');
+    });
+
+    it('follows the field, and falls back when the field leaves the view', () => {
+      const pill = statusAt(ANCHORS[0][1]);
+      pill.reposition({ ...ANCHORS[0][1], top: 100 });
+      expect(statusEl(pill).style.top).toBe('136px');
+      pill.reposition(OUT_OF_VIEW);
+      expect(statusEl(pill).style.top).toBe('752px');
+    });
+
+    it('leaves the indicator at the bottom centre', () => {
+      const pill = statusAt(ANCHORS[0][1]);
+      pill.setState('recording');
+      expect(q(pill, '.mini').style.top).toBe(INDICATOR.top);
+      expect(q(pill, '.mini').style.left).toBe(INDICATOR.left);
+      expect(statusEl(pill).style.top).toBe('336px');
+    });
+
+    it('stays clickable', () => {
+      const h = handlers();
+      const pill = statusAt(ANCHORS[0][1], { h, status: { clickable: true } });
+      expect(statusEl(pill).hasAttribute('data-clickable')).toBe(true);
+      statusEl(pill).click();
+      expect(h.onStatusClick).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['pill', 'dot'])('%s does not change', (style) => {
+      const [, anchor] = ANCHORS[0];
+      expect(placed(statusAt(anchor, { style }))).toEqual(placed(statusAt(anchor, { style, statusAtField: false })));
+    });
+  });
+
   describe('a status in a short frame', () => {
     const { innerHeight } = window;
     const TALL = 58; // two lines
@@ -1384,11 +1472,29 @@ describe('sight', () => {
     expect(observers[0].disconnect).not.toHaveBeenCalled();
   });
 
-  it('threshold is SIGHT_THRESHOLD', () => {
+  it('threshold is SIGHT_THRESHOLD, and it tracks visibility as often as the browser allows', () => {
     const { pill } = watched();
     pill.setState('recording');
     expect(SIGHT_THRESHOLD).toBe(0.5);
-    expect(observers[0].options).toEqual({ threshold: SIGHT_THRESHOLD });
+    expect(SIGHT_DELAY_MS).toBe(100);
+    expect(observers[0].options).toEqual({ threshold: SIGHT_THRESHOLD, trackVisibility: true, delay: SIGHT_DELAY_MS });
+  });
+
+  it('in the viewport but reported not visible counts as out of sight', () => {
+    const { pill, onSight } = watched();
+    pill.setState('recording');
+    report({ ...entry(true), isVisible: false });
+    expect(onSight.mock.calls).toEqual([[false]]);
+    report({ ...entry(true), isVisible: true });
+    expect(onSight.mock.calls).toEqual([[false], [true]]);
+  });
+
+  it('a browser with no isVisible judges by the viewport alone', () => {
+    const { pill, onSight } = watched();
+    pill.setState('recording');
+    report(entry(false));
+    report(entry(true));
+    expect(onSight.mock.calls).toEqual([[false], [true]]);
   });
 
   it('reports only changes', () => {

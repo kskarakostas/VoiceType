@@ -27,6 +27,9 @@ export const MINI_SIZE = Object.freeze({ width: 92, height: 28 });
 /** Least share of the indicator in the top-level viewport that counts as seen. */
 export const SIGHT_THRESHOLD = 0.5;
 
+/** How often the browser may report on sight; visibility tracking refuses less than 100 ms. */
+export const SIGHT_DELAY_MS = 100;
+
 /** How long a non-sticky status stays, by tone. */
 export const STATUS_MS = Object.freeze({ error: 6000, warning: 6000, info: 2500, success: 2500 });
 
@@ -80,6 +83,7 @@ export class Pill {
   #handlers;
   #doc;
   #shadowMode;
+  #statusAtField;
   #els;
   #host = null;
   #root = null;
@@ -114,12 +118,15 @@ export class Pill {
 
   /**
    * @param {PillHandlers} handlers An empty object is only valid for a Minimal pill, which has no controls.
-   * @param {{ doc?: Document, shadowMode?: 'open'|'closed' }} [options] `open` is for tests only.
+   * @param {{ doc?: Document, shadowMode?: 'open'|'closed', statusAtField?: boolean }} [options] `open` is
+   *   for tests only. statusAtField: a Minimal status stands by the field, as the bottom of a frame can be
+   *   far out of the window.
    */
-  constructor(handlers, { doc = document, shadowMode = 'closed' } = {}) {
+  constructor(handlers, { doc = document, shadowMode = 'closed', statusAtField = false } = {}) {
     this.#handlers = handlers;
     this.#doc = doc;
     this.#shadowMode = shadowMode;
+    this.#statusAtField = statusAtField;
     this.#els = this.#build();
   }
 
@@ -361,7 +368,8 @@ export class Pill {
   /** @param {IntersectionObserverEntry[]} entries */
   #onSightEntries = (entries) => {
     const entry = entries.at(-1);
-    const seen = entry.isIntersecting && entry.intersectionRatio >= SIGHT_THRESHOLD;
+    // isVisible: a transparent, hidden or covered frame is in the viewport, and still out of sight.
+    const seen = entry.isIntersecting && entry.intersectionRatio >= SIGHT_THRESHOLD && entry.isVisible !== false;
     if (seen === this.#seen) return;
     this.#seen = seen;
     this.#handlers.onSight(seen);
@@ -385,7 +393,11 @@ export class Pill {
       return;
     }
     const win = this.#doc.defaultView;
-    this.#sightObserver = new win.IntersectionObserver(this.#onSightEntries, { threshold: SIGHT_THRESHOLD });
+    this.#sightObserver = new win.IntersectionObserver(this.#onSightEntries, {
+      threshold: SIGHT_THRESHOLD,
+      trackVisibility: true,
+      delay: SIGHT_DELAY_MS,
+    });
     this.#sightObserver.observe(target);
   }
 
@@ -503,14 +515,25 @@ export class Pill {
   }
 
   /**
+   * The box a pill would have at the field, for a Minimal status that stands there.
+   * @returns {(Box & { placement: string })|null} null with no field, or none in view: the bottom centre applies
+   */
+  #statusFieldBox() {
+    if (!this.#statusAtField || this.#style !== 'minimal' || !this.#anchor) return null;
+    const pos = computePillPosition({ anchor: this.#anchor, pill: PILL_SIZE, viewport: this.#viewport(), gap: this.#gap });
+    return pos.placement === 'hidden' ? null : { ...pos, ...PILL_SIZE };
+  }
+
+  /**
    * The status prefers the side opposite an open menu, else above for the above, corner and
    * minimal placements and below otherwise. Without room there it takes the other side, or past
    * the menu's far edge while the menu is open; failing that it is clamped into the viewport.
    * On Minimal it is centred, and with no indicator showing or reserved it takes the indicator's
    * place. A clamp there still keeps the bottom edge in a frame shorter than the status.
+   * A Minimal status with a field box follows the rule of the other styles against that box.
    */
   #placeStatus() {
-    const box = this.#box;
+    const box = this.#statusFieldBox() ?? this.#box;
     if (!box) return;
     const { status } = this.#els;
     const viewport = this.#viewport();
