@@ -206,3 +206,42 @@ Known limit: under a modal the indicator and statuses can be seen, not clicked. 
 |---|-----|-----|----------|--------|
 | 12.1 | M | Windows and macOS, if you ship there. | The hotkey, a dictation, the settings page. | |
 | 12.2 | M | Chrome 140 itself, if you can get one (runs were on 153 and 156). | Loads; `currentCSSZoom` and popovers exist. | |
+
+## Automated results (Atlas, 2026-11-04)
+
+Run on the real build at `9f8e607`, the last commit under `src/`. Later commits touch documents, the screenshots and their spec only. Headed in a nested X display with a real X clipboard, real audio output captured from a null sink, provider stubbed unless stated. Harnesses are in the session scratchpad, `smoke/`.
+
+| Gate | Chromium 153 | Chrome 156 |
+|---|---|---|
+| `npm test` | 1677/1677 | |
+| `npm run test:e2e` (headless) | 176/176 | |
+| `npm audit --omit=dev` | 0 vulnerabilities | |
+| L1 items | 9/9 | not run |
+| L2 items, with one live call per provider | 11/11 | not run |
+| L3 items, with a live refine (the hide-only menu item is superseded: Minimal has no menu, an e2e pins the rule) | 15/15, 1 skipped | not run |
+| L4 items, with real output and the real X clipboard | 35/35 | 35/35 |
+| L5 items | 119/119 | 119/119 |
+| L6 items (`run-l6.mjs`: L0 pages, the real popup, rollback, tab closed, late top page, top layer headed, undo, zoom) | 45/45 | 45/45 |
+| Real dialog libraries (Material Web, Bootstrap) | 7/7 | 7/7 |
+| Real speech, one take per case: OpenAI Email, OpenAI no rule, OpenAI Translate to Greek on a hidden site, Gemini no rule, Gemini Email | 5/5, headless | not run |
+
+On the OpenAI Email take the refined text ended with a stray non-Latin character from the model (`gpt-6-luna`), not from VoiceType.
+
+Rows 1.3 and 1.4 come from the probe below.
+
+## Packed upgrade
+
+Run with one signing key, Chromium 153 through a local update server. Chrome 156 refuses a self-packed crx, so its profile came from Chromium with the install location edited to the store's, and its own updater fetched the crx. Not a Web Store update.
+
+- The update turns VoiceType off until the user accepts. Update while running: no bubble; the toolbar icon goes; the menu button reads "Action required"; the menu's top item reads "VoiceType - BYOK Speech to Text is disabled"; its bubble says "To re-enable it, accept the new permissions: Modify data you copy and paste", with Remove and Accept permissions.
+- Update applied at browser start: the same bubble opens by itself.
+- Keys, modes and active mode unchanged; terms in `dictionary.any`; `settingsVersion` 3.
+- While off, an open page keeps its 2.2 pill; a press does not record and shows "VoiceType was turned off or updated. Reload this page."
+- After accepting: one host, the hotkey records, with no reload, on open tabs and on tabs loaded while off.
+- 2.2 keeps its offscreen document, and with one recording in the session the update waited for the next browser start (one run).
+
+An unpacked build, which is how the README installs, asks nothing. Your own check, if you ever ship to the store: a real store update.
+
+## What stays manual
+
+Rows marked M: 0.1, 2.7, 2.10b, 2.14, 4.8, 4.11, 5.6b, 5.9b, 6.8 to 6.12, 6.14, 7.6, 7.9, 9.8, 9.9, 10.4, 11.2b, 12.1, 12.2. That is real speakers and a real microphone, Bluetooth, real Google Docs, real Excel, an IME, two real OS windows, a screen reader, forced colours by eye, a real physical keyboard, your real sites and profile, the Web Store, a real prerender, Windows and macOS, Chrome 140.
