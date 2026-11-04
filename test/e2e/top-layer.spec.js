@@ -165,6 +165,17 @@ const activeElement = (page) => page.evaluate(() => {
 const hostOpen = (page) => page.evaluate(() => document.querySelector('voicetype-host').matches(':popover-open'));
 
 /**
+ * What a page can do from its own world: every host out of the document.
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<number>} how many there were
+ */
+const removeHosts = (page) => page.evaluate(() => {
+  const hosts = document.querySelectorAll('voicetype-host');
+  for (const host of hosts) host.remove();
+  return hosts.length;
+});
+
+/**
  * The cover paints and stays open, and raises move no focus.
  * @param {import('@playwright/test').Page} page
  * @param {keyof typeof COVERS} cover
@@ -296,6 +307,63 @@ test('a page calling hidePopover() on the host loses it for one tick', async () 
   await pollRed(page);
 
   await page.evaluate(() => document.querySelector('voicetype-host').hidePopover());
+
+  await pollRed(page, RAISE_BACK_MS);
+  expect(await hostOpen(page)).toBe(true);
+});
+
+for (const style of ['dot', 'minimal']) {
+  test(`a page removing the host brings it back and the hotkey still stops, ${style}`, async () => {
+    await seedStyle(style);
+    const page = await openPage();
+    const field = page.locator('#ta');
+    await focusFor(style, page, field);
+    await startWithHotkey(page, page, { indicator: recordingMark(style) });
+    await pollRed(page);
+    await page.waitForTimeout(RECORD_MS);
+
+    expect(await removeHosts(page)).toBe(1);
+
+    await pollRed(page, RAISE_BACK_MS);
+    expect(await hostOpen(page)).toBe(true);
+    await page.keyboard.press(HOTKEY);
+    await expect(field).toHaveValue(TRANSCRIPT);
+  });
+
+  test(`a page removing the mirror's host brings it back and the hotkey still stops, ${style}`, async () => {
+    await seedStyle(style);
+    const page = await openPage();
+    const frame = await frameAt(page, CROSS_ORIGIN_FRAME);
+    const field = frame.locator('#frame-ta');
+    await focusFor(style, frame, field);
+    await startWithHotkey(page, frame, { indicator: recordingMark(style) });
+    await page.evaluate(() => {
+      for (const iframe of document.querySelectorAll('iframe')) iframe.style.opacity = '0';
+    });
+    await expect.poll(async () => (await mirrorQuery(page, MINI)) !== null, { message: 'mirror shown' }).toBe(true);
+    await pollRed(page);
+    await page.waitForTimeout(RECORD_MS);
+
+    expect(await removeHosts(page)).toBeGreaterThan(0);
+
+    await pollRed(page, RAISE_BACK_MS);
+    await page.keyboard.press(HOTKEY);
+    await expect(field).toHaveValue(TRANSCRIPT);
+  });
+}
+
+test('a page replacing the root element brings the host back', async () => {
+  await seedStyle('minimal');
+  const page = await openPage();
+  await page.locator('#ta').click();
+  await startWithHotkey(page, page, { indicator: MINI });
+  await pollRed(page);
+
+  await page.evaluate(() => {
+    const root = document.createElement('html');
+    root.append(document.createElement('body'));
+    document.documentElement.replaceWith(root);
+  });
 
   await pollRed(page, RAISE_BACK_MS);
   expect(await hostOpen(page)).toBe(true);

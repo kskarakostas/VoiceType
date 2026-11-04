@@ -1799,6 +1799,64 @@ describe('top layer', () => {
     expect(show).toHaveBeenCalledTimes(1);
   });
 
+  it('puts a host the page removed back before it raises', () => {
+    const { pill, hide, show } = withPopover();
+    pill.show(FIELD);
+    pill.setState('recording');
+    hide.mockClear();
+    hide.mockImplementation(() => expect(pill.host.isConnected).toBe(true));
+    show.mockClear();
+    pill.host.remove();
+    vi.advanceTimersByTime(RAISE_MS);
+    expect(pill.host.parentNode).toBe(document.documentElement);
+    expect(hide).toHaveBeenCalledTimes(1);
+    expect(show).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts the host on a root the page replaced', () => {
+    const { pill } = withPopover();
+    pill.show(FIELD);
+    const root = document.documentElement;
+    try {
+      const next = document.createElement('html');
+      root.replaceWith(next);
+      pill.setState('recording');
+      expect(pill.host.parentNode).toBe(next);
+    } finally {
+      document.documentElement.replaceWith(root);
+      pill.destroy();
+    }
+  });
+
+  it('leaves a connected host where it is', () => {
+    const { pill } = withPopover();
+    pill.show(FIELD);
+    const after = document.createElement('div');
+    document.documentElement.append(after);
+    pill.setState('recording');
+    expect(pill.host.nextSibling).toBe(after);
+    after.remove();
+  });
+
+  it('a page with no root leaves the raise running', () => {
+    const { pill, show } = withPopover();
+    pill.show(FIELD);
+    pill.setState('recording');
+    show.mockClear();
+    pill.host.remove();
+    const root = document.documentElement;
+    root.remove();
+    try {
+      vi.advanceTimersByTime(RAISE_MS);
+      document.append(root);
+      vi.advanceTimersByTime(RAISE_MS);
+      expect(pill.host.isConnected).toBe(true);
+    } finally {
+      if (!root.isConnected) document.append(root);
+      pill.destroy();
+    }
+  });
+
   it('raise does nothing with no host', () => {
     const h = { ...handlers(), onRaised: vi.fn() };
     const pill = new Pill(h, { shadowMode: 'open' });

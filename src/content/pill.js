@@ -213,10 +213,12 @@ export class Pill {
   raise() {
     if (!this.#host || this.#destroyed) return;
     try {
+      // A page can take the host out or replace the root under a recording.
+      if (!this.#host.isConnected) this.#doc.documentElement?.append(this.#host);
       this.#host.hidePopover();
       this.#host.showPopover();
     } catch {
-      // A page can take the host out or refuse the show; z-index still holds against all but the top layer.
+      // A page can leave no root or refuse the show; z-index still holds against all but the top layer.
     }
     if (this.#cancelZoom()) this.#replace();
     this.#handlers.onRaised?.();
