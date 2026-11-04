@@ -481,7 +481,7 @@ describe('a frame out of sight', () => {
     await loadInstance();
     await record();
     expect(observers).toHaveLength(1);
-    observers[0].callback([{ isIntersecting: false, intersectionRatio: 0 }]);
+    observers[0].callback([{ isIntersecting: false }]);
     await flush();
     expect(t.chrome.runtime.sendMessage).toHaveBeenCalledWith({ action: MSG.FRAME_SIGHT, seen: false });
   });

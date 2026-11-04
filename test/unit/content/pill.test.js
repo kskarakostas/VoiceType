@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Pill, PILL_SIZE, MINI_SIZE, SIGHT_THRESHOLD, SIGHT_DELAY_MS, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
+import { Pill, PILL_SIZE, MINI_SIZE, SIGHT_DELAY_MS, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
 import { computePillPosition, EDGE } from '../../../src/content/position.js';
 
 // A path, not a URL literal: jsdom replaces the global URL, and the web transform rewrites
@@ -1398,7 +1398,7 @@ describe('sight', () => {
     }
   }
 
-  const entry = (seen, ratio = seen ? 1 : 0) => ({ isIntersecting: seen, intersectionRatio: ratio });
+  const entry = (seen) => ({ isIntersecting: seen });
   const report = (...entries) => observers.at(-1).callback(entries);
 
   function watched() {
@@ -1447,12 +1447,12 @@ describe('sight', () => {
   it('watches the element that shows', () => {
     const { pill } = watched();
     pill.setState('recording');
-    expect(observers[0].targets).toEqual([q(pill, '.pill')]);
+    expect(observers[0].targets).toEqual([q(pill, '.pill .sight')]);
     pill.setStyle('minimal');
     expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
-    expect(observers[1].targets).toEqual([q(pill, '.mini')]);
+    expect(observers[1].targets).toEqual([q(pill, '.mini .sight')]);
     pill.setStyle('pill');
-    expect(observers[2].targets).toEqual([q(pill, '.pill')]);
+    expect(observers[2].targets).toEqual([q(pill, '.pill .sight')]);
   });
 
   it('starts on .mini when Minimal is set first', () => {
@@ -1460,7 +1460,7 @@ describe('sight', () => {
     pill.setStyle('minimal');
     expect(observers).toEqual([]);
     pill.setState('recording');
-    expect(observers[0].targets).toEqual([q(pill, '.mini')]);
+    expect(observers[0].targets).toEqual([q(pill, '.mini .sight')]);
   });
 
   it('keeps its observer when a style change leaves the same element', () => {
@@ -1472,12 +1472,11 @@ describe('sight', () => {
     expect(observers[0].disconnect).not.toHaveBeenCalled();
   });
 
-  it('threshold is SIGHT_THRESHOLD, and it tracks visibility as often as the browser allows', () => {
+  it('tracks visibility as often as the browser allows', () => {
     const { pill } = watched();
     pill.setState('recording');
-    expect(SIGHT_THRESHOLD).toBe(0.5);
     expect(SIGHT_DELAY_MS).toBe(100);
-    expect(observers[0].options).toEqual({ threshold: SIGHT_THRESHOLD, trackVisibility: true, delay: SIGHT_DELAY_MS });
+    expect(observers[0].options).toEqual({ trackVisibility: true, delay: SIGHT_DELAY_MS });
   });
 
   it('in the viewport but reported not visible counts as out of sight', () => {
@@ -1513,13 +1512,21 @@ describe('sight', () => {
     expect(onSight.mock.calls).toEqual([[false]]);
   });
 
-  it('counts an element under the threshold as out of sight', () => {
-    const { pill, onSight } = watched();
-    pill.setState('recording');
-    report(entry(true, SIGHT_THRESHOLD - 0.01));
-    expect(onSight.mock.calls).toEqual([[false]]);
-    report(entry(true, SIGHT_THRESHOLD));
-    expect(onSight.mock.calls).toEqual([[false], [true]]);
+  it.each(['.pill', '.mini'])('the sight point is the last child of %s, hidden from assistive tech', (selector) => {
+    const { pill } = makePill();
+    pill.mount();
+    const sight = q(pill, `${selector} > .sight`);
+    expect(sight).toBe(q(pill, selector).lastElementChild);
+    expect(sight.tagName).toBe('SPAN');
+    expect(sight.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('the sight point is a transparent pixel at the centre that takes no click and no room', () => {
+    const rule = CSS_TEXT.match(/\.sight \{[^}]*\}/)[0];
+    for (const declaration of ['position: absolute', 'top: 50%', 'left: 50%', 'width: 1px', 'height: 1px', 'pointer-events: none']) {
+      expect(rule).toContain(declaration);
+    }
+    expect(rule).not.toMatch(/opacity|background|visibility/);
   });
 
   it('a new recording starts from seen', () => {

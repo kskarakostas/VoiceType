@@ -24,9 +24,6 @@ export const PILL_SIZE = Object.freeze({ width: 140, height: 30 });
 /** Size of the Minimal indicator; `.mini` in pill.css has the same width and height. */
 export const MINI_SIZE = Object.freeze({ width: 92, height: 28 });
 
-/** Least share of the indicator in the top-level viewport that counts as seen. */
-export const SIGHT_THRESHOLD = 0.5;
-
 /** How often the browser may report on sight; visibility tracking refuses less than 100 ms. */
 export const SIGHT_DELAY_MS = 100;
 
@@ -369,7 +366,7 @@ export class Pill {
   #onSightEntries = (entries) => {
     const entry = entries.at(-1);
     // isVisible: a transparent, hidden or covered frame is in the viewport, and still out of sight.
-    const seen = entry.isIntersecting && entry.intersectionRatio >= SIGHT_THRESHOLD && entry.isVisible !== false;
+    const seen = entry.isIntersecting && entry.isVisible !== false;
     if (seen === this.#seen) return;
     this.#seen = seen;
     this.#handlers.onSight(seen);
@@ -378,11 +375,13 @@ export class Pill {
   /**
    * Watch the indicator that shows, for recording and processing only: statuses stay in the frame.
    * This asks the browser, as `visible` cannot: it holds in Minimal for a done or error with no status.
+   * The target is the indicator's centre: the browser's cover test counts any box shadow, a page's or
+   * our own menu's, so the whole indicator would read as covered with a shadow on its edge.
    */
   #syncSight() {
     const live = this.#state === 'recording' || this.#state === 'processing';
-    const { pill, mini } = this.#els;
-    const showing = this.#style === 'minimal' ? mini : pill;
+    const { pillSight, miniSight } = this.#els;
+    const showing = this.#style === 'minimal' ? miniSight : pillSight;
     const target = live && this.#handlers.onSight ? showing : null;
     if (target === this.#sightTarget) return;
     this.#sightTarget = target;
@@ -394,7 +393,6 @@ export class Pill {
     }
     const win = this.#doc.defaultView;
     this.#sightObserver = new win.IntersectionObserver(this.#onSightEntries, {
-      threshold: SIGHT_THRESHOLD,
       trackVisibility: true,
       delay: SIGHT_DELAY_MS,
     });
@@ -611,7 +609,8 @@ export class Pill {
     more.append(this.#icon('dots'));
     bar.append(mode, el('span', 'sep', { 'aria-hidden': 'true' }), rec, el('span', 'sep', { 'aria-hidden': 'true' }), more);
     body.append(dot, bar);
-    pill.append(body);
+    const pillSight = el('span', 'sight', { 'aria-hidden': 'true' });
+    pill.append(body, pillSight);
 
     const status = el('div', 'status', { role: 'status', 'aria-live': 'polite', 'data-empty': '' });
     status.dataset.tone = 'info';
@@ -628,7 +627,8 @@ export class Pill {
     const levels = el('span', 'levels', { 'aria-hidden': 'true' });
     levels.append(el('span', 'lvl'), el('span', 'lvl'), el('span', 'lvl'), el('span', 'lvl'));
     const miniTime = el('span', 'mini-time', { 'aria-hidden': 'true' });
-    mini.append(levels, this.#icon('dots', 'mini-dots'), miniTime);
+    const miniSight = el('span', 'sight', { 'aria-hidden': 'true' });
+    mini.append(levels, this.#icon('dots', 'mini-dots'), miniTime, miniSight);
 
     wrap.append(pill, status, mini, menu);
 
@@ -648,7 +648,7 @@ export class Pill {
       else if (lang !== undefined) this.#handlers.onTargetLang(lang);
     });
 
-    return { wrap, pill, mini, miniTime, mode, modeIcon, rec, recIcon, recLabel, more, status, statusIcon, statusText, menu };
+    return { wrap, pill, pillSight, mini, miniSight, miniTime, mode, modeIcon, rec, recIcon, recLabel, more, status, statusIcon, statusText, menu };
   }
 
   /**

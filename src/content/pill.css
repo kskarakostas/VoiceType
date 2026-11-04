@@ -170,6 +170,18 @@ button:focus-visible {
   box-shadow: var(--vt-shadow);
 }
 
+/* What the sight observer watches: the indicator's centre. Transparent, not opacity 0, which the
+   browser's cover test skips. The z-index keeps it above the status and menu shadows. */
+.sight {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
 /* Collapsed: a 16 px dot inside a 24 px target. No overflow clipping: it would cut the dot's shadow into a square. */
 .dot {
   display: grid;

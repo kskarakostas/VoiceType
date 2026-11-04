@@ -26,6 +26,8 @@ const TALL_FRAME_SITES = [
   ['Minimal', { pillStyle: 'minimal' }],
   ['a hidden site', { siteRules: { localhost: HIDE_ONLY } }],
 ];
+/** Reaches into the 30 px pill and stops short of its centre. */
+const EDGE_SHADOW_PX = 10;
 /** Longer than the sight observer's delay, or a flip would go unreported. */
 const FLIP_BEAT_MS = 200;
 const OVERLAY = 'position: fixed; inset: 0; z-index: 2147483646; background: #fff;';
@@ -652,6 +654,25 @@ function expectInTallViewport(box) {
   expect(box.x + box.width / 2).toBeLessThanOrEqual(TALL_VIEWPORT.width);
 }
 
+test('mirror, same-origin: a page shadow over the edge of the pill is no cover', async () => {
+  const [, url, selector] = FRAMES[0];
+  const { page, frame } = await recordInFrame({ url, selector });
+  const slot = await pillQuery(frame, '.pill');
+  const sight = await pillQuery(frame, '.pill .sight');
+  expect([sight.width, sight.height]).toEqual([1, 1]);
+  expect(Math.abs(sight.x - slot.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(sight.y - slot.y)).toBeLessThanOrEqual(1);
+
+  await page.evaluate(({ left, top, width, spread }) => {
+    const header = document.createElement('div');
+    header.style.cssText = `position: fixed; left: ${left}px; top: ${top}px; width: ${width}px; height: 2px;`
+      + `z-index: 1; box-shadow: 0 0 0 ${spread}px rgb(0 0 0 / 0.2);`;
+    document.body.append(header);
+  }, { left: slot.x - slot.width / 2, top: slot.y - slot.height / 2 - 2, width: slot.width, spread: EDGE_SHADOW_PX });
+
+  await expectNoMirrorFor(page, 1000);
+});
+
 for (const [name, url, selector] of FRAMES) {
   test(`mirror, ${name}: no mirror while the frame pill is in view`, async () => {
     const { page } = await recordInFrame({ url, selector });
@@ -765,6 +786,18 @@ for (const [name, url, selector] of FRAMES) {
       await waitForPill(frame, STOP);
     });
   }
+
+  test(`mirror, ${name}: an open menu is no cover`, async () => {
+    const page = await openPage();
+    const frame = await frameAt(page, url);
+    await focusField(frame, frame.locator('#frame-ta'));
+    await startWithHotkey(page, frame);
+
+    await clickPill(frame, 'button.mode');
+
+    await waitForPill(frame, '.menu');
+    await expectNoMirrorFor(page, 1000);
+  });
 
   for (const [site, overrides] of TALL_FRAME_SITES) {
     test(`a tall ${name} frame on ${site}: a refusal shows by the field`, async () => {
