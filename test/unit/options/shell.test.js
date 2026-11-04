@@ -11,7 +11,6 @@ import { freshSettings } from '../../../src/shared/defaults.js';
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/options/options.html'), 'utf8');
 const LOAD_ERROR = 'Could not load settings. Reload this page.';
 const NOT_LOADED = 'Settings are not loaded. Nothing was saved.';
-const PLACEHOLDER = 'Coming in a later update.';
 
 function storedSettings() {
   const s = freshSettings();
@@ -141,11 +140,9 @@ describe('settings page shell', () => {
     );
   });
 
-  it('later-lane pages show their placeholder', async () => {
+  it('no page shows a placeholder', async () => {
     await start(fakeChrome());
-    const text = (id) => [...document.querySelectorAll(`section[data-route="${id}"] .placeholder`)].map((p) => p.textContent.trim());
-    for (const id of ['settings/appearance']) expect(text(id), id).toEqual([PLACEHOLDER]);
-    for (const id of ['home', 'modes', 'dictionary', 'settings/provider', 'settings/recording', 'settings/speech', 'settings/sites', 'settings/sound', 'settings/usage']) expect(text(id), id).toEqual([]);
+    expect(document.querySelector('.placeholder')).toBeNull();
   });
 
   it('the footer shows the version and the byline', async () => {

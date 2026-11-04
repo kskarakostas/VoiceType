@@ -228,7 +228,7 @@
         <section data-route="settings/sites" aria-labelledby="h-settings-sites" hidden>
           <h1 id="h-settings-sites" tabindex="-1">Sites</h1>
           <div class="card site-card">
-            <p class="hint site-hint">Hide pill removes the idle pill on that site; the hotkey still records there.</p>
+            <p class="hint site-hint">Hide pill removes the idle pill on that site; the hotkey still records there, with a small indicator at the bottom of the page.</p>
             <form class="site-add" id="site-add">
               <div class="field">
                 <label class="field-label" for="site-add-host">Add site</label>
@@ -257,7 +257,29 @@
 
         <section data-route="settings/appearance" aria-labelledby="h-settings-appearance" hidden>
           <h1 id="h-settings-appearance" tabindex="-1">Appearance</h1>
-          <p class="placeholder">Coming in a later update.</p>
+          <div class="card">
+            <div class="style-grid" role="radiogroup" aria-labelledby="h-settings-appearance">
+              <label class="style-card">
+                <input type="radio" name="pill-style" value="pill">
+                <span class="style-preview" aria-hidden="true"><span class="preview-field"></span><span class="preview-bar"></span></span>
+                <span class="style-name">Pill</span>
+                <span class="hint">The full bar beside the field, always in view.</span>
+              </label>
+              <label class="style-card">
+                <input type="radio" name="pill-style" value="dot">
+                <span class="style-preview" aria-hidden="true"><span class="preview-field"></span><span class="preview-dot"></span></span>
+                <span class="style-name">Dot <span class="tag">Default</span></span>
+                <span class="hint">A small dot beside the field. It opens into the bar when you point at it.</span>
+              </label>
+              <label class="style-card">
+                <input type="radio" name="pill-style" value="minimal">
+                <span class="style-preview" aria-hidden="true"><span class="preview-field"></span><span class="preview-mini"></span></span>
+                <span class="style-name">Minimal</span>
+                <span class="hint">Nothing until you record, then a small indicator at the bottom of the page. Start and stop with the hotkey. There is no menu on the page; change settings here or in the toolbar popup.</span>
+              </label>
+            </div>
+            <p class="hint">Sites with Hide pill use Minimal.</p>
+          </div>
         </section>
 
         <section data-route="settings/sound" aria-labelledby="h-settings-sound" hidden>

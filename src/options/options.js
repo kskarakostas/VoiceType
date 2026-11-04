@@ -10,6 +10,7 @@ import { createSpeechSection } from './sections/speech.js';
 import { createModesSection } from './sections/modes.js';
 import { createDictionarySection } from './sections/dictionary.js';
 import { createSitesSection } from './sections/sites.js';
+import { createAppearanceSection } from './sections/appearance.js';
 import { createSoundSection } from './sections/sound.js';
 import { createUsageSection } from './sections/usage.js';
 import { createHomeSection } from './sections/home.js';
@@ -46,7 +47,7 @@ const LOAD_ERROR = 'Could not load settings. Reload this page.';
  */
 const SECTIONS = Object.freeze([
   createHomeSection, createProviderSection, createRecordingSection, createSpeechSection, createModesSection,
-  createDictionarySection, createSitesSection, createSoundSection, createUsageSection,
+  createDictionarySection, createSitesSection, createAppearanceSection, createSoundSection, createUsageSection,
 ]);
 
 /**
