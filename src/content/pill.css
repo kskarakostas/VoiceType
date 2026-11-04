@@ -608,6 +608,12 @@ button:focus-visible {
   outline-color: var(--vt-on-accent);
 }
 
+.chip-action {
+  flex: 1 1 auto;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+
 .chip-hint {
   color: var(--vt-muted);
   font-size: 11px;

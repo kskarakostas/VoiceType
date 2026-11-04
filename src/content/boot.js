@@ -5,7 +5,7 @@ import { MSG } from '../shared/messages.js';
 import { DEFAULT_SETTINGS } from '../shared/defaults.js';
 import { isValidChord, matchesChord } from '../shared/chord.js';
 import { isValidInput, deepActiveElement } from './fields.js';
-import { insertText, copyText } from './insert.js';
+import { insertText, copyText, markInsertion, replaceInsertion } from './insert.js';
 import { watchAnchor } from './anchor.js';
 import { createChordTracker } from './hotkey.js';
 import { Pill } from './pill.js';
@@ -34,11 +34,12 @@ export function boot({
   const pill = new Pill({
     onRec: () => { controller.toggle(); },
     onStatusClick: () => { controller.copyLast(); },
-    onMenuOpen: () => { loadSettings({ withUsage: true }); },
+    onMenuOpen: () => { loadSettings({ forMenu: true }); },
     onMode: (key) => { controller.chooseMode(key); },
     onUseActive: () => { controller.useActiveMode(); },
     onProvider: (id) => { controller.choose({ provider: id }); },
     onTargetLang: (lang) => { controller.choose({ translateTargetLang: lang }); },
+    onHistory: (action) => { controller.historyAction(action); },
     // The later raise paints on top, so no status hides the mirror.
     onRaised: () => { mirror.raise(); },
     onZoom: () => { controller.refreshAnchor(); },
@@ -58,6 +59,8 @@ export function boot({
     send,
     insertText,
     copyText,
+    markInsertion,
+    replaceInsertion,
     isValidInput,
     deepActiveElement: () => deepActiveElement(document),
     rectOf,
@@ -109,14 +112,17 @@ export function boot({
     if (settings && typeof settings === 'object' && isValidChord(settings.hotkey)) chord = settings.hotkey;
   }
 
-  async function loadSettings({ withUsage = false } = {}) {
-    const [settings, usage] = await Promise.all([
+  async function loadSettings({ forMenu = false } = {}) {
+    const [settings, usage, last] = await Promise.all([
       send({ action: MSG.GET_SETTINGS }),
-      withUsage ? send({ action: MSG.GET_USAGE }) : null,
+      forMenu ? send({ action: MSG.GET_USAGE }) : null,
+      forMenu ? send({ action: MSG.GET_LAST_DICTATION }) : null,
     ]);
     trackHotkey(settings);
     controller.setSettings(settings);
-    if (withUsage) controller.setUsage(usage);
+    if (!forMenu) return;
+    controller.setUsage(usage);
+    controller.setRecent(last?.entry ?? null);
   }
 
   function onFocusIn(event) {

@@ -7,6 +7,7 @@ import { TARGET_LANGUAGES, orderedModeKeys } from '../shared/defaults.js';
 /**
  * @typedef {import('../shared/messages.js').ContentSettings} ContentSettings
  * @typedef {import('./pill.js').PillUsage} PillUsage
+ * @typedef {import('./pill.js').PillRecent} PillRecent
  * @typedef {{ el: (tag: string, className?: string, attrs?: Record<string, string>) => HTMLElement,
  *   icon: (name: string, className?: string) => SVGSVGElement, doc: Document }} MenuHelpers
  */
@@ -23,13 +24,16 @@ function isMac(win) {
 /**
  * @param {MenuHelpers} helpers
  * @param {{ modes: Record<string, any>, active: string, marked: boolean, activeMode: Record<string, any>|null,
- *   settings: ContentSettings, usage: PillUsage|null }} input
+ *   settings: ContentSettings, usage: PillUsage|null, recent: PillRecent|null }} input
  * @returns {Element[]}
  */
-export function buildMenuSections(helpers, { modes, active, marked, activeMode, settings, usage }) {
+export function buildMenuSections(helpers, { modes, active, marked, activeMode, settings, usage, recent }) {
   const sections = [modesSection(helpers, modes, active, marked)];
   if (activeMode?.hasLanguageOption) sections.push(translateSection(helpers, settings.translateTargetLang));
-  sections.push(providerSection(helpers, settings), footerSection(helpers, settings, usage));
+  sections.push(providerSection(helpers, settings));
+  // Below the settings: it arrives after the menu opens and must not move one under the pointer.
+  if (recent) sections.push(recentSection(helpers, recent));
+  sections.push(footerSection(helpers, settings, usage));
   return sections;
 }
 
@@ -107,6 +111,26 @@ function providerSection(helpers, settings) {
       hint.textContent = 'no key';
       chip.append(hint);
     }
+    row.append(chip);
+  }
+  section.append(row);
+  return section;
+}
+
+/**
+ * @param {MenuHelpers} helpers
+ * @param {PillRecent} recent
+ */
+function recentSection(helpers, { refined }) {
+  const { el } = helpers;
+  const section = titledSection(helpers, 'Last dictation');
+  const row = el('div', 'seg', { role: 'group', 'aria-label': 'Last dictation' });
+  const actions = [['insert', 'Insert'], ['copy', 'Copy']];
+  if (refined) actions.push(['undo', 'Undo AI edit']);
+  for (const [action, name] of actions) {
+    const chip = el('button', 'chip chip-action', { type: 'button' });
+    chip.dataset.history = action;
+    chip.textContent = name;
     row.append(chip);
   }
   section.append(row);

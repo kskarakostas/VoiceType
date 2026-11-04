@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  insertText, copyText, readValue, normalizeForCompare, CLIPBOARD_ONLY_HOSTS, WRITE_LIMIT_MS,
+  insertText, copyText, readValue, normalizeForCompare, markInsertion, replaceInsertion, CLIPBOARD_ONLY_HOSTS, WRITE_LIMIT_MS,
 } from '../../../src/content/insert.js';
 
 // jsdom has no execCommand, DataTransfer or ClipboardEvent, and every event a script
@@ -597,6 +597,106 @@ describe('insertText guards', () => {
     const added = add.mock.calls.find(([type]) => type === 'input');
     expect(added[2]).toBe(true);
     expect(remove).toHaveBeenCalledWith('input', added[1], true);
+  });
+});
+
+describe('markInsertion', () => {
+  it('reads the offsets after an insert in a textarea', async () => {
+    const el = textarea('Hello  there', 6);
+    await insertText(el, 'world', deps({ execCommand: formExec }));
+    expect(markInsertion(el, 'world')).toEqual({ start: 6, end: 11 });
+  });
+
+  it('reads them when the setter rung inserted', async () => {
+    const el = textarea('ab', 1);
+    await insertText(el, 'X', deps({ execCommand: () => false }));
+    expect(markInsertion(el, 'X')).toEqual({ start: 1, end: 2 });
+  });
+
+  it('is null for an input with no selection support', async () => {
+    document.body.innerHTML = '<input id="mail" type="email">';
+    const el = document.getElementById('mail');
+    el.focus();
+    await insertText(el, 'a@b.c', deps({ execCommand: () => false }));
+    expect(el.value).toBe('a@b.c');
+    expect(markInsertion(el, 'a@b.c')).toBeNull();
+  });
+
+  it('is null for a contenteditable', () => {
+    const el = editable('world');
+    expect(markInsertion(el, 'world')).toBeNull();
+  });
+
+  it('is null when the page changed the text as it went in', () => {
+    const el = textarea('WORLD', 5);
+    expect(markInsertion(el, 'world')).toBeNull();
+  });
+
+  it('is null when the caret is not at the end of the text', () => {
+    const el = textarea('world', 2);
+    expect(markInsertion(el, 'world')).toBeNull();
+  });
+});
+
+describe('replaceInsertion', () => {
+  const MARK = { start: 6, end: 13 };
+
+  it('puts raw in place of the exact text, keeping what is around it', async () => {
+    const el = textarea('Hello refined there', 19);
+    const d = deps({ execCommand: formExec });
+    expect(await replaceInsertion(el, MARK, 'refined', 'raw words', d)).toBe('inserted');
+    expect(el.value).toBe('Hello raw words there');
+    expect(d.writeClipboard).not.toHaveBeenCalled();
+  });
+
+  it('selects the offsets before the ladder runs, so execCommand replaces them', async () => {
+    const el = textarea('Hello refined', 2);
+    const seen = [];
+    const d = deps({ execCommand: (text) => { seen.push([el.selectionStart, el.selectionEnd]); return formExec(text); } });
+    await replaceInsertion(el, MARK, 'refined', 'raw', d);
+    expect(seen).toEqual([[6, 13]]);
+  });
+
+  it('works when raw holds the text, which no count can tell from a second insert', async () => {
+    const el = textarea('refined', 7);
+    const d = deps({ execCommand: formExec });
+    expect(await replaceInsertion(el, { start: 0, end: 7 }, 'refined', 'refined text', d)).toBe('inserted');
+    expect(el.value).toBe('refined text');
+  });
+
+  it('is null when the text moved', async () => {
+    const el = textarea('typed Hello refined', 0);
+    const d = deps({ execCommand: formExec });
+    expect(await replaceInsertion(el, MARK, 'refined', 'raw', d)).toBeNull();
+    expect(el.value).toBe('typed Hello refined');
+    expect(d.writeClipboard).not.toHaveBeenCalled();
+  });
+
+  it('is null when the field holds other text there', async () => {
+    const el = textarea('Hello refinEd', 0);
+    const d = deps({ execCommand: formExec });
+    expect(await replaceInsertion(el, MARK, 'refined', 'raw', d)).toBeNull();
+    expect(el.value).toBe('Hello refinEd');
+  });
+
+  it('never leaves the selection moved when it refuses', async () => {
+    const el = textarea('other text here', 3);
+    await replaceInsertion(el, MARK, 'refined', 'raw', deps({ execCommand: formExec }));
+    expect([el.selectionStart, el.selectionEnd]).toEqual([3, 3]);
+  });
+
+  it('is null for a field with no selection support', async () => {
+    document.body.innerHTML = '<input id="mail" type="email" value="Hello refined">';
+    const el = document.getElementById('mail');
+    el.focus();
+    expect(await replaceInsertion(el, MARK, 'refined', 'raw', deps({ execCommand: formExec }))).toBeNull();
+    expect(el.value).toBe('Hello refined');
+  });
+
+  it('is null for a contenteditable, whatever it reads at the offsets', async () => {
+    const el = editable('Hello refined');
+    expect(await replaceInsertion(el, MARK, 'refined', 'raw', deps())).toBeNull();
+    expect(el.textContent).toBe('Hello refined');
   });
 });
 

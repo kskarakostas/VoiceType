@@ -34,6 +34,7 @@ function reply(message) {
   switch (message.action) {
     case MSG.GET_SETTINGS: return structuredClone(SETTINGS);
     case MSG.GET_USAGE: return structuredClone(USAGE);
+    case MSG.GET_LAST_DICTATION: return { entry: null };
     case MSG.UPDATE_SETTINGS: return { success: true };
     default: return { ok: true };
   }
@@ -300,7 +301,7 @@ describe('orphan detection', () => {
 });
 
 describe('wiring', () => {
-  it('loads settings at start and refetches settings and usage when the menu opens', async () => {
+  it('loads settings at start and refetches settings, usage and the last dictation when the menu opens', async () => {
     const t = installChrome();
     document.getElementById('field').focus();
     await loadInstance();
@@ -308,8 +309,45 @@ describe('wiring', () => {
     expect(shadow().querySelector('.mode-icon').textContent).toBe('🎤');
     shadow().querySelector('.more').click();
     await flush();
-    expect(t.sent()).toEqual([MSG.GET_SETTINGS, MSG.GET_SETTINGS, MSG.GET_USAGE]);
+    expect(t.sent()).toEqual([MSG.GET_SETTINGS, MSG.GET_SETTINGS, MSG.GET_USAGE, MSG.GET_LAST_DICTATION]);
     expect(shadow().querySelector('.usage').textContent).toBe('Today $0.01 (2), all time $0.50');
+    expect(shadow().querySelector('[data-history]')).toBeNull();
+  });
+
+  it('shows the last dictation from the reply, and a click reaches the controller', async ({ onTestFinished }) => {
+    onTestFinished(() => vi.unstubAllGlobals());
+    const copied = vi.fn(async () => {});
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: copied } });
+    installChrome((message) => (message.action === MSG.GET_LAST_DICTATION ? { entry: { raw: 'raw', text: 'refined' } } : reply(message)));
+    document.getElementById('field').focus();
+    await loadInstance();
+    shadow().querySelector('.more').click();
+    await flush();
+    expect(shadow().querySelector('[data-history="undo"]')).not.toBeNull();
+    shadow().querySelector('[data-history="copy"]').click();
+    await flush();
+    expect(copied).toHaveBeenCalledWith('refined');
+  });
+
+  it('a menu whose reply is lost shows no last dictation', async () => {
+    let lost = false;
+    installChrome((message) => {
+      if (message.action !== MSG.GET_LAST_DICTATION) return reply(message);
+      if (lost) throw new Error('gone');
+      return { entry: { raw: 'raw', text: 'text' } };
+    });
+    document.getElementById('field').focus();
+    await loadInstance();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    shadow().querySelector('.more').click();
+    await flush();
+    expect(shadow().querySelector('[data-history]')).not.toBeNull();
+    shadow().querySelector('.more').click();
+    lost = true;
+    shadow().querySelector('.more').click();
+    await flush();
+    expect(shadow().querySelector('[data-history]')).toBeNull();
+    warn.mockRestore();
   });
 
   it('shows the pill when a field gains focus, using the composed path', async () => {

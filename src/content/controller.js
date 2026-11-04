@@ -15,6 +15,8 @@ import { STATUS_MS } from './pill.js';
  *   send: (message: object) => Promise<any|null>,
  *   insertText: typeof import('./insert.js').insertText,
  *   copyText: typeof import('./insert.js').copyText,
+ *   markInsertion: typeof import('./insert.js').markInsertion,
+ *   replaceInsertion: typeof import('./insert.js').replaceInsertion,
  *   isValidInput: (el: Element|null) => boolean,
  *   deepActiveElement: () => Element|null,
  *   rectOf: (el: Element) => Box|null,
@@ -38,6 +40,7 @@ const HOLD_NOTICE = 'Return to the field to insert, or click here to copy.';
 const PASSWORD_NOTICE = 'VoiceType does not record in password fields.';
 const FOCUS_NOTICE = 'Click into the field you want to dictate into, then try again.';
 const NOT_COPIED = ' Not copied.';
+const STILL_PROCESSING = 'Still processing';
 const AUTO_STOP = Object.freeze({
   maxTime: { text: 'Max time reached', tone: 'info' },
   silence: { text: 'Stopped after silence', tone: 'info' },
@@ -52,7 +55,7 @@ const textOr = (value, fallback) => (typeof value === 'string' && value ? value 
  * @param {ControllerDeps} deps
  */
 export function createController(deps) {
-  const { pill, send, insertText, copyText, isValidInput, deepActiveElement, rectOf, watchAnchor } = deps;
+  const { pill, send, insertText, copyText, markInsertion, replaceInsertion, isValidInput, deepActiveElement, rectOf, watchAnchor } = deps;
 
   /** @type {ControllerState} */
   let state = 'idle';
@@ -69,6 +72,10 @@ export function createController(deps) {
   /** A press refused because a result is landing, kept while the chord stays down (V38). */
   let pressQueued = false;
   let lastResult = null;
+  /** The newest dictation of this site as of the last menu open: `{ raw, text }`, or null (V28). */
+  let recent = null;
+  /** Where the last verified insert in a form field lies, for Undo AI edit (V31): `{ el, start, end, text, raw }`. */
+  let insertMark = null;
   /** A result for a field that kept this frame's focus while another frame or window had it. */
   let held = null;
   /** The last valid field focused in this frame (D12 across frames). */
@@ -199,7 +206,7 @@ export function createController(deps) {
   }
 
   function render() {
-    if (settings) pill.renderMenu(settings, usage);
+    if (settings) pill.renderMenu(settings, usage, recent && { refined: recent.raw !== recent.text });
   }
 
   /** @param {unknown} next */
@@ -219,6 +226,14 @@ export function createController(deps) {
     const { today, total } = /** @type {any} */ (stats);
     if (!today || typeof today !== 'object' || !total || typeof total !== 'object') return;
     usage = { todayCost: finite(today.estimatedCost), todaySessions: finite(today.sessions), totalCost: finite(total.estimatedCost) };
+    render();
+  }
+
+  /** @param {unknown} entry the GET_LAST_DICTATION reply's entry: `{ raw, text }`, or null */
+  function setRecent(entry) {
+    if (inactive()) return;
+    const { raw, text } = /** @type {any} */ (entry) ?? {};
+    recent = typeof raw === 'string' && typeof text === 'string' && text ? { raw, text } : null;
     render();
   }
 
@@ -325,7 +340,7 @@ export function createController(deps) {
       return;
     }
     if (state === 'recording') return stop();
-    notify('Still processing', { tone: 'info' });
+    notify(STILL_PROCESSING, { tone: 'info' });
   }
 
   async function press() {
@@ -408,6 +423,7 @@ export function createController(deps) {
     }
     const text = typeof message.text === 'string' ? message.text : '';
     lastResult = { text, raw: typeof message.raw === 'string' ? message.raw : text };
+    insertMark = null;
     const result = { text, cost: finite(message.cost), warning: textOr(message.warning, null), copied: message.copied };
 
     if (bound && bound.isConnected && ownsFrameFocus(bound) && !deps.hasFocus()) {
@@ -447,21 +463,46 @@ export function createController(deps) {
 
   /**
    * @param {Element|null} bound
-   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null }} result
+   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null, unpaid?: boolean }} result
    */
   function place(bound, result) {
     return whileLanding(() => placeResult(bound, result));
+  }
+
+  /** True while el is the field the user is in: still in the document, focused, this frame included. */
+  const hasLiveFocus = (el) => Boolean(el?.isConnected) && deepActiveElement() === el && deps.hasFocus();
+
+  /**
+   * Say how an insert ended.
+   * @param {import('./insert.js').InsertOutcome} outcome
+   * @param {() => void} inserted says it for a verified insert
+   */
+  function reportInsert(outcome, inserted) {
+    if (outcome === 'inserted') {
+      pill.setState('done');
+      inserted();
+    } else if (outcome === 'unverified') {
+      pill.setState('done');
+      notify('Could not confirm the insert. The text is also on the clipboard.', { tone: 'warning' });
+    } else if (outcome === 'clipboard') {
+      pill.setState('done');
+      notify('Copied to clipboard. The field could not be edited.', { tone: 'warning' });
+    } else {
+      pill.setState('error');
+      notify(CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true });
+    }
   }
 
   /**
    * D12: the text goes into the field bound at REC start only while that field has focus,
    * this frame included; otherwise to the clipboard.
    * @param {Element|null} bound
-   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null }} result
-   *   copied: the worker's always-copy outcome, false when that copy failed
+   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null, unpaid?: boolean }} result
+   *   copied: the worker's always-copy outcome, false when that copy failed;
+   *   unpaid: a history action, so a verified insert has no cost to report (V30)
    */
-  async function placeResult(bound, { text, cost, warning, copied: alwaysCopied }) {
-    if (bound && bound.isConnected && deepActiveElement() === bound && deps.hasFocus()) {
+  async function placeResult(bound, { text, cost, warning, copied: alwaysCopied, unpaid = false }) {
+    if (hasLiveFocus(bound)) {
       let outcome;
       try {
         outcome = await insertText(bound, text);
@@ -471,20 +512,15 @@ export function createController(deps) {
       }
       if (inactive()) return;
       if (outcome === 'inserted') {
-        pill.setState('done');
-        const suffix = alwaysCopied === false ? NOT_COPIED : '';
-        if (warning) notify(`${warning}${suffix}`, { tone: 'warning' });
-        else notify(`Done ${formatCost(cost)}${suffix}`, { tone: 'success' });
-      } else if (outcome === 'unverified') {
-        pill.setState('done');
-        notify('Could not confirm the insert. The text is also on the clipboard.', { tone: 'warning' });
-      } else if (outcome === 'clipboard') {
-        pill.setState('done');
-        notify('Copied to clipboard. The field could not be edited.', { tone: 'warning' });
-      } else {
-        pill.setState('error');
-        notify(CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true });
+        const mark = markInsertion(bound, text);
+        insertMark = mark && { ...mark, el: bound, text, raw: lastResult.raw };
       }
+      reportInsert(outcome, () => {
+        const suffix = alwaysCopied === false ? NOT_COPIED : '';
+        if (unpaid) notify('Inserted.', { tone: 'success' });
+        else if (warning) notify(`${warning}${suffix}`, { tone: 'warning' });
+        else notify(`Done ${formatCost(cost)}${suffix}`, { tone: 'success' });
+      });
       return;
     }
 
@@ -577,6 +613,67 @@ export function createController(deps) {
   }
 
   /**
+   * A choice in the menu's Last dictation section.
+   * @param {'insert'|'copy'|'undo'} action
+   */
+  async function historyAction(action) {
+    if (inactive() || !recent) return;
+    if (!canStart()) {
+      notify(STILL_PROCESSING, { tone: 'info' });
+      return;
+    }
+    // A transcript waiting on a click goes first, as for REC: lastResult is the way to it (V35).
+    if (held) return deliverHeld();
+    if (copyPending) {
+      await copyLast();
+      return;
+    }
+    const { raw, text } = recent;
+    if (action === 'undo') {
+      lastResult = { text: raw, raw };
+      return whileLanding(() => undoEdit(raw, text));
+    }
+    lastResult = { text, raw };
+    const active = deepActiveElement();
+    const bound = action === 'insert' && isValidInput(active) ? active : null;
+    return place(bound, { text, cost: 0, warning: null, copied: null, unpaid: true });
+  }
+
+  /**
+   * V31: in place only over the exact text inserted here, in the field that still has the focus.
+   * Anything else copies raw. Text the mark no longer covers is never searched for.
+   * @param {string} raw
+   * @param {string} text
+   */
+  async function undoEdit(raw, text) {
+    const mark = insertMark;
+    insertMark = null;
+    const inPlace = mark?.text === text && mark.raw === raw && isValidInput(mark.el) && hasLiveFocus(mark.el);
+    let outcome = null;
+    if (inPlace) {
+      try {
+        outcome = await replaceInsertion(mark.el, mark, text, raw);
+      } catch {
+        outcome = 'failed';
+      }
+      if (inactive()) return;
+    }
+    if (outcome) {
+      reportInsert(outcome, () => notify('Original text restored.', { tone: 'success' }));
+      return;
+    }
+    const copied = await copyText(raw);
+    if (inactive()) return;
+    if (copied) {
+      pill.setState('done');
+      notify('Original text copied.', { tone: 'info' });
+    } else {
+      pill.setState('error');
+      notify(CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true });
+    }
+  }
+
+  /**
    * Send a menu choice. The menu re-renders from the SETTINGS_CHANGED push that follows a save.
    * @param {object} message
    */
@@ -653,6 +750,8 @@ export function createController(deps) {
     target = null;
     held = null;
     lastField = null;
+    recent = null;
+    insertMark = null;
     pill.destroy();
   }
 
@@ -666,6 +765,8 @@ export function createController(deps) {
     release,
     handleMessage,
     copyLast,
+    setRecent,
+    historyAction,
     onWindowFocus,
     choose,
     chooseMode,

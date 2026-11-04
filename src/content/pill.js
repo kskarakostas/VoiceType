@@ -17,10 +17,11 @@ export { SIGHT_DELAY_MS } from './pill-sight.js';
  * @typedef {'idle'|'recording'|'processing'|'done'|'error'} PillState
  * @typedef {{ onRec: () => void, onStatusClick: () => void, onMenuOpen: () => void,
  *   onMode: (key: string) => void, onUseActive: () => void, onProvider: (id: string) => void,
- *   onTargetLang: (lang: string) => void, onSight?: (seen: boolean) => void, onRaised?: () => void,
- *   onZoom?: () => void }} PillHandlers
+ *   onTargetLang: (lang: string) => void, onHistory: (action: 'insert'|'copy'|'undo') => void,
+ *   onSight?: (seen: boolean) => void, onRaised?: () => void, onZoom?: () => void }} PillHandlers
  * Without onSight the pill watches nothing. onZoom: the zoom moved the field, and no watcher hears that.
  * @typedef {{ todayCost: number, todaySessions: number, totalCost: number }} PillUsage
+ * @typedef {{ refined: boolean }} PillRecent Only what the menu needs: the text stays with the controller.
  */
 
 /** Size of the expanded pill; `.pill` in pill.css has the same width and height. */
@@ -300,8 +301,9 @@ export class Pill {
   /**
    * @param {ContentSettings} settings
    * @param {PillUsage|null} usage
+   * @param {PillRecent|null} [recent]
    */
-  renderMenu(settings, usage) {
+  renderMenu(settings, usage, recent = null) {
     if (this.#destroyed || !settings || typeof settings !== 'object') return;
     const modes = settings.modes && typeof settings.modes === 'object' ? settings.modes : {};
     const wanted = settings.site?.mode;
@@ -315,7 +317,7 @@ export class Pill {
     mode.setAttribute('aria-label', `Mode: ${modeName}${siteMode === null ? '' : ', this site'}. Open the VoiceType menu`);
 
     const helpers = { el: this.#el.bind(this), icon: this.#icon.bind(this), doc: this.#doc };
-    menu.replaceChildren(...buildMenuSections(helpers, { modes, active, marked: siteMode !== null, activeMode, settings, usage }));
+    menu.replaceChildren(...buildMenuSections(helpers, { modes, active, marked: siteMode !== null, activeMode, settings, usage, recent }));
     if (this.#menuOpen) {
       this.#placeMenu();
       this.#placeStatus();
@@ -664,8 +666,11 @@ export class Pill {
     menu.addEventListener('click', (event) => {
       const button = event.target?.closest?.('button');
       if (!button || !menu.contains(button)) return;
-      const { useActive, mode: modeKey, provider, lang } = button.dataset;
-      if (useActive !== undefined) this.#handlers.onUseActive();
+      const { useActive, mode: modeKey, provider, lang, history } = button.dataset;
+      if (history !== undefined) {
+        this.closeMenu();
+        this.#handlers.onHistory(history);
+      } else if (useActive !== undefined) this.#handlers.onUseActive();
       else if (modeKey !== undefined) this.#handlers.onMode(modeKey);
       else if (provider !== undefined) this.#handlers.onProvider(provider);
       else if (lang !== undefined) this.#handlers.onTargetLang(lang);

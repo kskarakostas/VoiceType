@@ -17,7 +17,7 @@ const HOSTILE = '<img src=x onerror=alert(1)>';
 function handlers() {
   return {
     onRec: vi.fn(), onStatusClick: vi.fn(), onMenuOpen: vi.fn(),
-    onMode: vi.fn(), onUseActive: vi.fn(), onProvider: vi.fn(), onTargetLang: vi.fn(),
+    onMode: vi.fn(), onUseActive: vi.fn(), onProvider: vi.fn(), onTargetLang: vi.fn(), onHistory: vi.fn(),
   };
 }
 
@@ -785,6 +785,90 @@ describe('menu', () => {
     pill.hide();
     expect(pill.menuOpen).toBe(false);
     expect(h.onMenuOpen).toHaveBeenCalledTimes(1);
+  });
+
+  describe('Last dictation', () => {
+    const labels = (pill) => [...pill.root.querySelectorAll('.menu .label')].map((label) => label.textContent);
+    const actions = (pill) => [...pill.root.querySelectorAll('[data-history]')].map((button) => [button.dataset.history, button.textContent]);
+
+    it('shows only with an entry', () => {
+      const { pill } = makePill();
+      pill.mount();
+      pill.renderMenu(settings(), null, null);
+      expect(labels(pill)).not.toContain('Last dictation');
+      expect(actions(pill)).toEqual([]);
+      pill.renderMenu(settings(), null, { refined: false });
+      expect(labels(pill)).toContain('Last dictation');
+      pill.renderMenu(settings(), null);
+      expect(labels(pill)).not.toContain('Last dictation');
+    });
+
+    it('shows Undo AI edit only when refined', () => {
+      const { pill } = makePill();
+      pill.mount();
+      pill.renderMenu(settings(), null, { refined: false });
+      expect(actions(pill)).toEqual([['insert', 'Insert'], ['copy', 'Copy']]);
+      pill.renderMenu(settings(), null, { refined: true });
+      expect(actions(pill)).toEqual([['insert', 'Insert'], ['copy', 'Copy'], ['undo', 'Undo AI edit']]);
+    });
+
+    it('sits between Provider and the footer, so its arrival moves no setting under the pointer', () => {
+      const { pill } = makePill();
+      pill.mount();
+      pill.renderMenu(settings(), { todayCost: 0, todaySessions: 0, totalCost: 0 }, { refined: false });
+      expect(labels(pill)).toEqual(['Mode', 'Provider', 'Last dictation']);
+      expect(q(pill, '.menu').lastElementChild.className).toContain('footer');
+    });
+
+    it('holds no dictation text', () => {
+      const { pill } = makePill();
+      pill.mount();
+      pill.renderMenu(settings(), null, { refined: true, raw: HOSTILE, text: HOSTILE });
+      expect(q(pill, '.menu').textContent).not.toContain(HOSTILE);
+      expect(q(pill, '.menu img')).toBeNull();
+    });
+
+    it.each(['insert', 'copy', 'undo'])('a click on %s calls onHistory with its action and closes the menu', (action) => {
+      const { pill, h } = makePill();
+      pill.renderMenu(settings(), null, { refined: true });
+      pill.show(FIELD);
+      pill.openMenu();
+      q(pill, `[data-history="${action}"]`).click();
+      expect(h.onHistory).toHaveBeenCalledTimes(1);
+      expect(h.onHistory).toHaveBeenCalledWith(action);
+      expect(pill.menuOpen).toBe(false);
+    });
+
+    it('closes the menu before the handler runs, as the handler may set a status', () => {
+      const { pill, h } = makePill();
+      pill.renderMenu(settings(), null, { refined: false });
+      pill.show(FIELD);
+      pill.openMenu();
+      let openDuring;
+      h.onHistory.mockImplementation(() => { openDuring = pill.menuOpen; });
+      q(pill, '[data-history="copy"]').click();
+      expect(openDuring).toBe(false);
+    });
+
+    it('a mode click does not reach onHistory', () => {
+      const { pill, h } = makePill();
+      pill.renderMenu(settings(), null, { refined: true });
+      pill.show(FIELD);
+      pill.openMenu();
+      q(pill, '[data-mode="translate"]').click();
+      expect(h.onHistory).not.toHaveBeenCalled();
+      expect(h.onMode).toHaveBeenCalledWith('translate');
+    });
+
+    it('Minimal shows no such section', () => {
+      const { pill } = makePill();
+      pill.setStyle('minimal');
+      pill.renderMenu(settings(), null, { refined: true });
+      pill.show(FIELD);
+      pill.openMenu();
+      expect(pill.menuOpen).toBe(false);
+      expect(q(pill, '.menu').hidden).toBe(true);
+    });
   });
 });
 

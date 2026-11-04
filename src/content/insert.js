@@ -166,6 +166,38 @@ export async function insertText(target, text, deps = {}) {
   return copyAs(verdict === 'ambiguous' ? 'unverified' : 'clipboard');
 }
 
+/**
+ * Where text inserted a moment ago lies in a form field, read from the caret the insert left
+ * after it. Null without offsets (a contenteditable, an input with no selection support) and
+ * when the field does not hold exactly this text there: a page may have changed it on the way in.
+ * @param {Element} el
+ * @param {string} text
+ * @returns {{ start: number, end: number }|null}
+ */
+export function markInsertion(el, text) {
+  if (!isFormField(el) || typeof el.selectionEnd !== 'number') return null;
+  const end = el.selectionEnd;
+  const start = end - text.length;
+  return start >= 0 && el.value.slice(start, end) === text ? { start, end } : null;
+}
+
+/**
+ * Puts raw over text at the mark through the ladder, so one Ctrl+Z restores text. Null, with the
+ * field and its selection untouched, unless text is exactly at the mark: it never searches
+ * (V31). Whether el may be written at all is for the caller to check.
+ * @param {Element} el
+ * @param {{ start: number, end: number }} mark
+ * @param {string} text
+ * @param {string} raw
+ * @param {InsertDeps & { insertText?: typeof insertText }} [deps]
+ * @returns {Promise<InsertOutcome|null>}
+ */
+export async function replaceInsertion(el, { start, end }, text, raw, deps = {}) {
+  if (!isFormField(el) || typeof el.selectionStart !== 'number' || el.value.slice(start, end) !== text) return null;
+  el.setSelectionRange(start, end);
+  return (deps.insertText ?? insertText)(el, raw, deps);
+}
+
 /** Focuses the target, fixes the caret and records the state every rung is judged against. */
 function prepare(target, text, deps) {
   const editable = !isFormField(target);
