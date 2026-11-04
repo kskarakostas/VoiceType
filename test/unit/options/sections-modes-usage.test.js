@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { initOptions } from '../../../src/options/options.js';
 import { CONFIRM_GUARD_MS } from '../../../src/ui/form.js';
 import { MSG } from '../../../src/shared/messages.js';
-import { freshSettings } from '../../../src/shared/defaults.js';
+import { TARGET_LANGUAGES, freshSettings } from '../../../src/shared/defaults.js';
 import { formatChord } from '../../../src/shared/chord.js';
 
 // jsdom replaces the global URL, so resolve paths with node:path rather than new URL().
@@ -318,6 +318,139 @@ describe('settings page reset (V21)', () => {
     typeInto($('mode-name'), 'Again');
     await vi.advanceTimersByTimeAsync(1000);
     expect(chrome.saves()).toHaveLength(2);
+  });
+});
+
+describe('settings page Translate target (V24)', () => {
+  const target = () => $('translate-target');
+  const values = () => [...target().options].map((option) => option.value);
+  const storedTarget = (lang) => {
+    const stored = storedSettings();
+    stored.translateTargetLang = lang;
+    return stored;
+  };
+
+  it('sits in its own card after the list and editor card', async () => {
+    await start(fakeChrome(), 'modes');
+    const cards = [...document.querySelectorAll('section[data-route="modes"] > .card')];
+    expect(cards).toHaveLength(2);
+    expect(cards[0].contains($('mode-list'))).toBe(true);
+    expect(cards[1].contains(target())).toBe(true);
+    expect(target().closest('label').querySelector('.field-label').textContent).toBe('Translate to');
+    expect(cards[1].querySelector('.hint').textContent).toBe('The language the Translate mode writes in.');
+  });
+
+  it('offers the same languages as the pill', async () => {
+    await start(fakeChrome(), 'modes');
+    expect(values()).toEqual(TARGET_LANGUAGES.map((language) => language.name));
+    expect([...target().options].map((option) => option.textContent)).toEqual(values());
+  });
+
+  it('shows the stored target', async () => {
+    await start(fakeChrome(storedTarget('Greek')), 'modes');
+    expect(target().value).toBe('Greek');
+  });
+
+  it('saves only the target on a change', async () => {
+    const chrome = fakeChrome();
+    await start(chrome, 'modes');
+    change(target(), 'German');
+    await flush();
+    expect(chrome.saves()).toEqual([{ translateTargetLang: 'German' }]);
+    expect($('toast').textContent).toBe('Translate to: German');
+  });
+
+  it('keeps a stored value outside the list', async () => {
+    const chrome = fakeChrome(storedTarget('Italian'));
+    await start(chrome, 'modes');
+    expect(values()).toEqual([...TARGET_LANGUAGES.map((language) => language.name), 'Italian']);
+    expect(target().value).toBe('Italian');
+    expect(chrome.saves()).toEqual([]);
+  });
+
+  it('a stored value outside the list renders as text', async () => {
+    await start(fakeChrome(storedTarget('<img src=x onerror=alert(1)>')), 'modes');
+    expect(target().querySelector('img')).toBeNull();
+    expect(target().selectedOptions[0].textContent).toBe('<img src=x onerror=alert(1)>');
+  });
+
+  it('holds one extra option, gone once the stored value is back in the list', async () => {
+    const stored = storedTarget('Italian');
+    const chrome = fakeChrome(stored);
+    await start(chrome, 'modes');
+    stored.translateTargetLang = 'Portuguese';
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect(values()).toEqual([...TARGET_LANGUAGES.map((language) => language.name), 'Portuguese']);
+    expect(target().value).toBe('Portuguese');
+    stored.translateTargetLang = 'French';
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect(values()).toEqual(TARGET_LANGUAGES.map((language) => language.name));
+    expect(target().value).toBe('French');
+    expect(chrome.saves()).toEqual([]);
+  });
+
+  it('a focused select is not rewritten by a render', async () => {
+    const stored = storedSettings();
+    const chrome = fakeChrome(stored);
+    await start(chrome, 'modes');
+    target().focus();
+    stored.translateTargetLang = 'Greek';
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect(target().value).toBe('English');
+  });
+
+  it('a render updates the select once it has lost focus', async () => {
+    const stored = storedSettings();
+    const chrome = fakeChrome(stored);
+    await start(chrome, 'modes');
+    target().focus();
+    target().blur();
+    stored.translateTargetLang = 'Greek';
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect(target().value).toBe('Greek');
+  });
+
+  // The select keeps focus after a choice, also while its tab is in the background, where the
+  // pill can change the same setting; focus comes back to it with the tab.
+  it('shows the stored target when focus comes back after a skipped render', async () => {
+    const stored = storedSettings();
+    const chrome = fakeChrome(stored);
+    await start(chrome, 'modes');
+    target().focus();
+    stored.translateTargetLang = 'Greek';
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    target().blur();
+    target().focus();
+    expect(target().value).toBe('Greek');
+    expect(chrome.saves()).toEqual([]);
+  });
+
+  it('a failed save puts the stored target back in the focused select', async () => {
+    const chrome = fakeChrome();
+    await start(chrome, 'modes');
+    chrome.script(MSG.SAVE_SETTINGS, { success: false, error: 'Storage is full.' });
+    target().focus();
+    change(target(), 'Spanish');
+    await flush();
+    expect(chrome.saves()).toEqual([{ translateTargetLang: 'Spanish' }]);
+    expect($('toast').textContent).toBe('Storage is full.');
+    expect(target().value).toBe('English');
+  });
+
+  it('a change before the settings load saves nothing and puts the select back', async () => {
+    const chrome = fakeChrome(storedTarget('Greek'));
+    chrome.script(MSG.GET_SETTINGS, { error: 'Not ready' });
+    await start(chrome, 'modes');
+    target().focus();
+    change(target(), 'Spanish');
+    await flush();
+    expect(chrome.saves()).toEqual([]);
+    expect(target().value).toBe('English');
   });
 });
 

@@ -12,6 +12,15 @@ export const PILL_STYLES = Object.freeze(['pill', 'dot', 'minimal']);
 /** Silence auto-stop choices in seconds; 0 turns it off. */
 export const AUTO_STOP_CHOICES = Object.freeze([0, 2, 3, 5]);
 
+/** Translate targets offered in the pill menu and on the Modes page. */
+export const TARGET_LANGUAGES = Object.freeze([
+  Object.freeze({ code: 'EN', name: 'English' }),
+  Object.freeze({ code: 'EL', name: 'Greek' }),
+  Object.freeze({ code: 'ES', name: 'Spanish' }),
+  Object.freeze({ code: 'FR', name: 'French' }),
+  Object.freeze({ code: 'DE', name: 'German' }),
+]);
+
 /**
  * @typedef {{ name: string, icon: string, prompt: string, builtIn: boolean, hasLanguageOption?: boolean }} Mode
  * @typedef {{

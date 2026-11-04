@@ -2,7 +2,7 @@
 import { formatChord } from '../shared/chord.js';
 import { formatCost } from '../shared/pricing.js';
 import { PROVIDERS } from '../shared/models.js';
-import { orderedModeKeys } from '../shared/defaults.js';
+import { TARGET_LANGUAGES, orderedModeKeys } from '../shared/defaults.js';
 
 /**
  * @typedef {import('../shared/messages.js').ContentSettings} ContentSettings
@@ -10,15 +10,6 @@ import { orderedModeKeys } from '../shared/defaults.js';
  * @typedef {{ el: (tag: string, className?: string, attrs?: Record<string, string>) => HTMLElement,
  *   icon: (name: string, className?: string) => SVGSVGElement, doc: Document }} MenuHelpers
  */
-
-/** Translate targets offered in the menu. */
-export const TARGET_LANGUAGES = Object.freeze([
-  Object.freeze({ code: 'EN', name: 'English' }),
-  Object.freeze({ code: 'EL', name: 'Greek' }),
-  Object.freeze({ code: 'ES', name: 'Spanish' }),
-  Object.freeze({ code: 'FR', name: 'French' }),
-  Object.freeze({ code: 'DE', name: 'German' }),
-]);
 
 /** @param {number} value */
 const finite = (value) => (Number.isFinite(value) ? value : 0);

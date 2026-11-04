@@ -932,7 +932,9 @@ describe('page and key isolation', () => {
     shadow().querySelector('.rec').click();
     await flush();
     expect(t.storageAccess).toEqual([]);
-    for (const name of ['index.js', 'boot.js', 'controller.js', 'pill.js']) expect(readContent(name), name).not.toMatch(/chrome\.storage/);
+    const files = readdirSync(CONTENT_DIR).filter((name) => name.endsWith('.js'));
+    expect(files).toEqual(expect.arrayContaining(['index.js', 'boot.js', 'controller.js', 'pill.js', 'pill-menu.js', 'pill-sight.js', 'pill-raise.js']));
+    for (const name of files) expect(readContent(name), name).not.toMatch(/chrome\.storage/);
   });
 
   it('the entry ignores untrusted focus and hotkey events from the page', async () => {

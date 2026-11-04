@@ -1,6 +1,7 @@
-// Modes: the mode list (choose the active mode) and the editor that creates, edits and deletes
-// modes. Ported from the 2.2 popup unchanged in behaviour; changes save through ctx.commit.
-import { orderedModeKeys } from '../../shared/defaults.js';
+// Modes: the mode list (choose the active mode), the editor that creates, edits and deletes
+// modes, both ported from the 2.2 popup unchanged in behaviour, and the Translate target, the way
+// to change it without a pill menu. Changes save through ctx.commit.
+import { TARGET_LANGUAGES, orderedModeKeys } from '../../shared/defaults.js';
 
 /** @typedef {import('../options.js').PageContext} PageContext */
 /** @typedef {import('../options.js').Section} Section */
@@ -34,12 +35,15 @@ export function createModesSection(ctx) {
     modeList: $('mode-list'), addMode: $('add-mode'), editor: $('mode-editor'), editorTitle: $('editor-title'),
     modeName: $('mode-name'), modeIcon: $('mode-icon'), modePrompt: $('mode-prompt'),
     deleteMode: $('delete-mode'), closeMode: $('close-mode'), createMode: $('create-mode'),
+    target: $('translate-target'),
   };
   /** @type {{ key: string|null } | null} */
   let editing = null;
   const modeSave = ctx.typingSave(saveModeEdits);
   /** Mode list rows by mode key, reused across renders. */
   const modeRows = new Map();
+  /** Stands for a stored target outside TARGET_LANGUAGES, so a render never rewrites it. */
+  const otherTarget = document.createElement('option');
 
   function svgIcon(name, className) {
     const svg = document.createElementNS(SVG_NS, 'svg');
@@ -66,6 +70,7 @@ export function createModesSection(ctx) {
   function render() {
     renderModes();
     renderEditor();
+    if (document.activeElement !== el.target) paintTarget();
   }
 
   function createModeRow(key) {
@@ -138,6 +143,24 @@ export function createModesSection(ctx) {
     if (document.activeElement !== el.modeName) el.modeName.value = mode.name;
     if (document.activeElement !== el.modeIcon) el.modeIcon.value = mode.icon || DEFAULT_MODE_ICON;
     if (document.activeElement !== el.modePrompt) el.modePrompt.value = mode.prompt;
+  }
+
+  function paintTarget() {
+    const value = ctx.settings().translateTargetLang;
+    const listed = TARGET_LANGUAGES.some(({ name }) => name === value);
+    if (!listed) {
+      otherTarget.value = value;
+      setText(otherTarget, value);
+    }
+    keepChild(el.target, otherTarget, !listed);
+    el.target.value = value;
+  }
+
+  // The render skips a focused select, so a save that failed puts the stored value back here.
+  async function saveTarget() {
+    const value = el.target.value;
+    const saved = await ctx.commit((s) => { s.translateTargetLang = value; }, `Translate to: ${value}`);
+    if (!saved) paintTarget();
   }
 
   function selectMode(key) {
@@ -223,6 +246,13 @@ export function createModesSection(ctx) {
     if (ok) closeEditor();
   }
 
+  for (const { name } of TARGET_LANGUAGES) {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    el.target.append(option);
+  }
+
   el.addMode.addEventListener('click', () => openEditor(null));
   el.createMode.addEventListener('click', createMode);
   el.closeMode.addEventListener('click', closeEditor);
@@ -234,6 +264,11 @@ export function createModesSection(ctx) {
     field.addEventListener('change', saveModeEdits);
     field.addEventListener('blur', saveModeEdits);
   }
+
+  el.target.addEventListener('change', saveTarget);
+  // A focused select stays focused while its tab is in the background, where the pill can change
+  // the target and the render skips it. Focus comes back with the tab.
+  el.target.addEventListener('focus', paintTarget);
 
   // Reset to defaults closes the editor first, saving an edit still waiting for the typing pause.
   return { render, typingSaves: [modeSave], beforeReset: closeEditor };

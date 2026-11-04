@@ -7,7 +7,7 @@ import { createRaiser } from './pill-raise.js';
 import { createSightWatcher } from './pill-sight.js';
 import { PILL_STYLES } from '../shared/defaults.js';
 
-export { TARGET_LANGUAGES } from './pill-menu.js';
+export { TARGET_LANGUAGES } from '../shared/defaults.js';
 export { RAISE_MS } from './pill-raise.js';
 export { SIGHT_DELAY_MS } from './pill-sight.js';
 
