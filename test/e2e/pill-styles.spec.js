@@ -23,7 +23,10 @@ const NO_PILL_MS = 500;
 /** The acceptance budget of a change made in the settings. */
 const PILL_SYNC_MS = 1000;
 const REMOVED_FRAME_MS = 2000;
+/** `.body` is wider only with the bar open: STOP alone proves nothing, as it has a box while clipped. */
+const OPEN_WIDTH = 130;
 const MINI_TIME = '.mini-time';
+const CLOCK = /^\d\d:\d\d$/;
 const CROSS_ORIGIN_FRAME = `http://127.0.0.1:${PORT}/frame.html`;
 const SAME_ORIGIN_FRAME = `http://localhost:${PORT}/frame.html`;
 const FRAMES = [
@@ -130,6 +133,14 @@ function expectAtBottomCentre(box, view) {
 }
 
 /**
+ * The bar of a recording is open, not only present behind the clip.
+ * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
+ */
+async function expectBarOpen(target) {
+  expect((await settledBox(target, '.body')).width).toBeGreaterThan(OPEN_WIDTH);
+}
+
+/**
  * Minimal shows nothing to wait for, so its field only gets the click.
  * @param {'pill'|'dot'|'minimal'} style
  * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
@@ -142,6 +153,18 @@ async function focusFor(style, target, field) {
 
 /** @param {'pill'|'dot'|'minimal'} style */
 const recordingMark = (style) => (style === 'minimal' ? MINI : STOP);
+
+/**
+ * What a click in another window does to a page: a browser blur, and hasFocus false. Headless
+ * Chromium keeps the focus of a page behind another tab or window, and drops it at this toggle.
+ * @param {import('@playwright/test').Page} page opened with focusEmulation false, behind another tab
+ */
+async function loseWindowFocus(page) {
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+  await expect.poll(() => page.evaluate(() => document.hasFocus()), { message: 'the page lost the focus' }).toBe(false);
+}
 
 /** What each style measured on fields.html, for the two pages that must match it. */
 const reference = new Map();
@@ -160,7 +183,7 @@ for (const style of STYLES) {
         expect(await widthOf(target, '.body')).toBe(0);
         expect(await indicatorShown(target)).toBe(false);
       } else {
-        const idleBody = (width) => (style === 'pill' ? width > 130 : width > 0 && width <= 24);
+        const idleBody = (width) => (style === 'pill' ? width > OPEN_WIDTH : width > 0 && width <= 24);
         await expect.poll(async () => idleBody(await widthOf(target, '.body')), { message: `idle ${style}` }).toBe(true);
       }
       const idle = style === 'minimal' ? null : await settledBox(target, '.body');
@@ -172,6 +195,7 @@ for (const style of STYLES) {
         expect(await widthOf(target, STOP)).toBe(0);
       }
       const recording = await settledBox(target, style === 'minimal' ? MINI : '.body');
+      if (style !== 'minimal') expect(recording.width).toBeGreaterThan(OPEN_WIDTH);
 
       if (measures) reference.set(style, { idle, recording });
       if (sameSize) expect({ idle, recording }).toEqual(reference.get(style));
@@ -312,17 +336,45 @@ test('a choice on the Appearance page reaches an open tab within a second', asyn
   await reaches((width) => width === 0);
 });
 
-test('a switch to Minimal closes an open menu', async () => {
+for (const recording of [false, true]) {
+  test(`a switch to Minimal closes an open menu${recording ? ' during a recording' : ''}`, async () => {
+    await seedStyle('dot');
+    const page = await openPage();
+    await focusField(page, page.locator('#ta'));
+    if (recording) await startWithHotkey(page, page);
+    await clickPill(page, 'button.mode');
+    await waitForPill(page, '.menu');
+
+    await seedStyle('minimal');
+
+    await expect.poll(() => widthOf(page, '.menu'), { timeout: PILL_SYNC_MS }).toBe(0);
+    expect(await widthOf(page, '.body')).toBe(0);
+
+    // Hidden with the rest of the pill is not closed: the way back must find it closed.
+    await seedStyle('dot');
+
+    await waitForPill(page, '.body', PILL_SYNC_MS);
+    expect(await widthOf(page, '.menu')).toBe(0);
+  });
+}
+
+test('a page that lost the focus shows a new style on the way back to the field', async () => {
   await seedStyle('dot');
   const page = await openPage();
-  await focusField(page, page.locator('#ta'));
-  await clickPill(page, 'button.mode');
-  await waitForPill(page, '.menu');
+  const field = page.locator('#ta');
+  await focusField(page, field);
+  await context.newPage();
 
-  await seedStyle('minimal');
-
-  await expect.poll(() => widthOf(page, '.menu'), { timeout: PILL_SYNC_MS }).toBe(0);
+  await loseWindowFocus(page);
+  await expect.poll(() => widthOf(page, '.body'), { message: 'idle pill hidden' }).toBe(0);
+  await seedStyle('pill');
+  await page.waitForTimeout(NO_PILL_MS);
   expect(await widthOf(page, '.body')).toBe(0);
+
+  await page.bringToFront();
+  await field.click();
+
+  await expect.poll(() => widthOf(page, '.body'), { timeout: PILL_SYNC_MS }).toBeGreaterThan(OPEN_WIDTH);
 });
 
 for (const [from, to] of [['dot', 'minimal'], ['minimal', 'dot']]) {
@@ -337,7 +389,34 @@ for (const [from, to] of [['dot', 'minimal'], ['minimal', 'dot']]) {
 
     await waitForPill(page, recordingMark(to), PILL_SYNC_MS);
     expect(await widthOf(page, recordingMark(from))).toBe(0);
+    if (to === 'dot') await expectBarOpen(page);
 
+    await page.waitForTimeout(RECORD_MS);
+    await page.keyboard.press(HOTKEY);
+    await expect(field).toHaveValue(TRANSCRIPT);
+  });
+
+  test(`a switch from another window keeps a recording indicated: ${from} to ${to}`, async () => {
+    await seedStyle(from);
+    const page = await openPage();
+    const field = page.locator('#ta');
+    await focusFor(from, page, field);
+    await startWithHotkey(page, page, { indicator: recordingMark(from) });
+    const settings = await context.newPage();
+    await settings.goto(`chrome-extension://${extensionId}/options.html#settings/appearance`);
+    await expect(settings.locator(`input[name="pill-style"][value="${from}"]`)).toBeChecked();
+    await loseWindowFocus(page);
+
+    await settings.locator('.style-card', { has: settings.locator(`input[value="${to}"]`) }).click();
+
+    await waitForPill(page, recordingMark(to), PILL_SYNC_MS);
+    expect(await widthOf(page, recordingMark(from))).toBe(0);
+
+    // The hotkey reaches a page only through its focus, so the way back is a click into the field.
+    await page.bringToFront();
+    if (to === 'dot') await expectBarOpen(page);
+    await field.click();
+    await expect.poll(() => page.evaluate(() => document.hasFocus()), { message: 'focus back' }).toBe(true);
     await page.waitForTimeout(RECORD_MS);
     await page.keyboard.press(HOTKEY);
     await expect(field).toHaveValue(TRANSCRIPT);
@@ -414,6 +493,20 @@ async function expectNoMirrorFor(page, ms) {
 }
 
 /**
+ * The mirror's clock shows a time, and a later one.
+ * @param {import('@playwright/test').Page} page
+ */
+async function expectClockRuns(page) {
+  const read = async () => (await mirrorQuery(page, MINI_TIME))?.text ?? '';
+  const first = await read();
+  expect(first).toMatch(CLOCK);
+  await expect.poll(async () => {
+    const now = await read();
+    return CLOCK.test(now) && now !== first;
+  }, { message: 'mirror clock' }).toBe(true);
+}
+
+/**
  * The frame field holds real focus, from a click while no scroll is needed; the page then takes
  * the short viewport with the frame in view, and everything from here on is a keyboard press.
  * @param {{ url: string, selector: string, style?: 'dot'|'minimal' }} options
@@ -443,13 +536,13 @@ for (const [name, url, selector] of FRAMES) {
 
     await pollMirror(page, true);
     expectAtBottomCentre(await mirrorQuery(page, MINI), await viewportBox(page));
-    const time = (await mirrorQuery(page, MINI_TIME))?.text;
-    await expect.poll(async () => (await mirrorQuery(page, MINI_TIME))?.text).not.toBe(time);
+    await expectClockRuns(page);
 
     await scrollFrameIn(page, selector);
 
     await pollMirror(page, false);
     await waitForPill(frame, STOP);
+    await expectBarOpen(frame);
   });
 
   test(`mirror, ${name}: a stop while out of sight ends in the field and clears it`, async () => {
@@ -495,8 +588,7 @@ for (const [name, url, selector] of FRAMES) {
 
     await pollMirror(page, true);
     expectAtBottomCentre(await mirrorQuery(page, MINI), await viewportBox(page));
-    const time = (await mirrorQuery(page, MINI_TIME))?.text;
-    await expect.poll(async () => (await mirrorQuery(page, MINI_TIME))?.text).not.toBe(time);
+    await expectClockRuns(page);
 
     await scrollFrameIn(page, selector);
 
@@ -530,7 +622,12 @@ for (const [name, url, selector] of FRAMES) {
   test(`mirror, ${name}: rapid scroll out and back leaves no indicator`, async () => {
     const { page } = await recordInFrame({ url, selector });
 
-    await page.evaluate(async (s) => {
+    const removed = await page.evaluate(async (s) => {
+      let gone = 0;
+      const hosts = new MutationObserver((records) => {
+        for (const { removedNodes } of records) gone += removedNodes.length;
+      });
+      hosts.observe(document.documentElement, { childList: true });
       const beat = () => new Promise((resolve) => { setTimeout(resolve, 60); });
       for (let flip = 0; flip < 6; flip += 1) {
         window.scrollTo(0, 0);
@@ -538,8 +635,12 @@ for (const [name, url, selector] of FRAMES) {
         document.querySelector(s).scrollIntoView({ block: 'center' });
         await beat();
       }
+      hosts.disconnect();
+      return gone;
     }, selector);
 
+    // Only a mirror ever leaves: each one removed came up and went during the flips.
+    expect(removed).toBeGreaterThan(0);
     await pollMirror(page, false);
     await expectNoMirrorFor(page, 1000);
   });

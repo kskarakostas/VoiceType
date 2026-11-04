@@ -43,7 +43,8 @@ export function boot({
   });
 
   const mirror = createMirror({
-    makePill: () => new Pill({}),
+    // Frame 0's host first: at the same z-index the later host paints on top, so no status hides the mirror.
+    makePill: () => { pill.mount(); return new Pill({}); },
     onChange: (up) => { pill.reserveIndicator(up); },
     setTimeout: (fn, ms) => setTimeout(fn, ms),
     clearTimeout: (id) => clearTimeout(id),

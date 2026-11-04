@@ -517,7 +517,7 @@ describe('a frame out of sight', () => {
     await loadInstance();
     deliver(t, mirrorMessage('recording'));
     deliver(t, { action: MSG.AUDIO_LEVEL, level: 0.5 });
-    expect(miniOf(hosts()[0]).style.getPropertyValue('--vt-level')).toBe('0.5');
+    expect(miniOf(hosts()[1]).style.getPropertyValue('--vt-level')).toBe('0.5');
   });
 
   it('a level still reaches the frame that records', async () => {
@@ -532,7 +532,7 @@ describe('a frame out of sight', () => {
     const t = installChrome();
     await loadInstance();
     deliver(t, mirrorMessage('recording'));
-    expect(hosts()).toHaveLength(1);
+    expect(hosts()).toHaveLength(2);
     document.dispatchEvent(new CustomEvent('voicetype:teardown'));
     expect(hosts()).toHaveLength(0);
   });
@@ -541,12 +541,31 @@ describe('a frame out of sight', () => {
     const t = installChrome();
     await loadInstance();
     deliver(t, mirrorMessage('recording'));
-    expect(hosts()).toHaveLength(1);
+    expect(hosts()).toHaveLength(2);
     window.dispatchEvent(new Event('pagehide'));
-    expect(hosts()).toHaveLength(0);
+    expect(hosts()).toHaveLength(1);
+    expect(miniOf(hosts()[0]).dataset.state).toBe('idle');
     expect(t.sent()).not.toContain(MSG.CANCEL_RECORDING);
     deliver(t, { action: MSG.AUDIO_LEVEL, level: 0.5 });
-    expect(hosts()).toHaveLength(0);
+    expect(hosts()).toHaveLength(1);
+  });
+
+  it('a frame 0 status shown after the mirror leaves the mirror host last, so it paints on top', async () => {
+    const busy = (message) => (message.action === MSG.START_RECORDING
+      ? { ok: false, reason: 'busy', error: 'Busy' }
+      : reply(message));
+    const t = installChrome(busy);
+    await loadInstance();
+    deliver(t, mirrorMessage('recording'));
+
+    document.getElementById('field').focus();
+    await flush();
+    document.getElementById('field').dispatchEvent(hotkey('keydown'));
+    await flush();
+
+    expect(hosts()).toHaveLength(2);
+    expect(hosts()[0].shadowRoot.querySelector('[role="status"]').textContent).toBe('Busy');
+    expect(miniOf(hosts()[1]).dataset.state).toBe('recording');
   });
 });
 
