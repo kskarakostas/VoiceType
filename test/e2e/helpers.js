@@ -26,6 +26,8 @@ export const HOTKEY = 'Control+Shift+Space';
 export const RECORD_MS = 1500;
 /** A press lands within this long or the content script had not loaded: it mounts the pill at once. */
 const PRESS_LANDS_MS = 1000;
+/** The protocol's answers for a node, or what it resolved to, gone from the document. */
+const NODE_GONE = /Could not find node|No node with given id|Node with given id|Could not find object|Cannot find context/;
 
 const isExtensionWorker = (worker) => worker.url().startsWith('chrome-extension://');
 
@@ -183,15 +185,14 @@ function findDocument(node, url) {
 }
 
 /** @param {any} node CDP DOM.Node */
-function findPillHost(node) {
-  if (node.localName === 'voicetype-host') return node;
+function findPillHosts(node) {
+  if (node.localName === 'voicetype-host') return [node];
   // children only: frame documents (contentDocument) have pills of their own.
-  for (const child of node.children ?? []) {
-    const found = findPillHost(child);
-    if (found) return found;
-  }
-  return null;
+  return (node.children ?? []).flatMap(findPillHosts);
 }
+
+/** @param {any} host CDP DOM.Node of a pill host */
+const shadowOf = (host) => host?.shadowRoots?.find((r) => r.shadowRootType !== 'user-agent');
 
 /**
  * Where frame's viewport starts in its page's viewport.
@@ -213,11 +214,53 @@ async function frameOrigin(frame) {
 }
 
 /**
- * The box (page viewport coordinates) and text of `selector` inside the pill of a page's top
- * document or of one frame.
+ * The viewport of a page or a frame, in its page's viewport coordinates.
+ * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
+ */
+export async function viewportBox(target) {
+  const frame = frameOf(target);
+  const size = await frame.evaluate(() => ({
+    width: document.documentElement.clientWidth,
+    height: document.documentElement.clientHeight,
+  }));
+  return { ...(await frameOrigin(frame)), ...size };
+}
+
+/**
+ * The element's box in its own viewport (x and y are its centre), text and computed transform.
+ * @param {import('@playwright/test').CDPSession} cdp
+ * @param {any} shadow CDP DOM.Node of a shadow root
+ * @param {string} selector
+ * @returns {Promise<{ x: number, y: number, width: number, height: number, text: string, transform: string }|null>}
+ */
+async function boxInShadow(cdp, shadow, selector) {
+  const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: shadow.nodeId, selector });
+  if (!nodeId) return null;
+  const { object } = await cdp.send('DOM.resolveNode', { nodeId });
+  const { result } = await cdp.send('Runtime.callFunctionOn', {
+    objectId: object.objectId,
+    functionDeclaration: `function () {
+      const r = this.getBoundingClientRect();
+      return {
+        x: r.left + r.width / 2,
+        y: r.top + r.height / 2,
+        width: r.width,
+        height: r.height,
+        text: this.textContent,
+        transform: getComputedStyle(this).transform,
+      };
+    }`,
+    returnByValue: true,
+  });
+  return result.value;
+}
+
+/**
+ * The box (page viewport coordinates), text and computed transform of `selector` inside the pill
+ * of a page's top document or of one frame.
  * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
  * @param {string} selector CSS selector inside the pill
- * @returns {Promise<{ x: number, y: number, width: number, height: number, text: string }|null>}
+ * @returns {Promise<{ x: number, y: number, width: number, height: number, text: string, transform: string }|null>}
  */
 export async function pillQuery(target, selector) {
   const frame = frameOf(target);
@@ -225,21 +268,40 @@ export async function pillQuery(target, selector) {
   try {
     const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
     const doc = findDocument(root, frame.url());
-    const shadow = doc && findPillHost(doc)?.shadowRoots?.find((r) => r.shadowRootType !== 'user-agent');
+    const shadow = doc && shadowOf(findPillHosts(doc)[0]);
     if (!shadow) return null;
-    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: shadow.nodeId, selector });
-    if (!nodeId) return null;
-    const { object } = await cdp.send('DOM.resolveNode', { nodeId });
-    const { result } = await cdp.send('Runtime.callFunctionOn', {
-      objectId: object.objectId,
-      functionDeclaration: `function () {
-        const r = this.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2, width: r.width, height: r.height, text: this.textContent };
-      }`,
-      returnByValue: true,
-    });
+    const box = await boxInShadow(cdp, shadow, selector);
+    if (!box) return null;
     const origin = await frameOrigin(frame);
-    return { ...result.value, x: result.value.x + origin.x, y: result.value.y + origin.y };
+    return { ...box, x: box.x + origin.x, y: box.y + origin.y };
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
+}
+
+/**
+ * Like pillQuery on the top document, across every pill host: a page can hold the frame 0 pill and
+ * the mirror. A node that went away under a call (the worker removes the mirror at any moment)
+ * counts as not there.
+ * @param {import('@playwright/test').Page} page
+ * @param {string} selector CSS selector inside the pill
+ * @returns {Promise<{ x: number, y: number, width: number, height: number, text: string, transform: string }|null>}
+ *   the first match with a non-zero box
+ */
+export async function mirrorQuery(page, selector) {
+  const cdp = await sessionFor(page.mainFrame());
+  try {
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+    const doc = findDocument(root, page.url());
+    for (const host of doc ? findPillHosts(doc) : []) {
+      const shadow = shadowOf(host);
+      const box = shadow ? await boxInShadow(cdp, shadow, selector) : null;
+      if (box && box.width > 0 && box.height > 0) return box;
+    }
+    return null;
+  } catch (err) {
+    if (NODE_GONE.test(String(err?.message))) return null;
+    throw err;
   } finally {
     await cdp.detach().catch(() => {});
   }
