@@ -17,12 +17,12 @@ async function requestMicrophone() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     for (const track of stream.getTracks()) track.stop();
     report(true);
-    statusEl.textContent = 'Microphone allowed. You can close this tab and press REC again.';
+    statusEl.textContent = 'Microphone allowed. You can close this tab and try again.';
     setTimeout(() => window.close(), CLOSE_DELAY_MS);
   } catch (err) {
     report(false);
     statusEl.textContent = err?.name === 'NotFoundError'
-      ? 'No microphone found. Connect one, then press REC again.'
+      ? 'No microphone found. Connect one, then try again.'
       : 'Microphone not allowed.';
     helpEl.hidden = false;
   }

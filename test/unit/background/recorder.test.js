@@ -154,11 +154,11 @@ describe('start', () => {
     expect(deps.toOffscreen).toHaveBeenCalledTimes(1);
   });
 
-  it('busy while processing, even for the frame that recorded', async () => {
+  it('still working while processing, even for the frame that recorded', async () => {
     const { recorder } = setup();
     await recorder.start(A);
     await recorder.stop(A);
-    expect(await recorder.start(A)).toEqual(BUSY);
+    expect(await recorder.start(A)).toEqual(STILL_WORKING);
     expect(await recorder.start(A_CHILD)).toEqual(STILL_WORKING);
     expect(await recorder.start(B)).toEqual(BUSY);
   });
@@ -893,7 +893,7 @@ describe('cues', () => {
     expect(await t.recorder.start(B)).toEqual(BUSY);
     expect(await t.recorder.start(A_CHILD)).toEqual(IN_OTHER_FIELD);
     await t.recorder.stop(A);
-    expect(await t.recorder.start(A)).toEqual(BUSY);
+    expect(await t.recorder.start(A)).toEqual(STILL_WORKING);
     expect(await t.recorder.start(A_CHILD)).toEqual(STILL_WORKING);
     await flush();
     expect(t.cues()).toEqual(['start']);

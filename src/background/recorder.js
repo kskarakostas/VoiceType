@@ -45,9 +45,9 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   const fail = (reason, error) => ({ ok: false, reason, error });
   const owns = (endpoint) => session !== null
     && session.endpoint.tabId === endpoint.tabId && session.endpoint.frameId === endpoint.frameId;
-  /** What a refused start hears: the session may be on this very page, in another frame. */
-  const refusal = ({ tabId, frameId }) => {
-    if (tabId !== session.endpoint.tabId || frameId === session.endpoint.frameId) return BUSY;
+  /** What a refused start hears: the session may be on this very page. Only another frame is refused while it records. */
+  const refusal = ({ tabId }) => {
+    if (tabId !== session.endpoint.tabId) return BUSY;
     return session.state === 'processing' ? STILL_WORKING : IN_OTHER_FIELD;
   };
   /** The current session, when this offscreen report came from its capture. */
