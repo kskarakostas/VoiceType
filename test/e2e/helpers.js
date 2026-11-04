@@ -20,8 +20,12 @@ export const DUMMY_KEY = 'sk-e2e-dummy-key';
 export const START = 'button[aria-label="Start recording"]';
 export const STOP = 'button[aria-label="Stop recording"]';
 export const STATUS = '[role="status"]';
+export const MINI = '.mini';
+export const HOTKEY = 'Control+Shift+Space';
 /** Longer than minRecordingTime (1 s), so the recorder does not drop the clip as too short. */
 export const RECORD_MS = 1500;
+/** A press lands within this long or the content script had not loaded: it mounts the pill at once. */
+const PRESS_LANDS_MS = 1000;
 
 const isExtensionWorker = (worker) => worker.url().startsWith('chrome-extension://');
 
@@ -256,6 +260,14 @@ export async function waitForPill(target, selector, timeout = 10_000) {
 }
 
 /**
+ * Whether Minimal's indicator is drawn.
+ * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
+ */
+export async function indicatorShown(target) {
+  return ((await pillQuery(target, MINI))?.width ?? 0) > 0;
+}
+
+/**
  * The text of the pill's status line ('' while none shows).
  * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
  */
@@ -310,4 +322,32 @@ export async function dictate(target) {
   await waitForPill(target, STOP);
   await frameOf(target).page().waitForTimeout(RECORD_MS);
   await clickPill(target, STOP);
+}
+
+/**
+ * Minimal shows nothing until a press lands, and the content script loads at document_idle, so a
+ * press that mounts no pill was too early and is sent again. A landed press mounts it at once,
+ * before the microphone answers, so a slow microphone never gets a second press.
+ * @param {import('@playwright/test').Page} page
+ * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
+ * @param {{ indicator?: string }} [options] the selector that shows a recording
+ */
+export async function startWithHotkey(page, target, { indicator = STOP } = {}) {
+  await expect(async () => {
+    await page.keyboard.press(HOTKEY);
+    await expect.poll(async () => (await pillQuery(target, '.vt')) !== null, { timeout: PRESS_LANDS_MS }).toBe(true);
+  }).toPass({ timeout: 15_000 });
+  await waitForPill(target, indicator);
+}
+
+/**
+ * Hotkey, wait for recording, record long enough, hotkey again.
+ * @param {import('@playwright/test').Page} page
+ * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
+ * @param {{ indicator?: string }} [options] the selector that shows a recording
+ */
+export async function dictateWithHotkey(page, target, options) {
+  await startWithHotkey(page, target, options);
+  await page.waitForTimeout(RECORD_MS);
+  await page.keyboard.press(HOTKEY);
 }

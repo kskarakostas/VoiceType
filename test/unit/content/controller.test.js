@@ -17,6 +17,7 @@ function fakePill() {
     show: vi.fn(() => { pill.visible = true; }),
     reposition: vi.fn(),
     hide: vi.fn(() => { pill.visible = false; }),
+    setStyle: vi.fn(),
     setState: vi.fn(),
     setLevel: vi.fn(),
     setStatus: vi.fn(),
@@ -1380,6 +1381,34 @@ describe('hidden site', () => {
       t.scroll(RECT);
       expect(t.pill.visible).toBe(false);
     });
+
+    it('leaving Minimal with the focus elsewhere shows no pill at the old field', () => {
+      const t = withRealPill();
+      t.controller.setSettings(settings({ pillStyle: 'minimal' }));
+      $('a').focus();
+      t.controller.focusIn($('a'));
+      $('plain').focus();
+      t.controller.focusOut();
+      vi.advanceTimersByTime(FOCUS_OUT_MS);
+      t.controller.setSettings(settings({ pillStyle: 'dot' }));
+      expect(t.pill.visible).toBe(false);
+      expect(t.watching()).toBe(false);
+    });
+
+    it('a status carried out of Minimal does not leave a watcher on the old field', async () => {
+      const t = withRealPill();
+      t.controller.setSettings(settings({ pillStyle: 'minimal' }));
+      await recordAndStop(t);
+      t.controller.handleMessage(RESULT);
+      await flush();
+      $('plain').focus();
+      t.scroll(OFFSCREEN);
+      t.controller.setSettings(settings({ pillStyle: 'dot' }));
+      vi.advanceTimersByTime(STATUS_MS.success);
+      expect(t.watching()).toBe(false);
+      t.scroll(RECT);
+      expect(t.pill.visible).toBe(false);
+    });
   });
 
   it('keeps the field focused last for delivery across frames', async () => {
@@ -1394,6 +1423,155 @@ describe('hidden site', () => {
     t.controller.handleMessage(RESULT);
     await flush();
     expect(lastStatus(t.pill)[0]).toBe('Return to the field to insert, or click here to copy.');
+  });
+});
+
+describe('presentation', () => {
+  const RESULT = { action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null };
+  const PASSWORD_NOTICE = 'VoiceType does not record in password fields.';
+  const minimal = () => settings({ pillStyle: 'minimal' });
+  const dot = () => settings({ pillStyle: 'dot' });
+
+  function focusField(t, id = 'a') {
+    $(id).focus();
+    t.controller.focusIn($(id));
+  }
+
+  it('applies the stored style', () => {
+    const t = setup();
+    t.controller.setSettings(settings({ pillStyle: 'pill' }));
+    expect(t.pill.setStyle).toHaveBeenLastCalledWith('pill');
+  });
+
+  it.each(['pill', 'dot', 'minimal'])('a hidden site is Minimal whatever the style (%s)', (pillStyle) => {
+    const t = setup();
+    t.controller.setSettings(settings({ pillStyle, site: { hidePill: true, mode: null } }));
+    expect(t.pill.setStyle).toHaveBeenLastCalledWith('minimal');
+  });
+
+  it('a site without the rule keeps the stored style', () => {
+    const t = setup();
+    t.controller.setSettings(settings({ pillStyle: 'pill', site: { hidePill: false, mode: null } }));
+    expect(t.pill.setStyle).toHaveBeenLastCalledWith('pill');
+  });
+
+  it('a missing style falls back to dot', () => {
+    const t = setup();
+    t.controller.setSettings(settings());
+    expect(t.pill.setStyle).toHaveBeenLastCalledWith('dot');
+  });
+
+  it('settings that are refused set no style', () => {
+    const t = setup();
+    t.controller.setSettings({ pillStyle: 'pill' });
+    expect(t.pill.setStyle).not.toHaveBeenCalled();
+  });
+
+  it('Minimal shows no idle pill', () => {
+    const t = setup();
+    t.controller.setSettings(minimal());
+    focusField(t);
+    expect(t.pill.show).not.toHaveBeenCalled();
+  });
+
+  it('Minimal still records', async () => {
+    const t = setup();
+    t.controller.setSettings(minimal());
+    focusField(t);
+    await t.controller.press();
+    expect(t.actions()).toEqual([MSG.START_RECORDING]);
+    expect(t.pill.setState).toHaveBeenCalledWith('recording');
+    expect(t.pill.show).toHaveBeenCalled();
+  });
+
+  it('Minimal shows a refusal', async () => {
+    const t = setup();
+    t.controller.setSettings(minimal());
+    document.body.insertAdjacentHTML('beforeend', '<input id="secret" type="password">');
+    $('secret').focus();
+    await t.controller.press();
+    expect(lastStatus(t.pill)[0]).toBe(PASSWORD_NOTICE);
+    expect(t.actions()).toEqual([]);
+  });
+
+  it('switching to Minimal hides an idle pill', () => {
+    const t = setup();
+    t.controller.setSettings(dot());
+    focusField(t);
+    expect(t.pill.visible).toBe(true);
+    t.controller.handleMessage({ action: MSG.SETTINGS_CHANGED, settings: minimal() });
+    expect(t.pill.setStyle).toHaveBeenLastCalledWith('minimal');
+    expect(t.pill.hide).toHaveBeenCalled();
+    expect(t.pill.visible).toBe(false);
+  });
+
+  it('switching back shows it at the focused field', () => {
+    const t = setup();
+    t.controller.setSettings(minimal());
+    focusField(t);
+    t.controller.handleMessage({ action: MSG.SETTINGS_CHANGED, settings: dot() });
+    expect(t.pill.setStyle).toHaveBeenLastCalledWith('dot');
+    expect(t.pill.show).toHaveBeenCalledWith(RECT, { gap: 12 });
+    expect(t.deps.watchAnchor).toHaveBeenCalledWith($('a'), expect.any(Function));
+  });
+
+  it('a switch between the visible styles leaves the pill where it is', () => {
+    const t = setup();
+    t.controller.setSettings(dot());
+    focusField(t);
+    t.pill.show.mockClear();
+    t.controller.handleMessage({ action: MSG.SETTINGS_CHANGED, settings: settings({ pillStyle: 'pill' }) });
+    expect(t.pill.setStyle).toHaveBeenLastCalledWith('pill');
+    expect(t.pill.show).not.toHaveBeenCalled();
+    expect(t.pill.hide).not.toHaveBeenCalled();
+  });
+
+  it('a style change while recording keeps the state', async () => {
+    const t = setup();
+    t.controller.setSettings(dot());
+    focusField(t);
+    await t.controller.press();
+    t.controller.handleMessage({ action: MSG.SETTINGS_CHANGED, settings: minimal() });
+    expect(t.pill.setStyle).toHaveBeenLastCalledWith('minimal');
+    expect(t.controller.state).toBe('recording');
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    t.controller.handleMessage({ action: MSG.SETTINGS_CHANGED, settings: dot() });
+    expect(t.controller.state).toBe('recording');
+    expect(t.pill.hide).not.toHaveBeenCalled();
+  });
+
+  it('a pinned click-to-copy survives a switch to Minimal', async () => {
+    const t = setup({ insert: 'failed' });
+    t.controller.setSettings(dot());
+    await recordAndStop(t);
+    t.controller.handleMessage(RESULT);
+    await flush();
+    expect(lastStatus(t.pill)[0]).toBe(CLICK_TO_COPY);
+    t.controller.handleMessage({ action: MSG.SETTINGS_CHANGED, settings: minimal() });
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    await t.controller.copyLast();
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    expect(lastStatus(t.pill)[0]).toBe('Copied to clipboard.');
+  });
+
+  describe('settle hides a pill whose field scrolled out', () => {
+    it.each([
+      ['the focus moved off the field', () => $('plain').focus()],
+      ['another frame has the focus', (t) => t.deps.hasFocus.mockReturnValue(false)],
+    ])('%s', (_, moveFocus) => {
+      const t = setup();
+      t.controller.setSettings(dot());
+      focusField(t);
+      const onChange = t.deps.watchAnchor.mock.calls[0][1];
+      t.pill.visible = false;
+      moveFocus(t);
+      t.controller.focusOut();
+      vi.advanceTimersByTime(FOCUS_OUT_MS);
+      expect(t.pill.hide).toHaveBeenCalled();
+      expect(t.unwatch).toHaveBeenCalled();
+      onChange();
+      expect(t.pill.reposition).not.toHaveBeenCalled();
+    });
   });
 });
 

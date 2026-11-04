@@ -7,11 +7,10 @@ import { siteKey } from '../../src/shared/sites.js';
 import { SITE_KEYS } from '../fixtures/site-keys.js';
 import {
   launchExtension, seedSettings, openFields, pillQuery, pillStatus, waitForPill, clickPill, focusField,
-  PORT, TRANSCRIPT, DUMMY_KEY, STOP, RECORD_MS,
+  indicatorShown, startWithHotkey, dictateWithHotkey, PORT, TRANSCRIPT, DUMMY_KEY, STOP, MINI, HOTKEY, RECORD_MS,
 } from './helpers.js';
 
 const REFINED = 'refined transcript';
-const HOTKEY = 'Control+Shift+Space';
 const HIDE_ONLY = Object.freeze({ hidePill: true, mode: null });
 const EMAIL_SITE = Object.freeze({ hidePill: false, mode: 'email' });
 const OTHER_HOST_RULE = Object.freeze({ hidePill: true, mode: 'email' });
@@ -24,8 +23,6 @@ const STATUS_GONE_MS = 5000;
 const TAG = '.item-tag';
 const MODE_BUTTON = 'button.mode';
 const USE_ACTIVE = '[data-use-active]';
-/** A press lands within this long or the content script had not loaded: it shows the pill at once. */
-const PRESS_LANDS_MS = 1000;
 /** See frames.spec.js: a click right after a scroll can miss an out-of-process frame. */
 const VIEWPORT = { width: 1280, height: 2000 };
 const CROSS_ORIGIN_FRAME = `http://127.0.0.1:${PORT}/frame.html`;
@@ -97,32 +94,6 @@ async function pillShown(target) {
   return Boolean(box && box.width > 0 && box.height > 0);
 }
 
-/**
- * A hidden site shows nothing until a press lands, and the content script loads at document_idle,
- * so a press that shows no pill was too early and is sent again. A landed press shows the pill at
- * once, so a slow microphone never gets a second press.
- * @param {import('@playwright/test').Page} page
- * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
- */
-async function startWithHotkey(page, target) {
-  await expect(async () => {
-    await page.keyboard.press(HOTKEY);
-    await waitForPill(target, '.body', PRESS_LANDS_MS);
-  }).toPass({ timeout: 15_000 });
-  await waitForPill(target, STOP);
-}
-
-/**
- * Hotkey, wait for recording, record long enough, hotkey again.
- * @param {import('@playwright/test').Page} page
- * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
- */
-async function dictateWithHotkey(page, target) {
-  await startWithHotkey(page, target);
-  await page.waitForTimeout(RECORD_MS);
-  await page.keyboard.press(HOTKEY);
-}
-
 /** @param {import('@playwright/test').Page} page */
 const openMenu = (page) => clickPill(page, MODE_BUTTON);
 
@@ -161,6 +132,7 @@ test('a hidden site shows no idle pill in the top frame or its iframes', async (
     await field.click();
     await page.waitForTimeout(NO_PILL_MS);
     expect(await pillShown(target)).toBe(false);
+    expect(await indicatorShown(target)).toBe(false);
   }
 
   // The same clicks show the pill once the rule is gone, so the checks above are not vacuous.
@@ -173,16 +145,25 @@ test('the hotkey records on a hidden site with a visible indicator', async () =>
   const page = await openPage();
   const textarea = page.locator('#ta');
   await textarea.click();
-  expect(await pillShown(page)).toBe(false);
+  expect(await indicatorShown(page)).toBe(false);
 
-  await dictateWithHotkey(page, page);
+  await startWithHotkey(page, page, { indicator: MINI });
+
+  const indicator = await pillQuery(page, MINI);
+  expect(indicator.width).toBe(92);
+  expect(Math.abs(indicator.x - VIEWPORT.width / 2)).toBeLessThanOrEqual(1);
+  expect((await pillQuery(page, STOP))?.width ?? 0).toBe(0);
+
+  await page.waitForTimeout(RECORD_MS);
+  await page.keyboard.press(HOTKEY);
 
   await expect(textarea).toHaveValue(TRANSCRIPT);
   await expect.poll(() => pillStatus(page)).toMatch(/^Done /);
-  await expect.poll(() => pillShown(page), { timeout: STATUS_GONE_MS }).toBe(false);
+  await expect.poll(() => pillStatus(page), { timeout: STATUS_GONE_MS }).toBe('');
+  expect(await indicatorShown(page)).toBe(false);
 });
 
-for (const [name, siteRules] of [['a hidden site', { localhost: HIDE_ONLY }], ['a normal site', {}]]) {
+for (const [name, siteRules, indicator] of [['a hidden site', { localhost: HIDE_ONLY }, MINI], ['a normal site', {}, STOP]]) {
   test(`a recording with its field scrolled out shows the pill on ${name}`, async () => {
     await seedRules(siteRules);
     const page = await openPage();
@@ -192,10 +173,10 @@ for (const [name, siteRules] of [['a hidden site', { localhost: HIDE_ONLY }], ['
       window.scrollTo(0, 6000);
     });
 
-    await startWithHotkey(page, page);
+    await startWithHotkey(page, page, { indicator });
 
     expect(await page.evaluate(() => document.activeElement.id)).toBe('ta');
-    await waitForPill(page, STOP);
+    await waitForPill(page, indicator);
   });
 }
 
@@ -222,7 +203,7 @@ test('a hide-only rule leaves the mode global', async () => {
   const field = frame.locator('#frame-ta');
   await field.click();
 
-  await dictateWithHotkey(page, frame);
+  await dictateWithHotkey(page, frame, { indicator: MINI });
 
   await expect(field).toHaveValue(TRANSCRIPT);
   expect(providerCalls).toHaveLength(1);

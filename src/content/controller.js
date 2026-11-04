@@ -7,7 +7,7 @@ import { STATUS_MS } from './pill.js';
 
 /**
  * @typedef {import('./position.js').Box} Box
- * @typedef {Pick<import('./pill.js').Pill, 'show'|'reposition'|'hide'|'visible'|'host'|'setState'|'setLevel'
+ * @typedef {Pick<import('./pill.js').Pill, 'show'|'reposition'|'hide'|'visible'|'host'|'setStyle'|'setState'|'setLevel'
  *   |'setStatus'|'clearStatus'|'renderMenu'|'destroy'>} PillLike
  * @typedef {'idle'|'starting'|'recording'|'processing'} ControllerState
  * @typedef {{
@@ -83,8 +83,10 @@ export function createController(deps) {
 
   const inactive = () => orphan || dead;
   const gap = () => (Number.isFinite(settings?.pillGap) && settings.pillGap >= 0 ? settings.pillGap : DEFAULT_GAP);
-  /** This site's rule hides the idle pill. Recording, processing and statuses still show it (V10). */
-  const hiddenSite = () => settings?.site?.hidePill === true;
+  /** The stored style, or Minimal where this site's rule hides the pill. */
+  const presentation = () => (settings?.site?.hidePill === true ? 'minimal' : settings?.pillStyle ?? 'dot');
+  /** No idle pill here. Recording, processing and statuses still show (V10). */
+  const noIdlePill = () => presentation() === 'minimal';
 
   /** Show the pill at el (null: the corner) and follow it. */
   function anchorTo(el) {
@@ -115,15 +117,15 @@ export function createController(deps) {
   /** After focus or a status changes: follow the focused field, or hide an idle pill with nothing to show. */
   function settle() {
     if (inactive() || state !== 'idle' || statusBusy) return;
-    if (hiddenSite()) {
-      // Not gated on pill.visible: a pill offscreen would come back when its field scrolls back.
+    // Never gated on pill.visible: a pill offscreen would come back when its field scrolls back.
+    if (noIdlePill()) {
       hide();
       return;
     }
     // Another frame or window has the focus. This frame keeps its active field, but only the
     // frame the user is in shows an idle pill (spec 6.4); focusIn shows it again.
     if (!deps.hasFocus()) {
-      if (pill.visible) hide();
+      hide();
       return;
     }
     const active = deepActiveElement();
@@ -132,7 +134,7 @@ export function createController(deps) {
       return;
     }
     if (active && active === pill.host) return;
-    if (pill.visible) hide();
+    hide();
   }
 
   /** A status lives on the pill: show a hidden pill at the focused field, else at the corner. */
@@ -194,10 +196,11 @@ export function createController(deps) {
   function setSettings(next) {
     if (inactive()) return;
     if (!next || typeof next !== 'object' || !next.modes || typeof next.modes !== 'object') return;
-    const wasHidden = hiddenSite();
+    const hadNoIdlePill = noIdlePill();
     settings = next;
+    pill.setStyle(presentation());
     render();
-    if (hiddenSite() !== wasHidden) settle();
+    if (noIdlePill() !== hadNoIdlePill) settle();
   }
 
   /** @param {unknown} stats the GET_USAGE reply ({ today, last7Days, thisWeek, total, week }) */
@@ -213,7 +216,7 @@ export function createController(deps) {
   function focusIn(el) {
     if (inactive() || !isValidInput(el)) return;
     lastField = el;
-    if (state === 'idle' && (statusBusy || !hiddenSite())) anchorTo(el);
+    if (state === 'idle' && (statusBusy || !noIdlePill())) anchorTo(el);
   }
 
   function focusOut() {

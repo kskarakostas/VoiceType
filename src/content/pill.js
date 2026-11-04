@@ -155,6 +155,8 @@ export class Pill {
     doc.documentElement.append(host);
     this.#host = host;
     this.#root = root;
+    // A pill with no field has no watcher to tell it the window changed.
+    doc.defaultView?.addEventListener('resize', this.#onResize);
   }
 
   /**
@@ -322,10 +324,13 @@ export class Pill {
     clearTimeout(this.#statusTimer);
     this.#timerId = null;
     this.#statusTimer = null;
+    this.#doc.defaultView?.removeEventListener('resize', this.#onResize);
     this.#host?.remove();
     this.#shown = false;
     this.#destroyed = true;
   }
+
+  #onResize = () => this.#replace();
 
   #onKeyDown = (event) => {
     if (event.key !== 'Escape' || !this.#menuOpen) return;
@@ -444,7 +449,8 @@ export class Pill {
    * The status prefers the side opposite an open menu, else above for the above, corner and
    * minimal placements and below otherwise. Without room there it takes the other side, or past
    * the menu's far edge while the menu is open; failing that it is clamped into the viewport.
-   * On Minimal it is centred, and with no indicator showing it takes the indicator's place.
+   * On Minimal it is centred, and with no indicator showing it takes the indicator's place. A
+   * clamp there still keeps the bottom edge in a frame shorter than the status.
    */
   #placeStatus() {
     const box = this.#box;
@@ -487,7 +493,8 @@ export class Pill {
     const left = Math.max(EDGE, Math.min(wanted, viewport.width - width - EDGE));
     status.style.left = `${Math.round(left)}px`;
     // "above" is lifted by its own height in CSS (translateY(-100%)), so it is placed by its bottom edge.
-    status.style.top = `${Math.round(side === 'above' ? top + height : top)}px`;
+    const bottom = minimal ? Math.min(top + height, viewport.height - EDGE) : top + height;
+    status.style.top = `${Math.round(side === 'above' ? bottom : top)}px`;
   }
 
   #resetStatus() {

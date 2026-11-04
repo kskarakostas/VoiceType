@@ -1102,6 +1102,106 @@ describe('styles', () => {
     expect(CSS_TEXT.match(/^\.vt \{([^}]*)\}/m)[1]).toMatch(/^\s*direction: ltr;$/m);
   });
 
+  describe('a window resize', () => {
+    const { innerHeight } = window;
+    const resizeTo = (height) => {
+      window.innerHeight = height;
+      window.dispatchEvent(new Event('resize'));
+    };
+
+    afterEach(() => {
+      window.innerHeight = innerHeight;
+    });
+
+    it("moves Minimal's indicator", () => {
+      const { pill } = minimal();
+      pill.show(FIELD);
+      pill.setState('recording');
+      resizeTo(500);
+      expect(mini(pill).style.top).toBe('456px');
+    });
+
+    it('moves a pill at the corner', () => {
+      const { pill } = makePill();
+      pill.show(null);
+      resizeTo(500);
+      expect(q(pill, '.pill').style.top).toBe('454px');
+    });
+
+    it('moves the status with what it sits on', () => {
+      const { pill } = minimal();
+      pill.show(FIELD);
+      statusEl(pill).getBoundingClientRect = STATUS_200;
+      pill.setState('recording');
+      pill.setStatus('Almost at the limit', { sticky: true });
+      resizeTo(500);
+      expect(statusEl(pill).style.top).toBe('450px');
+    });
+
+    it('leaves a hidden pill hidden', () => {
+      const { pill } = makePill();
+      pill.show(null);
+      pill.hide();
+      resizeTo(500);
+      expect(vt(pill).hidden).toBe(true);
+      expect(pill.visible).toBe(false);
+    });
+
+    it('stops reaching a destroyed pill', () => {
+      const add = vi.spyOn(window, 'addEventListener');
+      const remove = vi.spyOn(window, 'removeEventListener');
+      const { pill } = makePill();
+      pill.show(null);
+      const listener = add.mock.calls.find(([type]) => type === 'resize')?.[1];
+      expect(listener).toBeTypeOf('function');
+      pill.destroy();
+      expect(remove).toHaveBeenCalledWith('resize', listener);
+      add.mockRestore();
+      remove.mockRestore();
+    });
+  });
+
+  describe('a status in a short frame', () => {
+    const { innerHeight } = window;
+    const TALL = 58; // two lines
+
+    afterEach(() => {
+      window.innerHeight = innerHeight;
+    });
+
+    /** The status of a pill of `style` at `height` tall in a frame `frame` tall. */
+    function statusIn(frame, height, { style = 'minimal', state = 'idle' } = {}) {
+      window.innerHeight = frame;
+      const { pill } = makePill();
+      pill.setStyle(style);
+      pill.show(null);
+      statusEl(pill).getBoundingClientRect = rect(STATUS_200().width, height);
+      pill.setState(state);
+      pill.setStatus('Hello', { sticky: true });
+      return statusEl(pill);
+    }
+
+    describe.each([[30, 29], [30, TALL], [60, 29], [60, TALL]])('%i px, a status %i px tall', (frame, height) => {
+      it.each(['idle', 'done', 'recording', 'processing'])('minimal keeps its bottom edge inside (%s)', (state) => {
+        const status = statusIn(frame, height, { state });
+        expect(status.dataset.side).toBe('above');
+        expect(pxValue(status.style.top)).toBeLessThanOrEqual(frame - EDGE);
+      });
+    });
+
+    it.each([['idle', '752px'], ['recording', '718px']])('a 768 px frame is unchanged (%s)', (state, top) => {
+      const status = statusIn(768, 29, { state });
+      expect(status.dataset.side).toBe('above');
+      expect(status.style.top).toBe(top);
+    });
+
+    it.each(['pill', 'dot'])('%s placement does not change', (style) => {
+      const status = statusIn(30, 29, { style });
+      expect(status.dataset.side).toBe('above');
+      expect(status.style.top).toBe(`${EDGE + 40}px`);
+    });
+  });
+
   it('a user string in a status is text', () => {
     const { pill } = minimal();
     pill.show(FIELD);
