@@ -13,6 +13,8 @@ const HEADER = ['language', 'term'];
 const NOTHING_IMPORTED = 'Nothing was imported.';
 /** Longest unknown language code a refusal repeats, in code points. */
 const MAX_QUOTED_CODE = 32;
+/** A term a spreadsheet would run, behind any quote marks it already has. */
+const FORMULA_LIKE = /^'*[=+\-@]/;
 
 /**
  * @param {string} field
@@ -23,12 +25,28 @@ function escapeField(field) {
 }
 
 /**
+ * @param {string} term
+ * @returns {string} `term` behind one more quote mark when formula-like, so a spreadsheet reads text.
+ */
+function markFormula(term) {
+  return FORMULA_LIKE.test(term) ? `'${term}` : term;
+}
+
+/**
+ * @param {string} term
+ * @returns {string} `term` less the one quote mark {@link markFormula} adds.
+ */
+function unmarkFormula(term) {
+  return term.startsWith("'") && FORMULA_LIKE.test(term) ? term.slice(1) : term;
+}
+
+/**
  * @param {Record<string, string[]>} dictionary
  * @returns {string} CSV for Excel: BOM, CRLF, one `group,term` row per term in display order.
  */
 export function serializeDictionary(dictionary) {
   const rows = orderedGroupKeys(dictionary).flatMap((group) => (
-    dictionary[group].map((term) => `${group},${escapeField(term)}`)
+    dictionary[group].map((term) => `${group},${escapeField(markFormula(term))}`)
   ));
   return `${BOM}${[HEADER.join(','), ...rows].map((row) => `${row}\r\n`).join('')}`;
 }
@@ -174,7 +192,7 @@ export function importDictionaryCsv(text, dictionary) {
       const code = [...group].slice(0, MAX_QUOTED_CODE).join('');
       return refuse(`Line ${line}: unknown language "${code}". ${NOTHING_IMPORTED}`);
     }
-    const term = (fields[columns - 1] ?? '').replace(/[\r\n]+/g, ' ').trim();
+    const term = unmarkFormula((fields[columns - 1] ?? '').replace(/[\r\n]+/g, ' ').trim());
     if (term) rows.push({ line, group, term });
   }
   if (!rows.length) return refuse('No terms in that file.');

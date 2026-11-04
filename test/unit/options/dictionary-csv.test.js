@@ -36,6 +36,24 @@ describe('serializeDictionary', () => {
   it('an empty dictionary serializes to the header', () => {
     expect(serializeDictionary({ en: [] })).toBe(`${BOM}language,term\r\n`);
   });
+
+  it.each(['=SUM(A1)', '+1', '-ing', '@me'])('exports %s behind one quote mark', (term) => {
+    expect(serializeDictionary({ any: [term] })).toBe(`${BOM}language,term\r\nany,'${term}\r\n`);
+  });
+
+  it("exports '=x with a second mark", () => {
+    expect(serializeDictionary({ any: ["'=x"] })).toBe(`${BOM}language,term\r\nany,''=x\r\n`);
+  });
+
+  it('marks a formula-like term before quoting it', () => {
+    expect(serializeDictionary({ any: ['=a,"b"'] }))
+      .toBe(`${BOM}language,term\r\nany,"'=a,""b"""\r\n`);
+  });
+
+  it('leaves plain terms and an apostrophe word alone', () => {
+    expect(serializeDictionary({ any: ["O'Brien", "'tis", 'a=b'] }))
+      .toBe(`${BOM}language,term\r\nany,O'Brien\r\nany,'tis\r\nany,a=b\r\n`);
+  });
 });
 
 describe('parseCsv', () => {
@@ -107,6 +125,49 @@ describe('importDictionaryCsv', () => {
   it('round-trips commas, quotes and semicolons', () => {
     const tricky = ['a,b', 'c"d', 'e;f', 'g,"h;'];
     expect(ok(serializeDictionary({ any: tricky }), {}).dictionary).toEqual({ any: tricky });
+  });
+
+  it.each(['=SUM(A1)', '+1', '-ing', '@me', "'=x", "''+y"])('round trips %s', (term) => {
+    expect(ok(serializeDictionary({ any: [term] }), {}).dictionary).toEqual({ any: [term] });
+  });
+
+  it('imports an apostrophe word as it stands', () => {
+    expect(ok("language,term\nany,O'Brien\nany,'tis\n").dictionary)
+      .toEqual({ any: ["O'Brien", "'tis"] });
+  });
+
+  it('a one-column file gets the same unmark', () => {
+    expect(ok("'=x\n''-y\n").dictionary).toEqual({ any: ['=x', "'-y"] });
+  });
+
+  it('an unmarked formula-like term imports as it stands', () => {
+    expect(ok('language,term\nany,=x\n').dictionary).toEqual({ any: ['=x'] });
+  });
+
+  it('export then import of a mixed dictionary changes nothing', () => {
+    const mixed = {
+      any: ['OpenAI', '=SUM(A1)', "'=SUM(A1)", '=a,"b"'],
+      en: ['+1', "O'Brien", "'tis"],
+      el: ['-ing', 'Νόηση', '@me;you'],
+    };
+    const result = ok(serializeDictionary(mixed), mixed);
+    expect(result.added).toBe(0);
+    expect(result.skipped).toBe(10);
+    expect(result.dictionary).toBe(mixed);
+    expect(ok(serializeDictionary(mixed), {}).dictionary).toEqual(mixed);
+  });
+
+  it('judges a repeat on the unmarked term', () => {
+    const result = ok("language,term\nany,'=X\nen,=x\n", { el: ['=x'] });
+    expect(result.added).toBe(0);
+    expect(result.skipped).toBe(2);
+  });
+
+  it('judges the length on the unmarked term', () => {
+    const fits = `=${'a'.repeat(63)}`;
+    expect(ok(`'${fits}`).dictionary).toEqual({ any: [fits] });
+    expect(importDictionaryCsv(`'${fits}a`, {}).message)
+      .toBe('Line 1: the term is over 64 characters. Nothing was imported.');
   });
 
   it('imports a one-column file into any', () => {
