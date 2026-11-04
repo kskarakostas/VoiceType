@@ -144,8 +144,8 @@ describe('settings page shell', () => {
   it('later-lane pages show their placeholder', async () => {
     await start(fakeChrome());
     const text = (id) => [...document.querySelectorAll(`section[data-route="${id}"] .placeholder`)].map((p) => p.textContent.trim());
-    for (const id of ['settings/appearance', 'settings/sound']) expect(text(id), id).toEqual([PLACEHOLDER]);
-    for (const id of ['home', 'modes', 'dictionary', 'settings/provider', 'settings/recording', 'settings/speech', 'settings/sites', 'settings/usage']) expect(text(id), id).toEqual([]);
+    for (const id of ['settings/appearance']) expect(text(id), id).toEqual([PLACEHOLDER]);
+    for (const id of ['home', 'modes', 'dictionary', 'settings/provider', 'settings/recording', 'settings/speech', 'settings/sites', 'settings/sound', 'settings/usage']) expect(text(id), id).toEqual([]);
   });
 
   it('the footer shows the version and the byline', async () => {

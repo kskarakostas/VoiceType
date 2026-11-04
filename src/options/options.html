@@ -262,7 +262,12 @@
 
         <section data-route="settings/sound" aria-labelledby="h-settings-sound" hidden>
           <h1 id="h-settings-sound" tabindex="-1">Sound and clipboard</h1>
-          <p class="placeholder">Coming in a later update.</p>
+          <div class="card">
+            <label class="check"><input type="checkbox" id="sounds" aria-describedby="sounds-hint">Play sounds</label>
+            <p class="hint" id="sounds-hint">Short tones when recording starts, when it stops, when the text is ready, and when something goes wrong.</p>
+            <label class="check"><input type="checkbox" id="always-copy" aria-describedby="always-copy-hint">Always copy the result</label>
+            <p class="hint" id="always-copy-hint">Also copies every dictation to the clipboard. This replaces whatever is on the clipboard.</p>
+          </div>
         </section>
 
         <section data-route="settings/usage" aria-labelledby="h-settings-usage" hidden>
