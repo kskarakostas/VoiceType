@@ -2,10 +2,14 @@
 // User data (mode names and icons, statuses) is only ever set with textContent.
 import css from './pill.css';
 import { computePillPosition, computeMenuPlacement, computeIndicatorPosition, EDGE } from './position.js';
-import { formatChord } from '../shared/chord.js';
-import { formatCost } from '../shared/pricing.js';
-import { PROVIDERS } from '../shared/models.js';
-import { orderedModeKeys, PILL_STYLES } from '../shared/defaults.js';
+import { buildMenuSections } from './pill-menu.js';
+import { createRaiser } from './pill-raise.js';
+import { createSightWatcher } from './pill-sight.js';
+import { PILL_STYLES } from '../shared/defaults.js';
+
+export { TARGET_LANGUAGES } from './pill-menu.js';
+export { RAISE_MS } from './pill-raise.js';
+export { SIGHT_DELAY_MS } from './pill-sight.js';
 
 /**
  * @typedef {import('./position.js').Box} Box
@@ -24,23 +28,8 @@ export const PILL_SIZE = Object.freeze({ width: 140, height: 30 });
 /** Size of the Minimal indicator; `.mini` in pill.css has the same width and height. */
 export const MINI_SIZE = Object.freeze({ width: 92, height: 28 });
 
-/** How often the browser may report on sight; visibility tracking refuses less than 100 ms. */
-export const SIGHT_DELAY_MS = 100;
-
-/** How often a pill with something to show goes back on top: a page gives no event when it opens a dialog. */
-export const RAISE_MS = 250;
-
 /** How long a non-sticky status stays, by tone. */
 export const STATUS_MS = Object.freeze({ error: 6000, warning: 6000, info: 2500, success: 2500 });
-
-/** Translate targets offered in the menu. */
-export const TARGET_LANGUAGES = Object.freeze([
-  Object.freeze({ code: 'EN', name: 'English' }),
-  Object.freeze({ code: 'EL', name: 'Greek' }),
-  Object.freeze({ code: 'ES', name: 'Spanish' }),
-  Object.freeze({ code: 'FR', name: 'French' }),
-  Object.freeze({ code: 'DE', name: 'German' }),
-]);
 
 const HOST_CSS = 'all: initial; position: fixed; top: 0; left: 0; z-index: 2147483647; '
   + 'display: block; width: 0; height: 0; overflow: visible; pointer-events: none;';
@@ -73,12 +62,6 @@ function formatElapsed(ms) {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-/** @param {Window|null} win */
-function isMac(win) {
-  const nav = win?.navigator;
-  return /mac/i.test(nav?.userAgentData?.platform || nav?.platform || '');
-}
-
 export class Pill {
   #handlers;
   #doc;
@@ -106,18 +89,14 @@ export class Pill {
   #state = 'idle';
   #startedAt = 0;
   #timerId = null;
-  #raiseTimer = null;
+  #raiser = createRaiser({ raise: () => this.raise() });
   #statusTimer = null;
   #statusClickable = false;
   #terminal = false;
   #menuOpen = false;
   /** The open menu as rendered: its side of the pill and its vertical extent. */
   #menuBox = { placement: 'below', top: 0, bottom: 0 };
-  /** @type {IntersectionObserver|null} */
-  #sightObserver = null;
-  /** @type {HTMLElement|null} */
-  #sightTarget = null;
-  #seen = true;
+  #sight;
 
   /**
    * @param {PillHandlers} handlers An empty object is only valid for a Minimal pill, which has no controls.
@@ -130,6 +109,7 @@ export class Pill {
     this.#doc = doc;
     this.#shadowMode = shadowMode;
     this.#statusAtField = statusAtField;
+    this.#sight = createSightWatcher({ doc, onSight: (seen) => this.#handlers.onSight(seen) });
     this.#els = this.#build();
   }
 
@@ -330,10 +310,8 @@ export class Pill {
     mode.title = modeName;
     mode.setAttribute('aria-label', `Mode: ${modeName}${siteMode === null ? '' : ', this site'}. Open the VoiceType menu`);
 
-    const sections = [this.#modesSection(modes, active, siteMode !== null)];
-    if (activeMode?.hasLanguageOption) sections.push(this.#translateSection(settings.translateTargetLang));
-    sections.push(this.#providerSection(settings), this.#footerSection(settings, usage));
-    menu.replaceChildren(...sections);
+    const helpers = { el: this.#el.bind(this), icon: this.#icon.bind(this), doc: this.#doc };
+    menu.replaceChildren(...buildMenuSections(helpers, { modes, active, marked: siteMode !== null, activeMode, settings, usage }));
     if (this.#menuOpen) {
       this.#placeMenu();
       this.#placeStatus();
@@ -375,12 +353,11 @@ export class Pill {
     if (this.#destroyed) return;
     this.closeMenu();
     clearInterval(this.#timerId);
-    clearInterval(this.#raiseTimer);
+    this.#raiser.stop();
     clearTimeout(this.#statusTimer);
     this.#timerId = null;
-    this.#raiseTimer = null;
     this.#statusTimer = null;
-    this.#sightObserver?.disconnect();
+    this.#sight.disconnect();
     this.#doc.defaultView?.removeEventListener('resize', this.#onResize);
     this.#doc.removeEventListener('fullscreenchange', this.#onFullscreen, true);
     this.#host?.remove();
@@ -393,37 +370,24 @@ export class Pill {
   };
 
   #onFullscreen = () => {
-    if (this.#raiseTimer !== null) this.raise();
+    if (this.#raiser.running) this.raise();
   };
 
   /** Raise while there is something to show. An idle pill stays out: under a modal it would be a dead control. */
   #syncRaising() {
     const wanted = this.#shown && this.#hasContent();
-    if (wanted === (this.#raiseTimer !== null)) return;
+    if (wanted === this.#raiser.running) return;
     if (wanted) {
-      // Timer first: showPopover() runs page listeners, and one that comes back here must find it set.
-      this.#raiseTimer = setInterval(() => this.raise(), RAISE_MS);
-      this.raise();
+      this.#raiser.start();
       return;
     }
-    clearInterval(this.#raiseTimer);
-    this.#raiseTimer = null;
+    this.#raiser.stop();
     try {
       this.#host.hidePopover();
     } catch {
       // The page took the host out: it is out of the top layer already.
     }
   }
-
-  /** @param {IntersectionObserverEntry[]} entries */
-  #onSightEntries = (entries) => {
-    const entry = entries.at(-1);
-    // isVisible: a transparent, hidden or covered frame is in the viewport, and still out of sight.
-    const seen = entry.isIntersecting && entry.isVisible !== false;
-    if (seen === this.#seen) return;
-    this.#seen = seen;
-    this.#handlers.onSight(seen);
-  };
 
   /**
    * Watch the indicator that shows, for recording and processing only: statuses stay in the frame.
@@ -435,21 +399,7 @@ export class Pill {
     const live = this.#state === 'recording' || this.#state === 'processing';
     const { pillSight, miniSight } = this.#els;
     const showing = this.#style === 'minimal' ? miniSight : pillSight;
-    const target = live && this.#handlers.onSight ? showing : null;
-    if (target === this.#sightTarget) return;
-    this.#sightTarget = target;
-    this.#sightObserver?.disconnect();
-    this.#sightObserver = null;
-    if (!target) {
-      this.#seen = true;
-      return;
-    }
-    const win = this.#doc.defaultView;
-    this.#sightObserver = new win.IntersectionObserver(this.#onSightEntries, {
-      trackVisibility: true,
-      delay: SIGHT_DELAY_MS,
-    });
-    this.#sightObserver.observe(target);
+    this.#sight.sync(live && this.#handlers.onSight ? showing : null);
   }
 
   #onKeyDown = (event) => {
@@ -718,108 +668,6 @@ export class Pill {
     });
 
     return { wrap, pill, pillSight, mini, miniSight, miniTime, mode, modeIcon, rec, recIcon, recLabel, more, status, statusIcon, statusText, menu };
-  }
-
-  /**
-   * @param {Record<string, any>} modes
-   * @param {string} active the mode dictation uses here
-   * @param {boolean} marked active comes from this site's rule
-   */
-  #modesSection(modes, active, marked) {
-    const section = this.#section('Mode');
-    const list = this.#el('div', 'list', { role: 'radiogroup', 'aria-label': 'Mode' });
-    if (marked) list.append(this.#useActiveItem());
-    for (const key of orderedModeKeys(modes)) {
-      const mode = modes[key];
-      if (!mode || typeof mode !== 'object') continue;
-      const item = this.#el('button', 'item', { type: 'button', role: 'radio', 'aria-checked': String(key === active) });
-      item.dataset.mode = key;
-      const icon = this.#el('span', 'item-icon', { 'aria-hidden': 'true' });
-      icon.textContent = typeof mode.icon === 'string' ? mode.icon : '';
-      const name = this.#el('span', 'item-name');
-      name.textContent = typeof mode.name === 'string' ? mode.name : key;
-      item.append(icon, name);
-      if (marked && key === active) {
-        const tag = this.#el('span', 'item-tag');
-        tag.textContent = 'This site';
-        item.append(tag);
-      }
-      item.append(this.#icon('check', 'item-check'));
-      list.append(item);
-    }
-    section.append(list);
-    return section;
-  }
-
-  #useActiveItem() {
-    const item = this.#el('button', 'item', { type: 'button', role: 'radio', 'aria-checked': 'false', 'data-use-active': '' });
-    const name = this.#el('span', 'item-name');
-    name.textContent = 'Use active mode';
-    item.append(this.#el('span', 'item-icon', { 'aria-hidden': 'true' }), name);
-    return item;
-  }
-
-  #translateSection(current) {
-    const section = this.#section('Translate to', 'globe');
-    const row = this.#el('div', 'seg', { role: 'radiogroup', 'aria-label': 'Translate to' });
-    for (const { code, name } of TARGET_LANGUAGES) {
-      const chip = this.#el('button', 'chip', { type: 'button', role: 'radio', 'aria-checked': String(current === name), 'aria-label': name, title: name });
-      chip.dataset.lang = name;
-      chip.textContent = code;
-      row.append(chip);
-    }
-    section.append(row);
-    return section;
-  }
-
-  #providerSection(settings) {
-    const section = this.#section('Provider');
-    const row = this.#el('div', 'seg', { role: 'radiogroup', 'aria-label': 'Provider' });
-    const hasKey = settings.hasKey && typeof settings.hasKey === 'object' ? settings.hasKey : {};
-    for (const [id, provider] of Object.entries(PROVIDERS)) {
-      const chip = this.#el('button', 'chip', { type: 'button', role: 'radio', 'aria-checked': String(settings.provider === id) });
-      chip.dataset.provider = id;
-      const name = this.#el('span', 'chip-name');
-      name.textContent = provider.label;
-      chip.append(name);
-      if (hasKey[id] !== true) {
-        const hint = this.#el('span', 'chip-hint');
-        hint.textContent = 'no key';
-        chip.append(hint);
-      }
-      row.append(chip);
-    }
-    section.append(row);
-    return section;
-  }
-
-  #footerSection(settings, usage) {
-    const section = this.#el('div', 'section footer');
-    if (usage && typeof usage === 'object') {
-      const line = this.#el('p', 'usage');
-      line.textContent = `Today ${formatCost(finite(usage.todayCost))} (${finite(usage.todaySessions)}), all time ${formatCost(finite(usage.totalCost))}`;
-      section.append(line);
-    }
-    const hotkey = settings.hotkey;
-    if (hotkey && typeof hotkey === 'object' && typeof hotkey.code === 'string') {
-      const hint = this.#el('p', 'hint');
-      const keys = this.#el('kbd');
-      keys.textContent = formatChord(hotkey, { mac: isMac(this.#doc.defaultView) });
-      const text = this.#el('span');
-      text.textContent = 'tap to toggle, hold to talk';
-      hint.append(keys, text);
-      section.append(hint);
-    }
-    return section;
-  }
-
-  #section(title, iconName) {
-    const section = this.#el('div', 'section');
-    const label = this.#el('p', 'label');
-    if (iconName) label.append(this.#icon(iconName));
-    label.append(title);
-    section.append(label);
-    return section;
   }
 
   #el(tag, className, attrs = {}) {
