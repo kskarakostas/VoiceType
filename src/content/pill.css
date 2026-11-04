@@ -176,6 +176,8 @@ button:focus-visible {
   flex: none;
   width: 24px;
   height: 24px;
+  /* Expanded, its marks overflow the zero width over the mode button and would take the click. */
+  pointer-events: none;
   transition: width 0.18s var(--vt-ease) var(--vt-delay), opacity 0.12s ease var(--vt-delay);
 }
 
