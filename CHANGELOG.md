@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.0.0 (2026-11-04)
+
+### Added
+- A settings page in a tab, with a sidebar: Home, Modes, Dictionary, and under Settings: Provider, Recording, Speech, Sites, Appearance, Sound and clipboard, Usage and data. Text saves as you type, so nothing is lost if you close the tab a second after typing. It also opens from Extension options on `chrome://extensions`.
+- Home: time saved, words, speaking speed, sessions refined by a mode, days dictated, this week's cost and cost per 1,000 words. Word counts start with 3.0, so older sessions do not skew them.
+- Dictionary: terms grouped by language, up to 100 in all, each unique across the groups, with CSV import and export. Every term goes with every dictation.
+- Site rules: hide the pill on a site, or give a site its own mode. The hotkey still records on a hidden site, with a small indicator. On a site with a mode, a mode picked in the pill menu updates that site; Use active mode clears it.
+- Pill styles on the Appearance page: Dot (today's look, the default), Pill (the full bar at idle) and Minimal (nothing until you record, then a small indicator). Hidden sites use Minimal.
+- Sounds: optional short tones for start, stop, done and error. Off by default.
+- Always copy the result: every dictation also goes to the clipboard. Off by default. If that copy fails, the status adds "Not copied."
+
+### Changed
+- The toolbar popup is now a quick panel: status, provider, active mode, this site's rule, today's sessions and cost, and Open settings. Everything else moved to the settings page.
+- The vocabulary list became the Dictionary. Your terms move into its All languages group. A browser taken back to 2.2.0 after this update shows an empty vocabulary.
+- New permission: `clipboardWrite`, "Modify data you copy and paste". Always copy needs it, and it also ends the stall under Fixed. VoiceType does not read the clipboard.
+- Reset to defaults also keeps your dictionary and site rules. Custom modes are deleted as before, so a site rule that uses one loses its mode.
+- A site's rule goes by hostname, with leading `www.` and trailing dots dropped.
+
+### Fixed
+- Gemini dictation no longer ends in "No speech detected." `gemini-3.5-transcribe` returns its text in `audioTranscription` parts, which 2.2.0 did not read, so every Gemini dictation was billed and lost.
+- A clipboard copy no longer stalls behind a page prompt. With no recent click, a slow result that had to go to the clipboard could wait on a prompt attributed to the page, with the pill stuck on processing. A copy now takes at most a second to answer.
+- A recording now stays indicated with its field out of view: the pill moves to the corner instead of going away.
+- A recording in an embedded frame stays indicated when the frame is out of sight, hidden or covered: a small indicator shows at the bottom of the page.
+- The indicator stays on top of modal dialogs, popovers and fullscreen elements, which used to paint over it, so a recording could run with nothing on screen. Under a modal dialog it can be seen but not clicked; the hotkey still works.
+- A click on the left of the pill's mode button now opens the menu. The collapsed dot used to take that click.
+
 ## 2.2.0 (2026-09-28)
 
 ### Changed

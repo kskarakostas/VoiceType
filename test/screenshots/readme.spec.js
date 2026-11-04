@@ -4,7 +4,7 @@
 import { test } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { launchExtension, seedSettings, focusField, clickPill, waitForPill, pillQuery, PORT, START, STOP } from '../e2e/helpers.js';
+import { launchExtension, seedSettings, focusField, clickPill, waitForPill, pillQuery, PORT, START, STOP, HOTKEY } from '../e2e/helpers.js';
 import { applyUsage, emptyLog } from '../../src/background/usage.js';
 import { estimateSttCost } from '../../src/shared/pricing.js';
 import { PROVIDERS } from '../../src/shared/models.js';
@@ -15,8 +15,25 @@ const DEMO_URL = `http://localhost:${PORT}/demo.html`;
 const GLOW_ROOM = 48;
 /** Less than the popup's gap between cards and the pill's gap to its field, so no neighbour shows. */
 const EDGE_ROOM = 6;
-/** Masked in the popup as "sk-p…7f3a (saved)". */
 const SAMPLE_KEY = 'sk-proj-example-not-a-real-key-7f3a';
+/** Wide enough for the sidebar and two columns of Home's cards. */
+const SETTINGS_VIEWPORT = { width: 1000, height: 640 };
+const SAMPLE_SETTINGS = {
+  dictionary: { any: ['VoiceType', 'Noesis', 'BYOK'], en: ['Kubernetes', 'PostgreSQL'], el: ['Θεσσαλονίκη'] },
+  siteRules: {
+    'mail.example.com': { hidePill: false, mode: 'email' },
+    'notes.example.org': { hidePill: true, mode: null },
+  },
+};
+/** Settings pages shot for the README: file name and route. */
+const SETTINGS_SHOTS = [
+  ['settings-home', 'home'],
+  ['settings-dictionary', 'dictionary'],
+  ['settings-sites', 'settings/sites'],
+  ['settings-appearance', 'settings/appearance'],
+];
+/** About two and a half words a second of speech. */
+const WORDS_PER_SECOND = 2.5;
 
 /** Sessions per day, newest first; repeats over 45 days. */
 const SESSIONS = [6, 9, 4, 0, 7, 11, 5, 3, 8, 0, 6, 10];
@@ -31,7 +48,8 @@ function sampleUsage(now = new Date()) {
       const audioSeconds = 12 + ((day * 7 + i * 13) % 31);
       const mode = i % 4 === 3 ? 'email' : 'default';
       const cost = estimateSttCost(PROVIDERS[provider].stt, null, audioSeconds);
-      log = applyUsage(log, { provider, audioSeconds, cost, mode }, date);
+      const words = Math.round(audioSeconds * WORDS_PER_SECOND);
+      log = applyUsage(log, { provider, audioSeconds, cost, mode, words }, date);
     }
   }
   return log;
@@ -66,7 +84,7 @@ for (const colorScheme of ['light', 'dark']) {
       contextOptions: { colorScheme, deviceScaleFactor: 2, viewport: { width: 900, height: 620 } },
     });
     try {
-      await seedSettings(serviceWorker, SAMPLE_KEY);
+      await seedSettings(serviceWorker, SAMPLE_KEY, SAMPLE_SETTINGS);
       await serviceWorker.evaluate((usageLog) => chrome.storage.local.set({ usageLog }), sampleUsage());
 
       const page = await context.newPage();
@@ -89,18 +107,30 @@ for (const colorScheme of ['light', 'dark']) {
       await page.waitForTimeout(1200);
       await shoot(page, [card, await pillBox(page, '.body')], GLOW_ROOM, `${dir}/in-use.png`);
 
+      await page.keyboard.press(HOTKEY);
+      await page.waitForTimeout(300);
+
       const popup = await context.newPage();
-      await popup.setViewportSize({ width: 320, height: 620 });
+      await popup.setViewportSize({ width: 320, height: 560 });
       await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-      await popup.locator('#status[data-ready="true"]').waitFor();
-      await popup.locator('#mode-list li').first().waitFor();
+      // From behind the demo page, as the quick panel reads the active tab.
+      await page.bringToFront();
+      await popup.reload();
+      await popup.locator('#site-controls').waitFor();
       await popup.waitForTimeout(300);
-      const box = (selector) => popup.locator(selector).boundingBox();
-      // Full popup width from the top bar down, with the Recording card's bottom edge kept.
-      const recording = await box('.card:has(#h-recording)');
-      await shoot(popup, [await box('.topbar'), { ...recording, height: recording.height + EDGE_ROOM }], 0, `${dir}/popup-settings.png`);
-      await shoot(popup, [await box('.card:has(#h-modes)')], EDGE_ROOM, `${dir}/popup-modes.png`);
-      await shoot(popup, [await box('.card:has(#h-usage)')], EDGE_ROOM, `${dir}/popup-usage.png`);
+      await popup.screenshot({ path: `${dir}/quick-panel.png`, fullPage: true });
+      await popup.close();
+
+      const settings = await context.newPage();
+      await settings.setViewportSize(SETTINGS_VIEWPORT);
+      for (const [name, route] of SETTINGS_SHOTS) {
+        await settings.goto(`chrome-extension://${extensionId}/options.html#${route}`);
+        await settings.locator(`section[data-route="${route}"]:not([hidden])`).waitFor();
+        // A route change focuses the heading, and its ring would be in the shot.
+        await settings.evaluate(() => document.activeElement?.blur());
+        await settings.waitForTimeout(500);
+        await settings.screenshot({ path: `${dir}/${name}.png` });
+      }
     } finally {
       await close();
     }

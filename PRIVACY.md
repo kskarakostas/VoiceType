@@ -1,6 +1,6 @@
 # Privacy Policy for VoiceType
 
-**Last Updated: September 2026**
+**Last Updated: November 2026**
 
 ## Overview
 
@@ -14,8 +14,10 @@ VoiceType collects and processes the following data **locally on your device**:
 
 1. **Audio Data**: Temporarily recorded for transcription purposes
 2. **API Keys**: Your OpenAI or Google Gemini API keys, stored in plain text in Chrome's local extension storage
-3. **Settings**: Your preferences (provider, modes, recording limits, silence auto-stop, hotkey, spoken languages, vocabulary)
-4. **Usage Statistics**: Session counts, audio duration, and estimated costs
+3. **Settings**: Your preferences (provider, modes, recording limits, silence auto-stop, hotkey, spoken languages, pill style, sounds, always-copy)
+4. **Dictionary**: The terms you add, by language
+5. **Site Rules**: The hostnames you add a rule for, with that rule (Hide pill, mode). VoiceType stores only the sites you set a rule on
+6. **Usage Statistics**: Session counts, audio duration, word counts, modes used, and estimated costs per day. Word counts are numbers; no transcript is kept
 
 ### What We Do NOT Collect
 
@@ -23,14 +25,15 @@ VoiceType collects and processes the following data **locally on your device**:
 - Browsing history
 - Form data or passwords
 - Any data for advertising purposes
-- Clipboard contents (VoiceType writes dictated text to the clipboard when it cannot insert it, and never reads the clipboard)
+- Clipboard contents (VoiceType writes dictated text to the clipboard when it cannot insert it, and on every dictation with Always copy the result on; it never reads the clipboard)
 
 ## Data Storage
 
 - All data is stored **locally** in Chrome's extension storage
 - API keys are stored in plain text in `chrome.storage.local`. They are never written to `chrome.storage.sync`, so they do not leave this browser profile. They are stored unencrypted on disk inside your Chrome profile folder. Anyone, or any program, with access to that folder can read them.
-- Inside Chrome, the keys are readable only by VoiceType's own trusted pages: the background service worker and the popup. VoiceType restricts its local storage with `chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })`, so its in-page script cannot read that storage at all. The in-page script receives settings without keys, and no key is ever sent to a web page.
+- Inside Chrome, the keys are readable only by VoiceType's own trusted pages: the background service worker, the popup and the settings page. VoiceType restricts its local storage with `chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })`, so its in-page script cannot read that storage at all. The in-page script receives settings without keys, the dictionary or your site rules (only the current site's Hide pill and mode), and no key is ever sent to a web page.
 - No data is sent to our servers (we don't have any servers)
+- Your dictionary and site rules are stored locally. Dictionary terms leave this device only with a recording, as described below; site rules never do
 - Usage statistics are stored locally and never transmitted
 
 ## Data Transmission
@@ -54,7 +57,7 @@ VoiceType uses third-party AI services for transcription and mode processing:
 - **OpenAI**: `gpt-transcribe` for speech recognition, `gpt-6-luna` for modes (Email, Translate, Instruct and custom modes)
 - **Google Gemini**: `gemini-3.5-transcribe` for speech recognition, `gemini-3.8-flash` for modes
 
-Mode processing sends the transcript text, not the audio, to the text model of the same provider you chose for speech recognition. Your spoken-language hints and vocabulary terms, when set, are sent with the audio to the speech recognition model.
+Mode processing sends the transcript text, not the audio, to the text model of the same provider you chose for speech recognition. Your spoken-language hints and dictionary terms, when set, are sent with the audio to the speech recognition model. Every term of every language group is sent with every recording.
 
 Your use of these services is subject to their terms and privacy policies.
 
@@ -62,13 +65,14 @@ Your use of these services is subject to their terms and privacy policies.
 
 - **Access to all sites** (`<all_urls>`): the in-page script that shows the pill runs on every site so you can dictate anywhere. VoiceType uses the host permission itself to put that script back into tabs that are already open when VoiceType is installed or updated. The same permission is what lets the background service worker call the OpenAI and Gemini APIs. The script looks only at the field you focus and dictate into; it does not read or send page content.
 - **scripting**: the re-injection described above.
-- **offscreen**: the extension document that records the microphone.
-- **storage**: settings, keys and usage statistics on this device.
+- **offscreen**: the extension document that records the microphone. It also plays the optional sounds and copies results.
+- **storage**: settings, keys, dictionary, site rules and usage statistics on this device.
+- **clipboardWrite**: copying a result to the clipboard with no click: for Always copy the result, and for text VoiceType cannot insert. Chrome describes it as "Modify data you copy and paste". VoiceType does not read the clipboard. Always copy the result is off by default.
 
 ## Data Retention
 
 - Audio recordings are processed in memory and immediately discarded after transcription. Closing or leaving a tab while it records cancels the recording without sending it
-- Settings and API keys persist until you clear them or uninstall the extension
+- Settings, API keys, your dictionary and site rules persist until you clear them or uninstall the extension
 - Usage statistics: daily history is kept for 90 days; all-time totals are kept until you clear them
 
 ## Your Rights
@@ -76,7 +80,8 @@ Your use of these services is subject to their terms and privacy policies.
 You can:
 
 - **Clear your API keys** at any time through the extension settings
-- **Clear usage statistics** through the Usage section of the popup
+- **Clear usage statistics** on the settings page under Usage and data
+- **Remove dictionary terms and site rules** on the Dictionary and Sites pages of the settings page
 - **Uninstall the extension** to remove all stored data
 
 ## Security

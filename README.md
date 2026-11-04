@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.2.0-purple" alt="Version">
+  <img src="https://img.shields.io/badge/version-3.0.0-purple" alt="Version">
   <img src="https://img.shields.io/badge/Chrome-140%2B-blue" alt="Chrome 140 or newer">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
@@ -53,11 +53,20 @@ Not just transcription: compose emails, translate languages, or ask AI questions
 ### ⌨️ Hold to Talk
 Hold the hotkey while you speak and let go to insert, or tap to start and tap again to stop. Works in iframes and fields in open shadow roots too.
 
-### 📊 Usage Tracking
-Monitor your sessions, audio time, and estimated costs. Never get surprised by your bill.
+### 📊 Home and Usage
+See this week's time saved, words, speaking speed and cost per 1,000 words. Sessions, audio time and estimated cost by period and provider. Never get surprised by your bill.
+
+### 📖 Dictionary
+Keep names and jargon by language, up to 100 terms, with CSV import and export.
+
+### 🌐 Site Rules
+Hide the pill on a site, or give a site its own mode.
+
+### 🎨 Pill Styles
+Dot (the default), Pill or Minimal. Optional sounds, and an option to also copy every result.
 
 ### 🔒 Privacy First
-Keys stay in your browser's local extension storage, readable only by VoiceType's background and popup, never synced. Audio goes straight to the provider you chose. No server of ours exists.
+Keys stay in your browser's local extension storage, readable only by VoiceType's background, popup and settings page, never synced. Audio goes straight to the provider you chose. No server of ours exists.
 
 </td>
 </tr>
@@ -69,6 +78,24 @@ Keys stay in your browser's local extension storage, readable only by VoiceType'
 
 <table>
 <tr>
+<td align="center" colspan="2">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/settings-home.png">
+  <img src="screenshots/light/settings-home.png" alt="Settings page, Home" width="640">
+</picture><br>
+<strong>Home</strong><br>
+<em>Time saved, words, speaking speed, days dictated and cost this week</em>
+</td>
+</tr>
+<tr>
+<td align="center" width="50%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/quick-panel.png">
+  <img src="screenshots/light/quick-panel.png" alt="Quick panel" width="280">
+</picture><br>
+<strong>Quick Panel</strong><br>
+<em>Provider, active mode, this site's rule and today's cost</em>
+</td>
 <td align="center" width="50%">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/menu.png">
@@ -77,31 +104,33 @@ Keys stay in your browser's local extension storage, readable only by VoiceType'
 <strong>Pill Menu</strong><br>
 <em>Switch mode and provider, see today's cost and the hotkey</em>
 </td>
-<td align="center" width="50%">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/popup-settings.png">
-  <img src="screenshots/light/popup-settings.png" alt="Popup settings" width="300">
-</picture><br>
-<strong>Settings</strong><br>
-<em>Provider, API key, recording limits and hotkey</em>
-</td>
 </tr>
 <tr>
 <td align="center" width="50%">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/popup-modes.png">
-  <img src="screenshots/light/popup-modes.png" alt="Popup modes" width="300">
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/settings-dictionary.png">
+  <img src="screenshots/light/settings-dictionary.png" alt="Settings page, Dictionary" width="380">
 </picture><br>
-<strong>Modes</strong><br>
-<em>Built-in modes plus your own, each with its own instructions</em>
+<strong>Dictionary</strong><br>
+<em>Terms by language, with CSV import and export</em>
 </td>
 <td align="center" width="50%">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/popup-usage.png">
-  <img src="screenshots/light/popup-usage.png" alt="Popup usage" width="300">
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/settings-sites.png">
+  <img src="screenshots/light/settings-sites.png" alt="Settings page, Sites" width="380">
 </picture><br>
-<strong>Usage</strong><br>
-<em>Sessions, audio time and estimated cost by period and provider</em>
+<strong>Sites</strong><br>
+<em>Hide the pill or set a mode, per site</em>
+</td>
+</tr>
+<tr>
+<td align="center" colspan="2">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dark/settings-appearance.png">
+  <img src="screenshots/light/settings-appearance.png" alt="Settings page, Appearance" width="380">
+</picture><br>
+<strong>Appearance</strong><br>
+<em>Pill, Dot or Minimal</em>
 </td>
 </tr>
 </table>
@@ -119,7 +148,7 @@ Keys stay in your browser's local extension storage, readable only by VoiceType'
 
 - Every mode except Default sends the transcript through the provider's text model (`gpt-6-luna` or `gemini-3.8-flash`), which adds a small text cost.
 - Translate's target language (English, Greek, Spanish, French or German) is picked in the pill menu while Translate is the active mode.
-- Add your own modes in the popup under **Modes, Add mode**: an icon, a name and instructions for the text model. Empty instructions mean plain transcription. `{{targetLanguage}}` in the instructions is replaced with Translate's target language.
+- Add your own modes on the settings page under **Modes, Add mode**: an icon, a name and instructions for the text model. Empty instructions mean plain transcription. `{{targetLanguage}}` in the instructions is replaced with Translate's target language.
 
 ---
 
@@ -163,10 +192,10 @@ Then in Chrome 140 or newer:
 
 ### 3. Configure & Go
 
-1. Click the VoiceType icon in Chrome
-2. Paste your API key. It saves when you press Tab or Esc, or after a second. Clicking outside to close the popup right after pasting may not save it, so press Esc
-3. Click into any text field, then click **REC** on the pill or hold `Ctrl+Shift+Space` while you speak
-4. The first time, VoiceType opens a tab asking for the microphone. Choose **Allow while visiting the site**, then press REC again
+1. Click the VoiceType icon in Chrome, then **Add API key**. The settings page opens at **Provider**
+2. Paste your API key. It saves on its own
+3. Click into any text field, then hold `Ctrl+Shift+Space` while you speak, or point at the dot beside the field and click **REC**
+4. The first time, VoiceType opens a tab asking for the microphone. Choose **Allow while visiting the site**, then start again
 
 ---
 
@@ -178,7 +207,7 @@ Then in Chrome 140 or newer:
 - **Tap** it to start recording and tap again to stop.
 - Pressed while the text is still being processed, the pill says "Still processing".
 
-To change it, open the popup, click the key under **Recording, Hotkey** and press the new combination. It needs Ctrl, Alt or Cmd plus a key; Esc cancels. Chrome keeps some shortcuts for itself (such as `Ctrl+T` or `Ctrl+W`) and never passes them to a page, so pick something else.
+To change it, open the settings page, click the key under **Settings, Recording, Hotkey** and press the new combination. It needs Ctrl, Alt or Cmd plus a key; Esc cancels. Chrome keeps some shortcuts for itself (such as `Ctrl+T` or `Ctrl+W`) and never passes them to a page, so pick something else.
 
 On Windows, do not choose a combination with both Ctrl and Alt: AltGr reports as Ctrl+Alt, so typing characters such as `@` or `€` would trigger it.
 
@@ -196,7 +225,7 @@ The first recording opens a VoiceType tab that asks for the microphone. Choose *
 
 While VoiceType records, Chrome shows its microphone indicator in the system tray or menu bar; the website's tab shows none. The microphone is released after every recording.
 
-Blocked it by mistake? Open `chrome://settings/content/microphone`, remove VoiceType from the blocked list, and press REC again.
+Blocked it by mistake? Open `chrome://settings/content/microphone`, remove VoiceType from the blocked list, and start again.
 
 ---
 
@@ -210,35 +239,48 @@ Blocked it by mistake? Open `chrome://settings/content/microphone`, remove Voice
 - In rich editors (Gmail, Notion, Slack, ChatGPT, Facebook, claude.ai and others), if VoiceType cannot confirm the insert, the text is also on the clipboard. It is never inserted twice.
 - In text boxes, one `Ctrl+Z` removes exactly the dictated text.
 - Fields inside iframes and open shadow roots work too.
+- With **Always copy the result** on, every dictation also goes to the clipboard, replacing what is there. If that copy fails, the status says "Not copied." and the text still goes to the field.
 
 ---
 
-## ⚙️ Popup
+## ⚙️ Settings and Quick Panel
 
-Click the VoiceType icon. One column holds Provider, Recording, Speech, Modes, Usage and About.
+Click the VoiceType icon for the quick panel: status, provider, active mode, **This site** (Hide pill and Mode on this site), today's sessions and cost, and **Open settings**.
+
+The settings page opens in a tab, also from **Extension options** on `chrome://extensions`. **Home**, **Modes** and **Dictionary** come first, then Settings: **Provider**, **Recording**, **Speech**, **Sites**, **Appearance**, **Sound and clipboard**, **Usage and data**.
 
 - **Recording**
   - **Minimum length** (0.5, 1, 2 or 3 s; default 1 s): shorter recordings are discarded as accidental clicks, and the pill says "Too short, ignored".
   - **Maximum length** (30 s to 5 min; default 2 min): recording stops at this length, the pill says "Max time reached", and what you said is transcribed.
   - **Silence auto-stop** (Off, 2, 3 or 5 s; default Off): once you have spoken, recording stops after this much silence.
-- Every change saves on its own; there is no Save button. Edits to an existing mode save automatically too. A new mode is saved with **Create mode**.
+- **Sites**: **Hide pill** removes the idle pill on a site; the hotkey still records there, with a small indicator at the bottom of the page. **Mode** gives a site its own mode. The rule goes by hostname, without `www.`; subdomains need their own rule. On a site with a mode, a mode picked in the pill menu updates that site; **Use active mode** clears it.
+- **Appearance**
+  - **Dot** (default): a small dot beside the field that opens into the bar when you point at it.
+  - **Pill**: the full bar beside the field, always in view.
+  - **Minimal**: nothing until you record, then a small indicator at the bottom of the page. Start and stop with the hotkey. There is no menu on the page.
+- **Sound and clipboard**: **Play sounds** gives short tones for start, stop, done and error. **Always copy the result** also copies every dictation. Both are off by default.
+- Every change saves on its own; there is no Save button. A new mode is saved with **Create mode**.
 - **Clear history** and **Reset to defaults** need two separate clicks: the first changes the button's label, the second confirms. A double click or a held Enter does not confirm them.
-- **Reset to defaults** keeps your API keys, provider, spoken languages and vocabulary.
+- **Reset to defaults** keeps your API keys, provider, spoken languages, dictionary and site rules. Custom modes are deleted, so a site rule that uses one loses its mode.
+
+If the frame you dictate in is out of sight, hidden or covered, VoiceType shows the small indicator at the bottom of the page, in every style. It also stays on top of modal dialogs, popovers and fullscreen elements. Under a modal dialog it can be seen but not clicked: use the hotkey, or close the dialog to click a "click here to copy" status.
 
 ---
 
-## 🗣️ Spoken Languages and Vocabulary
+## 🗣️ Spoken Languages and Dictionary
 
-Both live in the popup under **Speech** and are sent with every recording, whatever the mode.
+Spoken languages live under **Settings, Speech**, the dictionary on its own page. Both are sent with every recording, whatever the mode.
 
 **Spoken languages**
 - **Auto** (default): the provider detects the language on its own.
 - Tick one or more languages to steer recognition. They are hints about what to expect, not a lock.
 - Mixing languages, such as Greek with English terms? Tick every language you mix; that is what the list is for. With only one ticked, words from the other language are more likely to come out wrong.
 
-**Vocabulary**
-- One term per line: product names, people's names, jargon, acronyms. Write each exactly as it should appear, such as `Noesis`.
-- Up to 100 terms of up to 64 characters each.
+**Dictionary**
+- Product names, people's names, jargon, acronyms. Write each exactly as it should appear, such as `Noesis`. Enter adds a term; commas split.
+- Groups by language only organize your terms: every term of every group goes with every dictation.
+- Up to 100 terms of up to 64 characters each, and each term only once.
+- **Export CSV** writes `language,term` rows. **Import CSV** takes that format or a one-column list, merges into your groups and skips terms you already have. A file with an error, or one that would pass 100 terms, imports nothing.
 - A term makes the provider more likely to hear it, not certain to. A name that sounds like a common word (Noesis and "noises") is recognized more often but can still slip.
 
 ---
@@ -254,13 +296,13 @@ The extension is free. You need an API key from OpenAI (pay-per-use) or Google G
 <details>
 <summary><b>Which provider should I use?</b></summary>
 <br>
-Both are accurate for dictation. Gemini's transcribe model removes filler words on its own. OpenAI is the default. Costs are comparable; see the Usage section of the popup.
+Both are accurate for dictation. Gemini's transcribe model removes filler words on its own. OpenAI is the default. Costs are comparable; see **Settings, Usage and data**.
 </details>
 
 <details>
 <summary><b>Why doesn't the hotkey work?</b></summary>
 <br>
-VoiceType listens for the hotkey inside web pages, so click into the page first. It cannot work on <code>chrome://</code> pages, the Chrome Web Store or the new tab page. Chrome keeps some shortcuts such as <code>Ctrl+T</code> for itself; pick another combination in the popup under Recording, Hotkey.
+VoiceType listens for the hotkey inside web pages, so click into the page first. It cannot work on <code>chrome://</code> pages, the Chrome Web Store or the new tab page. Chrome keeps some shortcuts such as <code>Ctrl+T</code> for itself; pick another combination under Settings, Recording, Hotkey.
 </details>
 
 <details>
@@ -272,7 +314,7 @@ The field you started in lost focus or disappeared before the text arrived, no f
 <details>
 <summary><b>Why are short recordings ignored?</b></summary>
 <br>
-Recordings shorter than the minimum you set (default 1 second) are treated as accidental clicks. Change it in the popup under Recording, Minimum length.
+Recordings shorter than the minimum you set (default 1 second) are treated as accidental clicks. Change it under Settings, Recording, Minimum length.
 </details>
 
 <details>
@@ -288,15 +330,15 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 | Problem | Solution |
 |---------|----------|
 | **"Could not load javascript 'content.js'" or "Could not load manifest"** | You selected the repository folder. Run `npm run build`, then choose the `dist/` folder in **Load unpacked** |
-| **"Add an API key" message** | Click the extension icon → paste your API key and press Esc. A key or typed text saves when you press Tab or Esc, or after a second; clicking outside to close the popup right after pasting may not save it |
-| **Microphone not working** | VoiceType asks in its own tab, not in the site's address bar. If the pill says the microphone is blocked, open `chrome://settings/content/microphone`, remove VoiceType from the blocked list, and press REC again |
-| **Asked for the microphone every time** | You chose "Allow this time". Reset it at `chrome://settings/content/microphone`, press REC and choose **Allow while visiting the site** |
-| **Hotkey doesn't work** | Click into the page first. Browser shortcuts such as `Ctrl+T` never reach a page; set another hotkey in the popup (Recording, Hotkey) |
+| **"Add an API key" message** | Click the extension icon, then **Add API key**, and paste your key on the settings page |
+| **Microphone not working** | VoiceType asks in its own tab, not in the site's address bar. If the pill says the microphone is blocked, open `chrome://settings/content/microphone`, remove VoiceType from the blocked list, and start again |
+| **Asked for the microphone every time** | You chose "Allow this time". Reset it at `chrome://settings/content/microphone`, start a recording and choose **Allow while visiting the site** |
+| **Hotkey doesn't work** | Click into the page first. Browser shortcuts such as `Ctrl+T` never reach a page; set another hotkey under Settings, Recording, Hotkey |
 | **"VoiceType was turned off or updated. Reload this page."** | VoiceType was turned off on `chrome://extensions`, or that tab could not be switched to the new version. Turn VoiceType on if it is off, then reload the page |
 | **Text went to the clipboard** | Focus moved before the text arrived, or the site does not accept inserted text. Paste with `Ctrl+V` |
 | **Transcription fails** | Check your API key and account balance |
-| **Names or jargon come out wrong** | Add them in the popup under Speech, Vocabulary, one term per line, spelled as they should appear |
-| **Mixed-language speech comes out garbled** | Tick every language you speak under Speech, Spoken languages |
+| **Names or jargon come out wrong** | Add them on the Dictionary page, spelled as they should appear |
+| **Mixed-language speech comes out garbled** | Tick every language you speak under Settings, Speech, Spoken languages |
 | **Poor quality** | Speak clearly, reduce background noise, or try the other provider |
 
 ---
@@ -318,8 +360,8 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 
 | Mode | To the speech model | To the text model |
 |------|---------------------|-------------------|
-| Default | Audio, spoken languages, vocabulary | Nothing |
-| Any other mode | Audio, spoken languages, vocabulary | The transcript text and the mode's instructions, never the audio |
+| Default | Audio, spoken languages, dictionary terms | Nothing |
+| Any other mode | Audio, spoken languages, dictionary terms | The transcript text and the mode's instructions, never the audio |
 
 - Everything goes straight from your browser to the provider you chose, with your key. Both steps use that same provider.
 - On Gemini, speech recognition already removes filler words and self-corrections and formats the text, even in Default. On OpenAI, Default returns the transcript as recognized.
@@ -328,9 +370,11 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 
 ## 🔒 Privacy
 
-- ✅ API keys stored in plain text in Chrome's local extension storage, readable only by VoiceType's background service worker and popup, never synced, never sent anywhere but the provider
+- ✅ API keys stored in plain text in Chrome's local extension storage, readable only by VoiceType's background service worker, popup and settings page, never synced, never sent anywhere but the provider
 - ✅ Web pages never receive your keys or your microphone; audio is recorded in VoiceType's own extension page
 - ✅ Audio sent directly to OpenAI/Google (not our servers)
+- ✅ Site rules and your dictionary stay on this device; dictionary terms go to the provider with each recording
+- ✅ The `clipboardWrite` permission lets VoiceType copy results with no click, for **Always copy the result** and for text it cannot insert. It never reads the clipboard
 - ✅ No analytics or tracking
 - ✅ Fully open source
 
