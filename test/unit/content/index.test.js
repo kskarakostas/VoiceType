@@ -556,6 +556,167 @@ describe('first settings answer', () => {
   });
 });
 
+describe('a document that becomes current', () => {
+  const site = (hidePill) => ({ ...structuredClone(SETTINGS), site: { hidePill, mode: null } });
+  const field = () => document.getElementById('field');
+  const reads = (t) => t.sent().filter((action) => action === MSG.GET_SETTINGS).length;
+  const shown = () => hosts().length === 1 && shadow().querySelector('.vt').hidden === false;
+
+  /** A service worker that answers `current.settings`, which a test changes as the rule changes. */
+  function serve(hidePill) {
+    const current = { settings: site(hidePill) };
+    const t = installChrome((message) => (message.action === MSG.GET_SETTINGS ? current.settings : reply(message)));
+    return { t, current };
+  }
+
+  describe('prerendered', () => {
+    /** @param {boolean} value */
+    const stubPrerendering = (value) => Object.defineProperty(document, 'prerendering', { configurable: true, get: () => value });
+    const activate = async () => {
+      stubPrerendering(false);
+      document.dispatchEvent(new Event('prerenderingchange'));
+      await flush();
+    };
+
+    beforeEach(() => stubPrerendering(true));
+
+    afterEach(() => {
+      delete document.prerendering;
+    });
+
+    it('reads no settings until it is activated, then reads once', async () => {
+      const { t } = serve(false);
+      await loadInstance();
+      expect(reads(t)).toBe(0);
+      await activate();
+      expect(reads(t)).toBe(1);
+      document.dispatchEvent(new Event('prerenderingchange'));
+      await flush();
+      expect(reads(t)).toBe(1);
+    });
+
+    it('keeps the boot gate closed until the read settles, so a hidden site shows no pill', async () => {
+      let answer;
+      const held = new Promise((resolve) => { answer = resolve; });
+      installChrome((message) => (message.action === MSG.GET_SETTINGS ? held : reply(message)));
+      await loadInstance();
+      field().focus();
+      await flush();
+      expect(hosts()).toHaveLength(0);
+      await activate();
+      field().blur();
+      field().focus();
+      await flush();
+      expect(hosts()).toHaveLength(0);
+      answer(site(true));
+      await flush();
+      expect(hosts()).toHaveLength(0);
+    });
+
+    it('shows the focused field its pill after the read', async () => {
+      serve(false);
+      field().focus();
+      await loadInstance();
+      expect(hosts()).toHaveLength(0);
+      await activate();
+      expect(shown()).toBe(true);
+    });
+
+    it('a copy torn down before activation stays silent', async () => {
+      const { t } = serve(false);
+      await loadInstance();
+      document.dispatchEvent(new CustomEvent('voicetype:teardown'));
+      await activate();
+      expect(reads(t)).toBe(0);
+    });
+
+    it('the entry ignores a look-alike activation from the page', async () => {
+      const { t } = serve(false);
+      await loadEntry();
+      document.dispatchEvent(new Event('prerenderingchange'));
+      await flush();
+      expect(reads(t)).toBe(0);
+    });
+
+    it('an extension gone by activation stays quiet until the chord', async () => {
+      const { t } = serve(false);
+      field().focus();
+      await loadInstance({ isAlive: () => false });
+      await activate();
+      expect(reads(t)).toBe(0);
+      expect(hosts()).toHaveLength(0);
+      field().dispatchEvent(hotkey('keydown'));
+      await flush();
+      expect(statusText()).toBe(ORPHAN);
+    });
+  });
+
+  describe('restored from the back-forward cache', () => {
+    const restore = async (persisted = true) => {
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted }));
+      await flush();
+    };
+
+    it('a rule added while cached hides the idle pill', async () => {
+      const { current } = serve(false);
+      field().focus();
+      await loadInstance();
+      expect(shown()).toBe(true);
+      current.settings = site(true);
+      await restore();
+      expect(shown()).toBe(false);
+    });
+
+    it('a rule removed while cached shows the pill at the focused field', async () => {
+      const { current } = serve(true);
+      field().focus();
+      await loadInstance();
+      expect(hosts()).toHaveLength(0);
+      current.settings = site(false);
+      await restore();
+      expect(shown()).toBe(true);
+    });
+
+    it('a first load reads nothing again', async () => {
+      const { t } = serve(false);
+      await loadInstance();
+      await restore(false);
+      expect(reads(t)).toBe(1);
+    });
+
+    it('the entry ignores a look-alike restore from the page', async () => {
+      const { t } = serve(false);
+      await loadEntry();
+      await restore();
+      expect(reads(t)).toBe(1);
+    });
+
+    it('a copy torn down stays silent', async () => {
+      const { t } = serve(false);
+      await loadInstance();
+      document.dispatchEvent(new CustomEvent('voicetype:teardown'));
+      await restore();
+      expect(reads(t)).toBe(1);
+    });
+
+    it('an extension gone meanwhile stays quiet until the chord', async () => {
+      const { t } = serve(false);
+      let alive = true;
+      field().focus();
+      await loadInstance({ isAlive: () => alive });
+      alive = false;
+      t.chrome.runtime.sendMessage.mockImplementation(async () => {
+        throw new Error('Extension context invalidated.');
+      });
+      await restore();
+      expect(statusText()).not.toBe(ORPHAN);
+      field().dispatchEvent(hotkey('keydown'));
+      await flush();
+      expect(statusText()).toBe(ORPHAN);
+    });
+  });
+});
+
 describe('menu on a site with a mode rule', () => {
   function withRule() {
     return installChrome((message) => {

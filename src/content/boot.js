@@ -154,6 +154,31 @@ export function boot({
     controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'idle' });
   }
 
+  /** The service worker answers `site` from the tab's URL, so a read counts only for the document the tab shows. */
+  function firstRead() {
+    // finally: an answer that fails to apply must not leave focus ignored for good.
+    loadSettings().finally(() => {
+      booted = true;
+      // Injected after an update, or at document_idle after the user already clicked into a field.
+      controller.focusIn(deepActiveElement(document));
+      // A blur during the wait was ignored: settle against where the focus is now.
+      controller.focusOut();
+    });
+  }
+
+  function onPrerenderingChange(event) {
+    if (!isTrusted(event)) return;
+    document.removeEventListener('prerenderingchange', onPrerenderingChange);
+    // The read would raise the terminal notice, which only the chord does (onKeyDown).
+    if (isAlive()) firstRead();
+  }
+
+  function onPageShow(event) {
+    // Restored from the back-forward cache: the rule may have changed while it was cached.
+    if (!isTrusted(event) || !event.persisted || !isAlive()) return;
+    loadSettings();
+  }
+
   function onMessage(message) {
     if (message?.action === MSG.SETTINGS_CHANGED) trackHotkey(message.settings);
     controller.handleMessage(message);
@@ -169,6 +194,8 @@ export function boot({
     window.removeEventListener('blur', onWindowBlur);
     window.removeEventListener('focus', onWindowFocus);
     window.removeEventListener('pagehide', onPageHide);
+    window.removeEventListener('pageshow', onPageShow);
+    document.removeEventListener('prerenderingchange', onPrerenderingChange);
     try {
       chrome.runtime.onMessage.removeListener(onMessage);
     } catch {
@@ -185,14 +212,9 @@ export function boot({
   window.addEventListener('blur', onWindowBlur);
   window.addEventListener('focus', onWindowFocus);
   window.addEventListener('pagehide', onPageHide);
+  window.addEventListener('pageshow', onPageShow);
   chrome.runtime.onMessage.addListener(onMessage);
 
-  // finally: an answer that fails to apply must not leave focus ignored for good.
-  loadSettings().finally(() => {
-    booted = true;
-    // Injected after an update, or at document_idle after the user already clicked into a field.
-    controller.focusIn(deepActiveElement(document));
-    // A blur during the wait was ignored: settle against where the focus is now.
-    controller.focusOut();
-  });
+  if (document.prerendering) document.addEventListener('prerenderingchange', onPrerenderingChange);
+  else firstRead();
 }
