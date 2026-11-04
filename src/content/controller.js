@@ -184,7 +184,6 @@ export function createController(deps) {
     deps.clearTimeout(statusTimer);
     statusTimer = null;
     statusBusy = false;
-    copyPending = false;
     pill.clearStatus();
   }
 
@@ -246,12 +245,17 @@ export function createController(deps) {
     // REC while a result is held settles that result first. The next REC starts a recording
     // when this frame has the focus and no password field is focused.
     if (held) return deliverHeld();
+    // So does REC on a pending click-to-copy: both are user gestures, and the next result would
+    // overwrite the transcript.
+    if (copyPending) {
+      pressStarted = false;
+      return copyLast();
+    }
     const active = deepActiveElement();
     const refusal = startRefusal(active);
     if (refusal) {
       pressStarted = false;
-      // A pending click-to-copy status is kept: replacing it would strand the transcript.
-      if (!copyPending) notify(refusal, { tone: 'info' });
+      notify(refusal, { tone: 'info' });
       return;
     }
     target = isValidInput(active) ? active : null;

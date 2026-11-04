@@ -391,26 +391,67 @@ describe('a pending click-to-copy status', () => {
     input.focus();
   }
 
-  it.each([
-    ['a password field has the focus', 'VoiceType does not record in password fields.', () => focusPasswordField()],
-    ['another frame or window has the focus', 'Click into the field you want to dictate into, then try again.', (t) => t.deps.hasFocus.mockReturnValue(false)],
-  ])('stays clickable when a start is refused because %s', async (_name, notice, refuse) => {
-    const t = setup({ insert: 'failed' });
+  /** Records, fails to insert, and leaves the click-to-copy status up. */
+  async function strandResult(t) {
     await recordAndStop(t);
     t.controller.handleMessage({ action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null });
     await flush();
     expect(lastStatus(t.pill)).toEqual(COPY_STATUS);
-    const statuses = t.pill.setStatus.mock.calls.length;
     t.send.mockClear();
-    refuse(t);
-    await t.controller.press();
-    await t.controller.toggle();
+  }
+
+  it.each([
+    ['a press', (t) => t.controller.press()],
+    ['a REC click', (t) => t.controller.toggle()],
+  ])('%s copies it and starts nothing, and the next press records', async (_name, act) => {
+    const t = setup({ insert: 'failed' });
+    await strandResult(t);
+    await act(t);
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
     expect(t.send).not.toHaveBeenCalled();
     expect(t.controller.state).toBe('idle');
-    expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
-    expect(t.pill.clearStatus).toHaveBeenCalledTimes(1);
-    await t.controller.copyLast();
+    expect(lastStatus(t.pill)).toEqual(['Copied to clipboard.', { tone: 'success', sticky: false, clickable: false }]);
+    await t.controller.press();
+    expect(t.send).toHaveBeenCalledWith({ action: MSG.START_RECORDING });
+    expect(t.controller.state).toBe('recording');
+    expect(t.deps.copyText).toHaveBeenCalledTimes(1);
+  });
+
+  it('the release of the press that copied stops no recording started since', async () => {
+    const t = setup({ insert: 'failed' });
+    await strandResult(t);
+    await t.controller.press();
+    await t.controller.toggle();
+    expect(t.controller.state).toBe('recording');
+    await t.controller.release({ held: true });
+    expect(t.controller.state).toBe('recording');
+  });
+
+  it('stays clickable when the press could not copy, and the next press tries again', async () => {
+    const t = setup({ insert: 'failed' });
+    await strandResult(t);
+    t.deps.copyText.mockResolvedValueOnce(false);
+    await t.controller.press();
+    expect(t.send).not.toHaveBeenCalled();
+    expect(lastStatus(t.pill)).toEqual(['Copy failed. Click here to try again.', { tone: 'error', sticky: true, clickable: true }]);
+    await t.controller.press();
+    expect(t.deps.copyText).toHaveBeenCalledTimes(2);
+    expect(lastStatus(t.pill)).toEqual(['Copied to clipboard.', { tone: 'success', sticky: false, clickable: false }]);
+    expect(t.send).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a password field has the focus', 'VoiceType does not record in password fields.', () => focusPasswordField()],
+    ['another frame or window has the focus', 'Click into the field you want to dictate into, then try again.', (t) => t.deps.hasFocus.mockReturnValue(false)],
+  ])('a press settles it even when a start would be refused because %s', async (_name, notice, refuse) => {
+    const t = setup({ insert: 'failed' });
+    await strandResult(t);
+    refuse(t);
+    await t.controller.press();
     expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    expect(t.send).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('idle');
+    expect(t.pill.clearStatus).toHaveBeenCalledTimes(1);
     expect(lastStatus(t.pill)).toEqual(['Copied to clipboard.', { tone: 'success', sticky: false, clickable: false }]);
     // Copied: nothing is pending any more, so the next refusal says why.
     await t.controller.toggle();
