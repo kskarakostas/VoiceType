@@ -342,11 +342,14 @@ export class Pill {
 
   /** What the pill shows changed: with its field out of view, that decides corner or hidden. */
   #replace() {
-    if (this.#shown) this.#place(this.#anchor);
+    if (this.#shown) this.#place(this.#anchor, { keepMenu: true });
   }
 
-  /** @param {Box|null} anchor */
-  #place(anchor) {
+  /**
+   * @param {Box|null} anchor
+   * @param {{ keepMenu?: boolean }} [options] keepMenu: place the menu only if the pill moved, as measuring resets its scroll
+   */
+  #place(anchor, { keepMenu = false } = {}) {
     this.#anchor = anchor;
     const { wrap, pill } = this.#els;
     const input = { pill: PILL_SIZE, viewport: this.#viewport(), gap: this.#gap };
@@ -358,13 +361,15 @@ export class Pill {
       wrap.hidden = true;
       return;
     }
+    const last = this.#box;
     this.#offscreen = false;
     this.#box = { top: pos.top, left: pos.left, width: PILL_SIZE.width, height: PILL_SIZE.height, placement: pos.placement };
     pill.dataset.placement = pos.placement;
     pill.style.top = `${Math.round(pos.top)}px`;
     pill.style.left = `${Math.round(pos.left)}px`;
     wrap.hidden = false;
-    if (this.#menuOpen) this.#placeMenu();
+    const moved = last?.top !== pos.top || last?.left !== pos.left;
+    if (this.#menuOpen && (moved || !keepMenu)) this.#placeMenu();
     this.#placeStatus();
   }
 

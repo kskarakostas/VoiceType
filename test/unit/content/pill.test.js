@@ -721,6 +721,28 @@ describe('menu', () => {
     expect(measuredWith).toEqual(['', '']);
   });
 
+  it('a state or status change leaves a placed menu alone, so its scroll stays', () => {
+    const { pill } = makePill();
+    pill.renderMenu(settings(), null);
+    pill.show(FIELD);
+    const menu = q(pill, '.menu');
+    let measures = 0;
+    menu.getBoundingClientRect = () => {
+      measures += 1;
+      return rect(248, 700)();
+    };
+    pill.openMenu();
+    expect(measures).toBe(1);
+    pill.setState('recording');
+    pill.setStatus('Saved', { sticky: true });
+    pill.clearStatus();
+    expect(measures).toBe(1);
+    expect(menu.style.maxHeight).toBe('628px');
+    // A pill that does move takes its menu along.
+    pill.reposition(BOTTOM_FIELD);
+    expect(measures).toBe(2);
+  });
+
   it('opens from the menu button, calls onMenuOpen, and closes on Escape', () => {
     const { pill, h } = makePill();
     pill.renderMenu(settings(), null);
