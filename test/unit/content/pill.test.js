@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Pill, PILL_SIZE, MINI_SIZE, SIGHT_DELAY_MS, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
+import { Pill, PILL_SIZE, MINI_SIZE, RAISE_MS, SIGHT_DELAY_MS, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
 import { computePillPosition, EDGE } from '../../../src/content/position.js';
 
 // A path, not a URL literal: jsdom replaces the global URL, and the web transform rewrites
@@ -330,8 +330,9 @@ describe('state and level', () => {
     vi.advanceTimersByTime(62000);
     expect(label.textContent).toBe('01:05');
     pill.setState('processing');
-    expect(vi.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(1); // the raise, which runs through processing
     pill.setState('idle');
+    expect(vi.getTimerCount()).toBe(0);
     expect(label.textContent).toBe('REC');
   });
 
@@ -1137,7 +1138,7 @@ describe('styles', () => {
     expect(q(pill, '.pill').dataset.state).toBe('recording');
     expect(mini(pill).dataset.state).toBe('recording');
     expect(q(pill, '.mini-time').textContent).toBe('00:03');
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(2); // the clock and the raise
     pill.setStyle('pill');
     vi.advanceTimersByTime(1000);
     expect(q(pill, '.rec-label').textContent).toBe('00:04');
@@ -1593,6 +1594,172 @@ describe('page isolation', () => {
   });
 });
 
+describe('top layer', () => {
+  /**
+   * jsdom has no popover API.
+   * @param {Pill} [pill]
+   */
+  function withPopover(pill = makePill().pill) {
+    pill.mount();
+    const hide = vi.fn();
+    const show = vi.fn();
+    pill.host.hidePopover = hide;
+    pill.host.showPopover = show;
+    return { pill, hide, show };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('marks the host as a manual popover', () => {
+    const { pill } = makePill();
+    pill.mount();
+    expect(pill.host.getAttribute('popover')).toBe('manual');
+  });
+
+  it('raises at once when a recording starts, hide before show', () => {
+    const { pill, hide, show } = withPopover();
+    pill.show(FIELD);
+    expect(show).not.toHaveBeenCalled();
+    pill.setState('recording');
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(hide.mock.invocationCallOrder[0]).toBeLessThan(show.mock.invocationCallOrder[0]);
+  });
+
+  it('raises every RAISE_MS while recording, while processing and while a status shows', () => {
+    const { pill, show } = withPopover();
+    pill.show(FIELD);
+    pill.setState('recording');
+    vi.advanceTimersByTime(RAISE_MS * 2);
+    expect(show).toHaveBeenCalledTimes(3);
+    pill.setState('processing');
+    vi.advanceTimersByTime(RAISE_MS * 2);
+    expect(show).toHaveBeenCalledTimes(5);
+    pill.setStatus('Sticky', { sticky: true });
+    pill.setState('idle');
+    vi.advanceTimersByTime(RAISE_MS * 2);
+    expect(show).toHaveBeenCalledTimes(7);
+  });
+
+  it('lowers the host once nothing is left to show', () => {
+    const { pill, hide, show } = withPopover();
+    pill.show(FIELD);
+    pill.setState('recording');
+    hide.mockClear();
+    show.mockClear();
+    pill.setState('idle');
+    expect(hide).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(RAISE_MS * 4);
+    expect(hide).toHaveBeenCalledTimes(1);
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it('lowers the host when the last status ends', () => {
+    const { pill, hide, show } = withPopover();
+    pill.show(FIELD);
+    pill.setStatus('Note', { tone: 'info' });
+    expect(show).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(STATUS_MS.info);
+    expect(hide.mock.invocationCallOrder.at(-1)).toBeGreaterThan(show.mock.invocationCallOrder.at(-1));
+    const raises = show.mock.calls.length;
+    vi.advanceTimersByTime(RAISE_MS * 4);
+    expect(show).toHaveBeenCalledTimes(raises);
+  });
+
+  it('does not raise an idle pill, with or without an open menu', () => {
+    const { pill, hide, show } = withPopover();
+    pill.renderMenu(settings(), null);
+    pill.show(FIELD);
+    vi.advanceTimersByTime(RAISE_MS * 4);
+    pill.openMenu();
+    vi.advanceTimersByTime(RAISE_MS * 4);
+    expect(show).not.toHaveBeenCalled();
+    expect(hide).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    pill.destroy(); // an open menu listens on the window
+  });
+
+  it('raises on fullscreenchange only while it has something to show', () => {
+    const { pill, show } = withPopover();
+    pill.show(FIELD);
+    document.dispatchEvent(new Event('fullscreenchange'));
+    expect(show).not.toHaveBeenCalled();
+    pill.setState('recording');
+    expect(show).toHaveBeenCalledTimes(1);
+    document.dispatchEvent(new Event('fullscreenchange'));
+    expect(show).toHaveBeenCalledTimes(2);
+    pill.setState('idle');
+    document.dispatchEvent(new Event('fullscreenchange'));
+    expect(show).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops raising on hide and on destroy', () => {
+    const { pill, hide, show } = withPopover();
+    pill.show(FIELD);
+    pill.setState('recording');
+    const clock = 1;
+    expect(vi.getTimerCount()).toBe(clock + 1);
+    hide.mockClear();
+    pill.hide();
+    expect(hide).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(clock);
+    pill.show(FIELD);
+    expect(vi.getTimerCount()).toBe(clock + 1);
+    show.mockClear();
+    pill.destroy();
+    expect(vi.getTimerCount()).toBe(0);
+    document.dispatchEvent(new Event('fullscreenchange'));
+    vi.advanceTimersByTime(RAISE_MS * 4);
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it('survives a page that broke the popover: a throw from showPopover leaves the timer running', () => {
+    const { pill, show } = withPopover();
+    show.mockImplementation(() => { throw new DOMException('Not connected', 'InvalidStateError'); });
+    pill.show(FIELD);
+    expect(() => pill.setState('recording')).not.toThrow();
+    expect(() => vi.advanceTimersByTime(RAISE_MS * 2)).not.toThrow();
+    expect(show).toHaveBeenCalledTimes(3);
+  });
+
+  it('lowers without a throw when the page broke the popover', () => {
+    const { pill, hide } = withPopover();
+    pill.show(FIELD);
+    pill.setState('recording');
+    hide.mockImplementation(() => { throw new DOMException('Not connected', 'InvalidStateError'); });
+    expect(() => pill.setState('idle')).not.toThrow();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('calls onRaised after each raise', () => {
+    const h = { ...handlers(), onRaised: vi.fn() };
+    const { pill, show } = withPopover(new Pill(h, { shadowMode: 'open' }));
+    pill.show(FIELD);
+    expect(h.onRaised).not.toHaveBeenCalled();
+    pill.setState('recording');
+    vi.advanceTimersByTime(RAISE_MS);
+    expect(h.onRaised).toHaveBeenCalledTimes(2);
+    expect(show.mock.invocationCallOrder[1]).toBeLessThan(h.onRaised.mock.invocationCallOrder[1]);
+  });
+
+  it('a Minimal pill with an empty handler object raises', () => {
+    const { pill, show } = withPopover(new Pill({}, { shadowMode: 'open' }));
+    pill.setStyle('minimal');
+    pill.show(null);
+    expect(show).not.toHaveBeenCalled();
+    pill.setState('recording');
+    expect(show).toHaveBeenCalledTimes(1);
+  });
+
+  it('raise does nothing with no host', () => {
+    const h = { ...handlers(), onRaised: vi.fn() };
+    const pill = new Pill(h, { shadowMode: 'open' });
+    pill.raise();
+    expect(h.onRaised).not.toHaveBeenCalled();
+  });
+});
+
 describe('destroy', () => {
   it('clears every timer, removes the host and turns later calls into no-ops', () => {
     vi.useFakeTimers();
@@ -1602,7 +1769,7 @@ describe('destroy', () => {
     pill.setState('recording');
     pill.setStatus('Hello', { tone: 'info' });
     pill.openMenu();
-    expect(vi.getTimerCount()).toBe(2);
+    expect(vi.getTimerCount()).toBe(3);
     const host = pill.host;
     pill.destroy();
     expect(vi.getTimerCount()).toBe(0);

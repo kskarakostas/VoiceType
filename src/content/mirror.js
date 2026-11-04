@@ -55,6 +55,10 @@ export function createMirror({ makePill, onChange, setTimeout, clearTimeout }) {
       arm();
     },
 
+    raise() {
+      pill?.raise();
+    },
+
     destroy,
   };
 }

@@ -15,6 +15,11 @@
   pointer-events: none !important;
 }
 
+/* In the top layer the host has a backdrop; a page's ::backdrop rule would paint it over the whole page. */
+:host::backdrop {
+  display: none !important;
+}
+
 [hidden] {
   display: none !important;
 }

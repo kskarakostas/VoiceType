@@ -39,6 +39,8 @@ export function boot({
     onUseActive: () => { controller.useActiveMode(); },
     onProvider: (id) => { controller.choose({ provider: id }); },
     onTargetLang: (lang) => { controller.choose({ translateTargetLang: lang }); },
+    // The later raise paints on top, so no status hides the mirror.
+    onRaised: () => { mirror.raise(); },
     ...(inSubframe && { onSight: (seen) => { send({ action: MSG.FRAME_SIGHT, seen }); } }),
   }, { statusAtField: inSubframe });
 

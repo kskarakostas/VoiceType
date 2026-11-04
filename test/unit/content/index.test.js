@@ -472,6 +472,8 @@ describe('a frame out of sight', () => {
 
   afterEach(() => {
     delete window.IntersectionObserver;
+    delete HTMLElement.prototype.hidePopover;
+    delete HTMLElement.prototype.showPopover;
     vi.unstubAllGlobals();
   });
 
@@ -580,6 +582,27 @@ describe('a frame out of sight', () => {
     expect(hosts()).toHaveLength(2);
     expect(hosts()[0].shadowRoot.querySelector('[role="status"]').textContent).toBe('Busy');
     expect(miniOf(hosts()[1]).dataset.state).toBe('recording');
+  });
+
+  it('a frame 0 raise raises the mirror right after it, so no status covers the mirror', async () => {
+    const shown = [];
+    // jsdom has no popover API.
+    HTMLElement.prototype.hidePopover = () => {};
+    HTMLElement.prototype.showPopover = function record() { shown.push(this); };
+    const busy = (message) => (message.action === MSG.START_RECORDING
+      ? { ok: false, reason: 'busy', error: 'Busy' }
+      : reply(message));
+    const t = installChrome(busy);
+    await loadInstance();
+    deliver(t, mirrorMessage('recording'));
+    document.getElementById('field').focus();
+    await flush();
+    shown.length = 0;
+
+    document.getElementById('field').dispatchEvent(hotkey('keydown'));
+    await flush();
+
+    expect(shown[shown.indexOf(hosts()[0]) + 1]).toBe(hosts()[1]);
   });
 });
 

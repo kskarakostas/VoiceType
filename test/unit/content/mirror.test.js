@@ -3,7 +3,7 @@ import { createMirror } from '../../../src/content/mirror.js';
 import { PROCESSING_TIMEOUT_MS } from '../../../src/content/controller.js';
 import { MSG } from '../../../src/shared/messages.js';
 
-const fakePill = () => ({ setStyle: vi.fn(), show: vi.fn(), setState: vi.fn(), setLevel: vi.fn(), destroy: vi.fn() });
+const fakePill = () => ({ setStyle: vi.fn(), show: vi.fn(), setState: vi.fn(), setLevel: vi.fn(), raise: vi.fn(), destroy: vi.fn() });
 const message = (state, elapsedMs = 5000) => ({ action: MSG.RECORDING_MIRROR, state, elapsedMs });
 
 function setup() {
@@ -83,6 +83,17 @@ describe('mirror', () => {
     mirror.level(0.4);
     expect(makePill).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('raise passes through to its pill, and is a no-op with none', () => {
+    const { mirror, pills } = setup();
+    expect(() => mirror.raise()).not.toThrow();
+    mirror.update(message('recording'));
+    mirror.raise();
+    expect(pills[0].raise).toHaveBeenCalledTimes(1);
+    mirror.destroy();
+    mirror.raise();
+    expect(pills[0].raise).toHaveBeenCalledTimes(1);
   });
 
   it('a level after destroy neither reaches the pill nor rearms the timer', () => {

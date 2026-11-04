@@ -13,7 +13,7 @@ import { orderedModeKeys, PILL_STYLES } from '../shared/defaults.js';
  * @typedef {'idle'|'recording'|'processing'|'done'|'error'} PillState
  * @typedef {{ onRec: () => void, onStatusClick: () => void, onMenuOpen: () => void,
  *   onMode: (key: string) => void, onUseActive: () => void, onProvider: (id: string) => void,
- *   onTargetLang: (lang: string) => void, onSight?: (seen: boolean) => void }} PillHandlers
+ *   onTargetLang: (lang: string) => void, onSight?: (seen: boolean) => void, onRaised?: () => void }} PillHandlers
  * Without onSight the pill watches nothing.
  * @typedef {{ todayCost: number, todaySessions: number, totalCost: number }} PillUsage
  */
@@ -26,6 +26,9 @@ export const MINI_SIZE = Object.freeze({ width: 92, height: 28 });
 
 /** How often the browser may report on sight; visibility tracking refuses less than 100 ms. */
 export const SIGHT_DELAY_MS = 100;
+
+/** How often a pill with something to show goes back on top: a page gives no event when it opens a dialog. */
+export const RAISE_MS = 250;
 
 /** How long a non-sticky status stays, by tone. */
 export const STATUS_MS = Object.freeze({ error: 6000, warning: 6000, info: 2500, success: 2500 });
@@ -101,6 +104,7 @@ export class Pill {
   #state = 'idle';
   #startedAt = 0;
   #timerId = null;
+  #raiseTimer = null;
   #statusTimer = null;
   #statusClickable = false;
   #terminal = false;
@@ -153,6 +157,8 @@ export class Pill {
     const doc = this.#doc;
     const host = doc.createElement('voicetype-host');
     host.style.cssText = HOST_CSS;
+    // Closed, :host still paints it in place; only a raise (raise()) takes it to the top layer.
+    host.setAttribute('popover', 'manual');
     const root = host.attachShadow({ mode: this.#shadowMode });
     const Sheet = doc.defaultView?.CSSStyleSheet;
     if (typeof Sheet?.prototype?.replaceSync === 'function') {
@@ -172,6 +178,7 @@ export class Pill {
     this.#root = root;
     // A pill at a field has a watcher; nothing else tells the corner or Minimal the window changed.
     doc.defaultView?.addEventListener('resize', this.#onResize);
+    doc.addEventListener('fullscreenchange', this.#onFullscreen, true);
   }
 
   /**
@@ -197,6 +204,19 @@ export class Pill {
     this.closeMenu();
     this.#shown = false;
     this.#els.wrap.hidden = true;
+    this.#syncRaising();
+  }
+
+  /** Back on top of everything the page opened since: the last one into the top layer paints on top. */
+  raise() {
+    if (!this.#host) return;
+    try {
+      this.#host.hidePopover();
+      this.#host.showPopover();
+    } catch {
+      // A page can take the host out or refuse the show; z-index still holds against all but the top layer.
+    }
+    this.#handlers.onRaised?.();
   }
 
   /** @param {'pill'|'dot'|'minimal'} style anything else is ignored */
@@ -348,11 +368,14 @@ export class Pill {
     if (this.#destroyed) return;
     this.closeMenu();
     clearInterval(this.#timerId);
+    clearInterval(this.#raiseTimer);
     clearTimeout(this.#statusTimer);
     this.#timerId = null;
+    this.#raiseTimer = null;
     this.#statusTimer = null;
     this.#sightObserver?.disconnect();
     this.#doc.defaultView?.removeEventListener('resize', this.#onResize);
+    this.#doc.removeEventListener('fullscreenchange', this.#onFullscreen, true);
     this.#host?.remove();
     this.#shown = false;
     this.#destroyed = true;
@@ -361,6 +384,28 @@ export class Pill {
   #onResize = () => {
     if (this.#anchor === null || this.#style === 'minimal') this.#replace();
   };
+
+  #onFullscreen = () => {
+    if (this.#raiseTimer !== null) this.raise();
+  };
+
+  /** Raise while there is something to show. An idle pill stays out: under a modal it would be a dead control. */
+  #syncRaising() {
+    const wanted = this.#shown && this.#hasContent();
+    if (wanted === (this.#raiseTimer !== null)) return;
+    if (wanted) {
+      this.raise();
+      this.#raiseTimer = setInterval(() => this.raise(), RAISE_MS);
+      return;
+    }
+    clearInterval(this.#raiseTimer);
+    this.#raiseTimer = null;
+    try {
+      this.#host.hidePopover();
+    } catch {
+      // The page took the host out: it is out of the top layer already.
+    }
+  }
 
   /** @param {IntersectionObserverEntry[]} entries */
   #onSightEntries = (entries) => {
@@ -447,6 +492,7 @@ export class Pill {
    */
   #place(anchor, { keepMenu = false } = {}) {
     this.#anchor = anchor;
+    this.#syncRaising();
     if (this.#style === 'minimal') {
       this.#placeIndicator();
       return;

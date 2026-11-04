@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { freshSettings, migrateSettings } from '../../src/shared/defaults.js';
 import { writeToneWav } from './wav.js';
+import { decodePng } from './png.js';
 
 const DIST = fileURLToPath(new URL('../../dist', import.meta.url));
 export const PORT = Number(process.env.PORT) || 8765;
@@ -22,6 +23,10 @@ export const STOP = 'button[aria-label="Stop recording"]';
 export const STATUS = '[role="status"]';
 export const MINI = '.mini';
 export const HOTKEY = 'Control+Shift+Space';
+/** `--vt-rec` in pill.css. */
+export const RED = [220, 38, 38];
+/** `--vt-surface` in pill.css. */
+export const WHITE = [255, 255, 255];
 /** Longer than minRecordingTime (1 s), so the recorder does not drop the clip as too short. */
 export const RECORD_MS = 1500;
 /** A press lands within this long or the content script had not loaded: it mounts the pill at once. */
@@ -280,6 +285,31 @@ export async function pillQuery(target, selector) {
 }
 
 /**
+ * Calls a function on an element inside the pill of a page's top document or of one frame, as page
+ * scripts cannot reach a closed root.
+ * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
+ * @param {string} selector CSS selector inside the pill
+ * @param {string} functionDeclaration `this` is the element; its result comes back by value
+ */
+export async function pillCall(target, selector, functionDeclaration) {
+  const frame = frameOf(target);
+  const cdp = await sessionFor(frame);
+  try {
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+    const doc = findDocument(root, frame.url());
+    const shadow = doc && shadowOf(findPillHosts(doc)[0]);
+    if (!shadow) return undefined;
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: shadow.nodeId, selector });
+    if (!nodeId) return undefined;
+    const { object } = await cdp.send('DOM.resolveNode', { nodeId });
+    const { result } = await cdp.send('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration, returnByValue: true });
+    return result.value;
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
+}
+
+/**
  * Like pillQuery on the top document, across every pill host: a page can hold the frame 0 pill and
  * the mirror. A node that went away under a call (the worker removes the mirror at any moment)
  * counts as not there.
@@ -358,6 +388,21 @@ export async function clickPill(target, selector) {
   }, { message: 'pill bar expanded' }).toBe(true);
   const box = await waitForPill(frame, selector);
   await page.mouse.click(box.x, box.y);
+}
+
+/**
+ * How many pixels of a screenshot of the page are within tolerance of a colour, on every channel.
+ * @param {import('@playwright/test').Page} page
+ * @param {number[]} rgb
+ * @param {number} [tolerance]
+ */
+export async function countPixels(page, [r, g, b], tolerance = 30) {
+  const { data, channels } = decodePng(await page.screenshot());
+  let count = 0;
+  for (let i = 0; i < data.length; i += channels) {
+    if (Math.abs(data[i] - r) <= tolerance && Math.abs(data[i + 1] - g) <= tolerance && Math.abs(data[i + 2] - b) <= tolerance) count += 1;
+  }
+  return count;
 }
 
 /**
