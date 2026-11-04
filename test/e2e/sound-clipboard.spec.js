@@ -15,6 +15,13 @@ const DONE = /^Done \S+$/;
 const DONE_NOT_COPIED = /^Done \S+ Not copied\.$/;
 /** Long enough for a repeated cue to show after the status: the fire-and-forget sends take milliseconds. */
 const SETTLE_MS = 300;
+/**
+ * Keeps the provider busy past Chrome's 5 s user activation window, counted from the STOP click.
+ * Inside that window the offscreen copy works even without `clipboardWrite`.
+ */
+const ACTIVATION_EXPIRED_MS = 7000;
+/** The stub's delay plus the expect default the other tests use. */
+const SLOW_RESULT_TIMEOUT_MS = ACTIVATION_EXPIRED_MS + 5000;
 /** Tall enough for the whole fixture page, so no click scrolls (see frames.spec.js). */
 const VIEWPORT = { width: 1280, height: 2000 };
 
@@ -205,4 +212,25 @@ test('the page saves both settings', async () => {
   await expect(sounds).toBeChecked();
   await expect(alwaysCopy).toBeChecked();
   expect(await stored()).toEqual({ sounds: true, alwaysCopy: true });
+});
+
+test('always copy still reaches the clipboard after the user activation expired', async () => {
+  // The stub's delay is launch-wide, so this case gets a browser of its own.
+  const slow = await launchExtension({ transcriptDelayMs: ACTIVATION_EXPIRED_MS });
+  try {
+    await slow.context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `http://localhost:${PORT}` });
+    await seedSettings(slow.serviceWorker, DUMMY_KEY, { alwaysCopy: true });
+    const page = await openFields(slow.context);
+    const field = page.locator('#ta');
+    await seedClipboard(page, SENTINEL);
+    await focusField(page, field);
+
+    await dictate(page);
+
+    await expect(field).toHaveValue(TRANSCRIPT, { timeout: SLOW_RESULT_TIMEOUT_MS });
+    await expect.poll(() => pillStatus(page), { timeout: SLOW_RESULT_TIMEOUT_MS }).toMatch(DONE);
+    expect(await readClipboard(page)).toBe(TRANSCRIPT);
+  } finally {
+    await slow.close();
+  }
 });
