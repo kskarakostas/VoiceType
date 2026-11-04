@@ -256,18 +256,20 @@ function migrateV2(v) {
   return applyFix(v, fix);
 }
 
-/** A validated v2 record as a new v3 object: keywords move to `dictionary.any`, new fields take their defaults. */
+/**
+ * A validated v2 record as a new v3 object for validateV3: keywords move to `dictionary.any`. 2.2 keeps
+ * fields it does not know and stamps version 2 on any write, so a store that went back to 2.2 still
+ * holds its v3 fields: they stay. validateV3 repairs them, gives a plain 2.2 store the defaults and
+ * drops a keyword the dictionary already has.
+ */
 function v2ToV3(v2) {
   const { keywords, ...rest } = v2;
-  return {
-    ...structuredClone(rest),
-    dictionary: keywords.length ? { any: [...keywords] } : {},
-    siteRules: {},
-    pillStyle: DEFAULT_SETTINGS.pillStyle,
-    sounds: false,
-    alwaysCopy: false,
+  const dictionary = repairDictionary(rest.dictionary);
+  return structuredClone({
+    ...rest,
+    dictionary: keywords.length ? { ...dictionary, any: [...(dictionary.any ?? []), ...keywords] } : dictionary,
     settingsVersion: 3,
-  };
+  });
 }
 
 /** v3 and newer: validate every field, repair only what is wrong, keep everything else. */

@@ -277,6 +277,57 @@ describe('migrateSettings', () => {
     expect(migrateSettings(s)).toBe(s);
   });
 
+  describe('a re-upgrade after a rollback to 2.2', () => {
+    const rolledBack = (overrides = {}) => ({
+      ...fullSettings(),
+      settingsVersion: 2,
+      keywords: ['new'],
+      dictionary: { any: ['a'], el: ['b'] },
+      siteRules: { 'example.com': { hidePill: true, mode: 'email' } },
+      pillStyle: 'minimal',
+      sounds: true,
+      alwaysCopy: true,
+      ...overrides,
+    });
+
+    it('keeps what 3.0 stored and adds what 2.2 added', () => {
+      const stored = rolledBack();
+      const s = migrateSettings(stored);
+      expect(s).toMatchObject({
+        settingsVersion: 3,
+        dictionary: { any: ['a', 'new'], el: ['b'] },
+        siteRules: { 'example.com': { hidePill: true, mode: 'email' } },
+        pillStyle: 'minimal',
+        sounds: true,
+        alwaysCopy: true,
+      });
+      expect('keywords' in s).toBe(false);
+      expect(s.dictionary).not.toBe(stored.dictionary);
+      expect(s.siteRules).not.toBe(stored.siteRules);
+      expect(migrateSettings(s)).toBe(s);
+    });
+
+    it('drops a keyword the dictionary already holds, in any group and any case', () => {
+      expect(migrateSettings(rolledBack({ keywords: ['A', 'new'] })).dictionary).toEqual({ any: ['a', 'new'], el: ['b'] });
+      expect(Object.values(migrateSettings(rolledBack({ keywords: ['b'] })).dictionary).flat()).toEqual(['a', 'b']);
+    });
+
+    it('keeps the dictionary when 2.2 stored no keywords', () => {
+      expect(migrateSettings(rolledBack({ keywords: [] })).dictionary).toEqual({ any: ['a'], el: ['b'] });
+    });
+
+    it('repairs what is malformed', () => {
+      const s = migrateSettings(rolledBack({
+        dictionary: 'junk', siteRules: { 'not a host': { hidePill: true, mode: null }, 'example.com': { hidePill: 'x', mode: 'gone' } }, pillStyle: 'huge', sounds: 'yes', alwaysCopy: 1,
+      }));
+      expect(s).toMatchObject({ ...V3_DEFAULTS, dictionary: { any: ['new'] } });
+      expect(s.siteRules).toEqual({});
+      const mixed = migrateSettings(rolledBack({ dictionary: { any: 'junk', el: ['b', 5], xx: ['c'] } }));
+      expect(mixed.dictionary).toEqual({ any: ['new'], el: ['b'] });
+      expect(migrateSettings(mixed)).toBe(mixed);
+    });
+  });
+
   it('a valid v3 store comes back as the same reference and untouched', () => {
     const stored = fullV3Settings();
     expect(migrateSettings(stored)).toBe(stored);
