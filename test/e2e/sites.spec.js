@@ -306,6 +306,30 @@ test('a mode pick changes only this site\'s rule', async () => {
   await expect.poll(storedRules).toEqual({ ...other, localhost: { hidePill: false, mode: 'translate' } });
 });
 
+test('a stale Sites select leaves a mode picked in the pill alone when Hide pill changes', async () => {
+  await seedRules({ localhost: { hidePill: false, mode: 'email' } });
+  const fixture = await openFields(context);
+  await focusField(fixture, fixture.locator('#ta'));
+  const sites = await openSitesPage();
+  const row = sites.locator('#site-table tbody tr', { hasText: 'localhost' });
+  const select = row.getByLabel('Mode on localhost');
+  await select.selectOption('default');
+  await expect.poll(storedRules).toEqual({ localhost: { hidePill: false, mode: 'default' } });
+  await select.focus();
+
+  await fixture.bringToFront();
+  await focusField(fixture, fixture.locator('#ta'));
+  await openMenu(fixture);
+  await clickPill(fixture, '[data-mode="translate"]');
+  await expect.poll(storedRules).toEqual({ localhost: { hidePill: false, mode: 'translate' } });
+
+  await sites.bringToFront();
+  await expect(select).toHaveValue('default');
+  await row.getByLabel('Hide pill on localhost').check();
+
+  await expect.poll(storedRules).toEqual({ localhost: { hidePill: true, mode: 'translate' } });
+});
+
 test('siteKey answers the same in Chromium, whose URL parser is not Node\'s', async () => {
   const page = await openFields(context);
   const inputs = SITE_KEYS.map(([input]) => input);

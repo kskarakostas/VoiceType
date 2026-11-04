@@ -36,8 +36,8 @@ function fakeChrome(stored = storedSettings()) {
   const defaults = {
     [MSG.GET_SETTINGS]: () => structuredClone(stored),
     [MSG.SAVE_SETTINGS]: () => ({ success: true }),
-    [MSG.SET_SITE_RULE]: ({ host, hidePill, mode }) => {
-      stored.siteRules = withSiteRule(stored.siteRules, host, { hidePill, mode });
+    [MSG.SET_SITE_RULE]: ({ action: _action, host, ...fields }) => {
+      stored.siteRules = withSiteRule(stored.siteRules, host, { hidePill: false, mode: null, ...stored.siteRules[host], ...fields });
       fire(SETTINGS_CHANGE, 'local');
       return { success: true };
     },
@@ -150,7 +150,7 @@ describe('sites page rows', () => {
     expect($('site-table').hidden).toBe(true);
   });
 
-  it('the row edits send the whole rule', async () => {
+  it('a row edit sends only the field it changed', async () => {
     const chrome = fakeChrome(storedSettings({ 'a.com': { hidePill: true, mode: 'email' } }));
     await start(chrome);
     hideOn('a.com').click();
@@ -163,12 +163,31 @@ describe('sites page rows', () => {
     choose(modeOn('a.com'), '');
     await flush();
     expect(chrome.rules()).toEqual([
-      { host: 'a.com', hidePill: false, mode: 'email' },
-      { host: 'a.com', hidePill: false, mode: picked },
-      { host: 'a.com', hidePill: true, mode: picked },
-      { host: 'a.com', hidePill: true, mode: null },
+      { host: 'a.com', hidePill: false },
+      { host: 'a.com', mode: picked },
+      { host: 'a.com', hidePill: true },
+      { host: 'a.com', mode: null },
     ]);
+    expect(chrome.stored.siteRules).toEqual({ 'a.com': { hidePill: true, mode: null } });
     expect(chrome.count(MSG.SAVE_SETTINGS)).toBe(0);
+  });
+
+  it('a stale focused select leaves a newer mode alone when Hide pill changes (V18)', async () => {
+    const chrome = fakeChrome(storedSettings({ 'a.com': { hidePill: false, mode: 'email' } }));
+    await start(chrome);
+    modeOn('a.com').focus();
+    choose(modeOn('a.com'), 'default');
+    await flush();
+    const picked = modeOn('a.com').value;
+    // The pill moves the site on; the focused select is not repainted.
+    chrome.stored.siteRules = { 'a.com': { hidePill: false, mode: 'translate' } };
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect(modeOn('a.com').value).toBe(picked);
+    hideOn('a.com').click();
+    await flush();
+    expect(chrome.rules().at(-1)).toEqual({ host: 'a.com', hidePill: true });
+    expect(chrome.stored.siteRules).toEqual({ 'a.com': { hidePill: true, mode: 'translate' } });
   });
 
   it('a stored rule replaced by an edit keeps its alphabetical place', async () => {
@@ -203,7 +222,7 @@ describe('sites page rows', () => {
     hideOn('a.com').focus();
     hideOn('a.com').click();
     await flush();
-    expect(chrome.rules()).toEqual([{ host: 'a.com', hidePill: false, mode: null }]);
+    expect(chrome.rules()).toEqual([{ host: 'a.com', hidePill: false }]);
     expect(hosts()).toEqual(['b.com', 'c.com']);
     expect(document.activeElement).toBe(removeOf('b.com'));
 
@@ -305,7 +324,7 @@ describe('sites page rows', () => {
     expect(modeOn('b.com').selectedOptions[0].textContent).toBe('Use active mode');
     hideOn('a.com').click();
     await flush();
-    expect(chrome.rules()).toEqual([{ host: 'a.com', hidePill: false, mode: null }]);
+    expect(chrome.rules()).toEqual([{ host: 'a.com', hidePill: false }]);
   });
 });
 

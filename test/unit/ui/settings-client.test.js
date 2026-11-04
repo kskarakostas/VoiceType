@@ -95,7 +95,13 @@ describe('createSettingsClient', () => {
     expect(await createSettingsClient({ chrome: thrown }).save({ pillStyle: 'dot' })).toEqual({ success: false, error: undefined });
   });
 
-  it('saveSiteRule sends the whole rule and reports the reply', async () => {
+  it('saveSiteRule sends only the fields it was given', async () => {
+    const chrome = fakeChrome({ success: true });
+    await createSettingsClient({ chrome }).saveSiteRule({ host: 'example.com', mode: 'email' });
+    expect(Object.keys(chrome.runtime.sendMessage.mock.calls[0][0]).toSorted()).toEqual(['action', 'host', 'mode']);
+  });
+
+  it('saveSiteRule sends the rule and reports the reply', async () => {
     const rule = { host: 'example.com', hidePill: true, mode: null };
     const ok = fakeChrome({ success: true });
     expect(await createSettingsClient({ chrome: ok }).saveSiteRule(rule)).toEqual({ success: true });

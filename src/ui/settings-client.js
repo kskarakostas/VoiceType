@@ -79,12 +79,12 @@ export function createSettingsClient({ chrome }) {
   }
 
   /**
-   * Replace one site's rule. Site rules never go through `save`.
-   * @param {{ host: string, hidePill: boolean, mode: string|null }} rule
+   * Change one site's rule. Site rules never go through `save`.
+   * @param {{ host: string, hidePill?: boolean, mode?: string|null }} rule a field left out keeps its stored value
    * @returns {Promise<{ success: boolean, error?: string }>}
    */
-  async function saveSiteRule({ host, hidePill, mode }) {
-    const reply = await send({ action: MSG.SET_SITE_RULE, host, hidePill, mode });
+  async function saveSiteRule(rule) {
+    const reply = await send({ action: MSG.SET_SITE_RULE, ...rule });
     return reply?.success === true ? { success: true } : { success: false, error: reply?.error };
   }
 

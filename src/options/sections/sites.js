@@ -57,14 +57,19 @@ export function createSitesSection(ctx) {
     }
   }
 
-  // Both values come from the controls: a re-read may not have arrived since the last edit.
-  async function saveRow(host, row) {
+  /**
+   * Send only what the edit changed: the other control may be stale, and the worker keeps the stored value.
+   * @param {string} host
+   * @param {Row} row
+   * @param {{ hidePill: boolean }|{ mode: string|null }} edit
+   */
+  async function saveRow(host, row, edit) {
     if (!ctx.loaded()) {
       paintRow(host, row, true);
       ctx.toast(NOT_LOADED, 'error');
       return;
     }
-    const result = await ctx.saveSiteRule({ host, hidePill: row.hide.checked, mode: row.mode.value || null });
+    const result = await ctx.saveSiteRule({ host, ...edit });
     if (result.success) return;
     if (rows.get(host) === row) paintRow(host, row, true);
     ctx.toast(result.error || SAVE_ERROR, 'error');
@@ -111,8 +116,8 @@ export function createSitesSection(ctx) {
 
     root.append(site, hideCell, modeCell, removeCell);
     const row = { root, hide, mode, remove };
-    hide.addEventListener('change', () => saveRow(host, row));
-    mode.addEventListener('change', () => saveRow(host, row));
+    hide.addEventListener('change', () => saveRow(host, row, { hidePill: hide.checked }));
+    mode.addEventListener('change', () => saveRow(host, row, { mode: mode.value || null }));
     // Focus moves to the next row, so a held key would remove one rule after another.
     remove.addEventListener('keydown', (event) => {
       if (event.repeat && (event.key === 'Enter' || event.key === ' ')) event.preventDefault();

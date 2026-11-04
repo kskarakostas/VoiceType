@@ -485,6 +485,49 @@ describe('site rules', () => {
     expect(stored.siteRules).toEqual({ 'b.com': { hidePill: false, mode: 'custom_1' } });
   });
 
+  it('SET_SITE_RULE without a mode keeps the stored mode', async () => {
+    stored.siteRules = { 'a.com': { hidePill: false, mode: 'email' } };
+    expect(await handle({ action: MSG.SET_SITE_RULE, host: 'a.com', hidePill: true }, POPUP)).toEqual(OK);
+    expect(stored.siteRules['a.com']).toEqual({ hidePill: true, mode: 'email' });
+  });
+
+  it('SET_SITE_RULE without hidePill keeps the stored hidePill', async () => {
+    stored.siteRules = { 'a.com': { hidePill: true, mode: 'email' } };
+    expect(await handle({ action: MSG.SET_SITE_RULE, host: 'a.com', mode: 'custom_1' }, POPUP)).toEqual(OK);
+    expect(stored.siteRules['a.com']).toEqual({ hidePill: true, mode: 'custom_1' });
+  });
+
+  it('SET_SITE_RULE with one field on a host with no rule starts from the empty rule', async () => {
+    stored.siteRules = {};
+    expect(await handle({ action: MSG.SET_SITE_RULE, host: 'a.com', hidePill: true }, POPUP)).toEqual(OK);
+    expect(await handle({ action: MSG.SET_SITE_RULE, host: 'b.com', mode: 'email' }, POPUP)).toEqual(OK);
+    expect(stored.siteRules).toEqual({ 'a.com': { hidePill: true, mode: null }, 'b.com': { hidePill: false, mode: 'email' } });
+  });
+
+  it('SET_SITE_RULE with one field reads no inherited rule for a __proto__ host', async () => {
+    stored.siteRules = {};
+    expect(await handle({ action: MSG.SET_SITE_RULE, host: '__proto__', hidePill: true }, POPUP)).toEqual(OK);
+    expect(Object.entries(stored.siteRules)).toEqual([['__proto__', { hidePill: true, mode: null }]]);
+  });
+
+  it.each([
+    ['hidePill', { hidePill: true, mode: null }, { hidePill: false }],
+    ['mode', { hidePill: false, mode: 'email' }, { mode: null }],
+  ])('SET_SITE_RULE deletes a rule that one field leaves empty: %s', async (_name, rule, field) => {
+    stored.siteRules = { 'a.com': rule };
+    expect(await handle({ action: MSG.SET_SITE_RULE, host: 'a.com', ...field }, POPUP)).toEqual(OK);
+    expect(stored.siteRules).toEqual({});
+  });
+
+  it('a stale control cannot overwrite a newer mode (V18)', async () => {
+    stored.siteRules = {};
+    await handle({ action: MSG.SET_SITE_RULE, host: 'a.com', mode: 'email' }, POPUP);
+    // The select stays on email while the pill moves the site on, and then Hide pill changes.
+    await handle({ action: MSG.SET_SITE_MODE, mode: 'custom_1' }, ON_A);
+    expect(await handle({ action: MSG.SET_SITE_RULE, host: 'a.com', hidePill: true }, POPUP)).toEqual(OK);
+    expect(stored.siteRules['a.com']).toEqual({ hidePill: true, mode: 'custom_1' });
+  });
+
   it('SET_SITE_RULE refuses a bad host, hidePill or mode and writes nothing', async () => {
     const before = stored;
     const rows = [
@@ -492,10 +535,14 @@ describe('site rules', () => {
       { host: 5, hidePill: true, mode: null },
       { hidePill: true, mode: null },
       { host: 'a.com', hidePill: 'yes', mode: null },
-      { host: 'a.com', mode: null },
+      { host: 'a.com', hidePill: null },
+      { host: 'a.com', hidePill: 'yes' },
       { host: 'a.com', hidePill: true, mode: 'nope' },
       { host: 'a.com', hidePill: true, mode: '__proto__' },
-      { host: 'a.com', hidePill: true },
+      { host: 'a.com', mode: 'nope' },
+      { host: 'a.com', mode: 5 },
+      { host: 'a.com' },
+      { host: 'a.com', hidePill: undefined, mode: undefined },
     ];
     for (const row of rows) expect(await handle({ action: MSG.SET_SITE_RULE, ...row }, POPUP)).toEqual(INVALID);
     expect(stored).toBe(before);

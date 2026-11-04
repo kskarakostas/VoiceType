@@ -44,17 +44,20 @@ export function createSiteBlock({ chrome, document, state, client, toast }) {
     }
   }
 
-  // Both values come from the controls: a re-read may not have arrived since the last edit.
-  async function saveRule() {
+  /**
+   * Send only what the edit changed: the other control may be stale, and the worker keeps the stored value.
+   * @param {{ hidePill: boolean }|{ mode: string|null }} edit
+   */
+  async function saveRule(edit) {
     if (site === null || !state.loaded()) return;
-    const result = await client.saveSiteRule({ host: site, hidePill: el.hide.checked, mode: el.mode.value || null });
+    const result = await client.saveSiteRule({ host: site, ...edit });
     if (result.success) return;
     paint(true);
     toast(result.error || SAVE_ERROR, 'error');
   }
 
-  el.hide.addEventListener('change', saveRule);
-  el.mode.addEventListener('change', saveRule);
+  el.hide.addEventListener('change', () => saveRule({ hidePill: el.hide.checked }));
+  el.mode.addEventListener('change', () => saveRule({ mode: el.mode.value || null }));
 
   /** Find the active tab's site and render once. A tab that cannot be read has no site. */
   async function start() {

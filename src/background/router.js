@@ -124,21 +124,23 @@ function endpointOf(sender) {
 }
 
 /**
- * Set one site's rule. Runs inside the settings queue, so `mode` is checked against the stored modes.
+ * Set one site's rule. Runs inside the settings queue, so the rule is built from the stored settings
+ * and `mode` is checked against the stored modes.
  * @param {ReturnType<import('./storage.js').createStorage>} storage
  * @param {string} host A site key.
- * @param {unknown} mode Null or an own key of `modes`; `withSiteRule` must never see anything else.
- * @param {(current: import('../shared/defaults.js').Settings) => boolean} hidePillOf
+ * @param {(current: import('../shared/defaults.js').Settings) => { hidePill: boolean, mode: unknown }} ruleOf
+ *   `mode` is null or an own key of `modes`; `withSiteRule` must never see anything else.
  * @returns {Promise<{ success: true } | { success: false, error: string }>}
  */
-async function saveSiteRule(storage, host, mode, hidePillOf) {
+async function saveSiteRule(storage, host, ruleOf) {
   let error = null;
   await storage.updateSettings((current) => {
+    const { hidePill, mode } = ruleOf(current);
     if (mode !== null && (typeof mode !== 'string' || !Object.hasOwn(current.modes, mode))) {
       error = 'Invalid settings.';
       return null;
     }
-    return { ...current, siteRules: withSiteRule(current.siteRules, host, { hidePill: hidePillOf(current), mode }) };
+    return { ...current, siteRules: withSiteRule(current.siteRules, host, { hidePill, mode }) };
   });
   return error === null ? { success: true } : { success: false, error };
 }
@@ -198,13 +200,19 @@ export function createRouter({ storage, validateKey, summarize, recorder, identi
         const url = sender.tab?.url;
         const host = siteKey(url);
         if (host === null) return { success: false, error: 'Not available on this page.' };
-        return saveSiteRule(storage, host, request.mode, (current) => ruleFor(current, url).hidePill);
+        return saveSiteRule(storage, host, (current) => ({ hidePill: ruleFor(current, url).hidePill, mode: request.mode }));
       }
 
       case MSG.SET_SITE_RULE: {
+        const { hidePill, mode } = request;
         const host = siteKey(request.host);
-        if (host === null || typeof request.hidePill !== 'boolean') return { success: false, error: 'Invalid settings.' };
-        return saveSiteRule(storage, host, request.mode, () => request.hidePill);
+        const valid = typeof hidePill === 'boolean' || (hidePill === undefined && mode !== undefined);
+        if (host === null || !valid) return { success: false, error: 'Invalid settings.' };
+        // A field left out keeps the stored value: only the queue knows it, as a control can be stale (V18).
+        return saveSiteRule(storage, host, ({ siteRules }) => {
+          const stored = Object.hasOwn(siteRules, host) ? siteRules[host] : { hidePill: false, mode: null };
+          return { hidePill: hidePill ?? stored.hidePill, mode: mode === undefined ? stored.mode : mode };
+        });
       }
 
       case MSG.VALIDATE_KEY:

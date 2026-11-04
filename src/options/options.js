@@ -25,7 +25,7 @@ import { createHomeSection } from './sections/home.js';
  *   settings: () => Settings, loaded: () => boolean,
  *   commit: (mutate: (draft: Settings) => void, successText?: string) => Promise<boolean>,
  *   send: (message: object) => Promise<any|null>,
- *   saveSiteRule: (rule: { host: string, hidePill: boolean, mode: string|null }) => Promise<{ success: boolean, error?: string }>,
+ *   saveSiteRule: (rule: { host: string, hidePill?: boolean, mode?: string|null }) => Promise<{ success: boolean, error?: string }>,
  *   toast: (text: string, tone?: 'info'|'success'|'error') => void,
  *   typingSave: (save: () => unknown) => TypingSave,
  *   beforeReset: () => void,

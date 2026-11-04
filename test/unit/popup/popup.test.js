@@ -48,8 +48,8 @@ function fakeChrome(stored = storedSettings(), contexts = []) {
       Object.assign(stored, structuredClone(message.settings));
       return { success: true };
     },
-    [MSG.SET_SITE_RULE]: ({ host, hidePill, mode }) => {
-      stored.siteRules = withSiteRule(stored.siteRules, host, { hidePill, mode });
+    [MSG.SET_SITE_RULE]: ({ action: _action, host, ...fields }) => {
+      stored.siteRules = withSiteRule(stored.siteRules, host, { hidePill: false, mode: null, ...stored.siteRules[host], ...fields });
       return { success: true };
     },
     [MSG.GET_USAGE]: () => structuredClone(USAGE),
@@ -324,13 +324,13 @@ describe('popup This site block', () => {
     expect($('site-mode').value).toBe('');
   });
 
-  it('Hide pill sends the whole rule', async () => {
+  it('Hide pill sends only hidePill', async () => {
     const chrome = fakeChrome();
     await start(chrome);
     $('site-hide').click();
     await flush();
     expect(chrome.siteWrites()).toEqual([
-      { action: MSG.SET_SITE_RULE, host: 'example.com', hidePill: true, mode: null },
+      { action: MSG.SET_SITE_RULE, host: 'example.com', hidePill: true },
     ]);
     expect(chrome.saves()).toEqual([]);
   });
@@ -341,7 +341,7 @@ describe('popup This site block', () => {
     change($('site-mode'), 'translate');
     await flush();
     expect(chrome.siteWrites()).toEqual([
-      { action: MSG.SET_SITE_RULE, host: 'example.com', hidePill: true, mode: 'translate' },
+      { action: MSG.SET_SITE_RULE, host: 'example.com', mode: 'translate' },
     ]);
     expect(chrome.saves()).toEqual([]);
   });
@@ -352,20 +352,34 @@ describe('popup This site block', () => {
     change($('site-mode'), '');
     await flush();
     expect(chrome.siteWrites()).toEqual([
-      { action: MSG.SET_SITE_RULE, host: 'example.com', hidePill: false, mode: null },
+      { action: MSG.SET_SITE_RULE, host: 'example.com', mode: null },
     ]);
   });
 
   it('a second quick edit keeps the first', async () => {
-    const chrome = fakeChrome();
+    const stored = storedSettings();
+    const chrome = fakeChrome(stored);
     await start(chrome);
     $('site-hide').click();
     change($('site-mode'), 'email');
     await flush();
-    expect(chrome.siteWrites().map(({ hidePill, mode }) => ({ hidePill, mode }))).toEqual([
-      { hidePill: true, mode: null },
-      { hidePill: true, mode: 'email' },
-    ]);
+    expect(stored.siteRules).toEqual({ 'example.com': { hidePill: true, mode: 'email' } });
+  });
+
+  it('a stale focused select leaves a newer mode alone when Hide pill changes (V18)', async () => {
+    const stored = withRule({ hidePill: false, mode: 'email' });
+    const chrome = fakeChrome(stored);
+    await start(chrome);
+    $('site-mode').focus();
+    // The pill moves the site on; the focused select is not repainted.
+    stored.siteRules = { 'example.com': { hidePill: false, mode: 'translate' } };
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect($('site-mode').value).toBe('email');
+    $('site-hide').click();
+    await flush();
+    expect(chrome.siteWrites()).toEqual([{ action: MSG.SET_SITE_RULE, host: 'example.com', hidePill: true }]);
+    expect(stored.siteRules).toEqual({ 'example.com': { hidePill: true, mode: 'translate' } });
   });
 
   it.each([
