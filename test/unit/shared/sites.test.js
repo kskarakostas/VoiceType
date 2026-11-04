@@ -8,7 +8,7 @@ describe('siteKey', () => {
     ['Example.COM', 'example.com'],
     ['www.example.com', 'example.com'],
     ['  docs.google.com  ', 'docs.google.com'],
-    ['www.www.example.com', 'www.example.com'],
+    ['www.www.example.com', 'example.com'],
     ['chrome://extensions', null],
     ['file:///tmp/a.html', null],
     ['about:blank', null],
@@ -45,6 +45,38 @@ describe('siteKey', () => {
     ['www.', null],
   ])('siteKey reads a scheme only at the start: %j -> %j', (input, expected) => {
     expect(siteKey(input)).toBe(expected);
+  });
+
+  it.each([
+    ['tel:123', 'tel'],
+    ['javascript:1', 'javascript'],
+  ])('a numeric tail reads as host and port: %j -> %j', (input, expected) => {
+    expect(siteKey(input)).toBe(expected);
+  });
+
+  it.each([
+    ['www.www.a.com', 'a.com'],
+    ['WWW.www.www.a.com', 'a.com'],
+    ['https://www.www.a.com/x', 'a.com'],
+    ['a.com..', 'a.com'],
+    ['a.com...', 'a.com'],
+    ['www.www.a.com..', 'a.com'],
+    ['www.www.', null],
+  ])('siteKey drops every leading www. and trailing dot: %j -> %j', (input, expected) => {
+    expect(siteKey(input)).toBe(expected);
+  });
+
+  it.each([
+    'https://www.Example.com/path?q', 'http://sub.example.com:8080/', 'Example.COM', 'www.example.com',
+    '  docs.google.com  ', 'www.www.example.com', 'https://WWW.Example.COM./x', 'example.com.',
+    'example.com:8080/a', 'localhost:3000', 'example.com/login?next=https://x.com',
+    'https://user:pw@example.com/', 'http://ελληνικά.gr/', 'ελληνικά.gr', 'http://[::1]:8080/', '__proto__',
+    'www.www.a.com', 'a.com..', 'www.www.a.com..', 'www.www.www.a.com...', 'www', 'www.www', 'tel:123',
+    'javascript:1', '1.2.3.4', '1.2.3.4.', 'http://0x7f.1/',
+  ])('siteKey is idempotent: %j', (input) => {
+    const key = siteKey(input);
+    expect(key).not.toBeNull();
+    expect(siteKey(key)).toBe(key);
   });
 });
 

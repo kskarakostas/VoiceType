@@ -4,9 +4,10 @@
 
 /**
  * Normalize an `http:`/`https:` URL or a bare hostname to a site key: the hostname
- * lowercased, one trailing dot and one leading `www.` dropped. A scheme counts only at the
- * start of the input. Returns null for non-strings, blank input, any other scheme, a bare
- * host carrying `@`, or input the URL parser rejects.
+ * lowercased, every leading `www.` and trailing dot dropped, so a key maps to itself. A
+ * scheme counts only at the start of the input and needs `://`, so `tel:123` and
+ * `javascript:1` read as host and port. Returns null for non-strings, blank input, any
+ * other scheme, a bare host carrying `@`, or input the URL parser rejects.
  * @param {unknown} input
  * @returns {string|null}
  */
@@ -24,7 +25,7 @@ export function siteKey(input) {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
   // URL already lowercases the hostname of http(s) URLs.
-  return url.hostname.replace(/^www\./, '').replace(/\.$/, '') || null;
+  return url.hostname.replace(/^(?:www\.)+/, '').replace(/\.+$/, '') || null;
 }
 
 /**
