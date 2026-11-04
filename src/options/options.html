@@ -227,7 +227,32 @@
 
         <section data-route="settings/sites" aria-labelledby="h-settings-sites" hidden>
           <h1 id="h-settings-sites" tabindex="-1">Sites</h1>
-          <p class="placeholder">Coming in a later update.</p>
+          <div class="card site-card">
+            <p class="hint site-hint">Hide pill removes the idle pill on that site; the hotkey still records there.</p>
+            <form class="site-add" id="site-add">
+              <div class="field">
+                <label class="field-label" for="site-add-host">Add site</label>
+                <input type="text" id="site-add-host" autocomplete="off" spellcheck="false" aria-describedby="site-add-error">
+              </div>
+              <label class="check"><input type="checkbox" id="site-add-hide" checked>Hide pill</label>
+              <div class="field">
+                <label class="field-label" for="site-add-mode">Mode</label>
+                <select id="site-add-mode"></select>
+              </div>
+              <button type="submit" class="btn btn-primary">Add</button>
+              <p class="hint site-add-error" id="site-add-error" data-tone="error" role="alert" hidden></p>
+            </form>
+          </div>
+          <div class="card site-card">
+            <table class="site-table" id="site-table">
+              <caption class="visually-hidden">Site rules</caption>
+              <thead>
+                <tr><th scope="col">Site</th><th scope="col">Hide pill</th><th scope="col">Mode</th><th scope="col">Remove</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <p class="hint site-empty" id="site-empty" hidden>No site rules yet.</p>
+          </div>
         </section>
 
         <section data-route="settings/appearance" aria-labelledby="h-settings-appearance" hidden>

@@ -169,6 +169,30 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 
 .chip-remove:hover { background: var(--border); color: var(--text); }
 
+/* Sites */
+
+.site-card { container-type: inline-size; }
+.site-hint { margin: 0 0 10px; }
+.site-empty { margin-top: 0; }
+
+.site-add {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) auto minmax(146px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.site-add .check { min-height: 32px; }
+.site-add-error { grid-column: 1 / -1; margin-top: 0; }
+
+.site-table { width: 100%; border-collapse: collapse; }
+.site-table th, .site-table td { padding: 6px 4px; text-align: left; }
+.site-table thead th { color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.site-table tbody th { font-weight: 600; overflow-wrap: anywhere; }
+.site-table tbody tr + tr > * { border-top: 1px solid var(--border); }
+.site-table select { min-width: 146px; }
+.site-hide-label { display: none; }
+
 /* Narrow windows: the sidebar stacks above the content. */
 
 @media (max-width: 719.98px) {
@@ -182,4 +206,25 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
   }
 
   .content { padding: 16px; }
+}
+
+/* Too narrow for four columns: each rule stacks, and its checkbox shows its own label. The card's
+   width decides, not the window's: above the breakpoint before this one the sidebar takes 220 px. */
+
+@container (max-width: 519.98px) {
+  .site-add { grid-template-columns: minmax(0, 1fr); }
+
+  .site-table, .site-table tbody, .site-table tr, .site-table th, .site-table td { display: block; }
+  .site-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .site-table tbody th, .site-table td { padding: 3px 0; }
+  .site-table tbody tr { padding: 7px 0; }
+  .site-table tbody tr + tr { border-top: 1px solid var(--border); }
+  .site-table tbody tr + tr > * { border-top: 0; }
+  .site-hide-label { display: inline; }
 }

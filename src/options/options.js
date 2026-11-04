@@ -9,6 +9,7 @@ import { createRecordingSection } from './sections/recording.js';
 import { createSpeechSection } from './sections/speech.js';
 import { createModesSection } from './sections/modes.js';
 import { createDictionarySection } from './sections/dictionary.js';
+import { createSitesSection } from './sections/sites.js';
 import { createUsageSection } from './sections/usage.js';
 import { createHomeSection } from './sections/home.js';
 
@@ -22,6 +23,7 @@ import { createHomeSection } from './sections/home.js';
  *   settings: () => Settings, loaded: () => boolean,
  *   commit: (mutate: (draft: Settings) => void, successText?: string) => Promise<boolean>,
  *   send: (message: object) => Promise<any|null>,
+ *   saveSiteRule: (rule: { host: string, hidePill: boolean, mode: string|null }) => Promise<{ success: boolean, error?: string }>,
  *   toast: (text: string, tone?: 'info'|'success'|'error') => void,
  *   typingSave: (save: () => unknown) => TypingSave,
  *   beforeReset: () => void,
@@ -37,12 +39,13 @@ const LOAD_ERROR = 'Could not load settings. Reload this page.';
 
 /**
  * Section factories, each given the one PageContext. A section reads `ctx.settings()` and never
- * mutates it; every change goes through `ctx.commit`. Its `render` must not write a focused field.
+ * mutates it; every change goes through `ctx.commit`, a site rule through `ctx.saveSiteRule`. Its
+ * `render` must not write a focused field.
  * @type {ReadonlyArray<(ctx: PageContext) => Section>}
  */
 const SECTIONS = Object.freeze([
   createHomeSection, createProviderSection, createRecordingSection, createSpeechSection, createModesSection,
-  createDictionarySection, createUsageSection,
+  createDictionarySection, createSitesSection, createUsageSection,
 ]);
 
 /**
@@ -142,6 +145,7 @@ export async function initOptions({ chrome, document, window, sections = SECTION
     loaded: state.loaded,
     commit: state.commit,
     send: client.send,
+    saveSiteRule: client.saveSiteRule,
     toast,
     typingSave,
     // Reset to defaults calls this before it commits, so sections can close open editors.
