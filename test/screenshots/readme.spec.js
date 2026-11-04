@@ -4,7 +4,7 @@
 import { test } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { launchExtension, seedSettings, focusField, clickPill, waitForPill, pillQuery, PORT, START, STOP, HOTKEY } from '../e2e/helpers.js';
+import { launchExtension, seedSettings, focusField, clickPill, waitForPill, pillQuery, PORT, START, STOP } from '../e2e/helpers.js';
 import { applyUsage, emptyLog } from '../../src/background/usage.js';
 import { estimateSttCost } from '../../src/shared/pricing.js';
 import { PROVIDERS } from '../../src/shared/models.js';
@@ -107,8 +107,8 @@ for (const colorScheme of ['light', 'dark']) {
       await page.waitForTimeout(1200);
       await shoot(page, [card, await pillBox(page, '.body')], GLOW_ROOM, `${dir}/in-use.png`);
 
-      await page.keyboard.press(HOTKEY);
-      await page.waitForTimeout(300);
+      // A reload cancels the recording, so the quick panel counts the sessions the menu showed.
+      await page.reload();
 
       const popup = await context.newPage();
       await popup.setViewportSize({ width: 320, height: 560 });

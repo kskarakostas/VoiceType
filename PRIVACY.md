@@ -30,8 +30,8 @@ VoiceType collects and processes the following data **locally on your device**:
 ## Data Storage
 
 - All data is stored **locally** in Chrome's extension storage
-- API keys are stored in plain text in `chrome.storage.local`. They are never written to `chrome.storage.sync`, so they do not leave this browser profile. They are stored unencrypted on disk inside your Chrome profile folder. Anyone, or any program, with access to that folder can read them.
-- Inside Chrome, the keys are readable only by VoiceType's own trusted pages: the background service worker, the popup and the settings page. VoiceType restricts its local storage with `chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })`, so its in-page script cannot read that storage at all. The in-page script receives settings without keys, the dictionary or your site rules (only the current site's Hide pill and mode), and no key is ever sent to a web page.
+- API keys are stored in plain text in `chrome.storage.local`. They are never written to `chrome.storage.sync`, so Chrome Sync never copies them. They are stored unencrypted on disk inside your Chrome profile folder. Anyone, or any program, with access to that folder can read them.
+- Inside Chrome, the keys are readable only by VoiceType's own trusted contexts: the background service worker and its extension pages (popup, settings page, recording and permission pages). VoiceType restricts its local storage with `chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })`, so its in-page script cannot read that storage at all. The in-page script receives settings without keys, the dictionary or your site rules (only the current site's Hide pill and mode), and no key is ever sent to a web page.
 - No data is sent to our servers (we don't have any servers)
 - Your dictionary and site rules are stored locally. Dictionary terms leave this device only with a recording, as described below; site rules never do
 - Usage statistics are stored locally and never transmitted
@@ -71,9 +71,9 @@ Your use of these services is subject to their terms and privacy policies.
 
 ## Data Retention
 
-- Audio recordings are processed in memory and immediately discarded after transcription. Closing or leaving a tab while it records cancels the recording without sending it
+- Audio recordings are processed in memory and immediately discarded after transcription. Closing the tab or navigating it away while it records cancels the recording without sending it. Switching to another tab does not: the recording goes on until you stop it or it reaches the maximum length, and that audio is sent
 - Settings, API keys, your dictionary and site rules persist until you clear them or uninstall the extension
-- Usage statistics: daily history is kept for 90 days; all-time totals are kept until you clear them
+- Usage statistics: daily history is trimmed to 90 days each time a dictation is logged; all-time totals are kept until you clear them
 
 ## Your Rights
 

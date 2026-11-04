@@ -2,9 +2,17 @@
 
 Branch `v3`, version 3.0.0. Covers every lane, the 2.2 regression list in spec section 1, the items the L4 and L5 smokes left open, the top layer, the review fixes and the packed upgrade. Needs Chrome 140 or newer, working OpenAI and Gemini keys, speakers and a real microphone.
 
-The Run column says who has it: **H** a harness ran it (results at the end), **M** only a person can. Your part is every M row. Run H rows you want to see for yourself. Fill Result with pass, fail (with the exact on-screen text) or n/a.
+The Run column says who has it: **H** a harness ran it (results at the end), **M** a person has to. Your part is every M row. Run H rows you want to see for yourself. Fill Result with pass, fail (with the exact on-screen text) or n/a.
 
-Build, then click the reload icon on the VoiceType card in chrome://extensions:
+## 0. Before you reload
+
+The upgrade is one way: a browser taken back to 2.2.0 shows an empty vocabulary, so copy your vocabulary first if you may go back. Coming forward again keeps dictionary and site rules.
+
+| # | Run | How | Expected | Result |
+|---|-----|-----|----------|--------|
+| 0.1 | M | Do this first. With 2.2.0 loaded unpacked from this folder and your real settings, run the build below, then click the reload icon on the VoiceType card in chrome://extensions. | Keys masked on Settings, Provider; your custom mode after the built-ins; your terms in the Dictionary's All languages group; your hotkey on Settings, Recording; your history on Settings, Usage and data. | |
+
+Build. A profile with no VoiceType loaded: **Load unpacked** on `chrome://extensions`, pick `dist/`.
 
 ```bash
 npm test
@@ -28,16 +36,13 @@ Reload any open page after reloading the extension. Fixture pages: `http://local
 
 ## 1. Upgrade from 2.2.0
 
-The upgrade is one way: a browser taken back to 2.2.0 shows an empty vocabulary. Going forward again keeps dictionary and site rules.
-
 | # | Run | How | Expected | Result |
 |---|-----|-----|----------|--------|
-| 1.1 | H | On a 2.2 store (keys, a custom mode, vocabulary, a changed hotkey), load the build. | Keys masked on Provider, the custom mode after the built-ins, terms in the Dictionary's All languages group, the hotkey kept, the usage history shown. | |
-| 1.2 | H | Dictate once with a dictionary word. | The term reaches the provider. | |
-| 1.3 | H | Go from a packed 2.2.0 to a packed 3.0.0 with one signing key. | See "Packed upgrade" in the results. | |
-| 1.4 | H | A page open during that update, with the 2.2 pill showing. | One working pill after the update, or the orphan notice until reload; never two. | |
-| 1.5 | M | Your own Chrome profile, your real settings, reload from 2.2.0 to this build. | As 1.1 with your own data. | |
-| 1.6 | H | A 3.0 store stamped back to version 2 by 2.2, reloaded on this build. | Dictionary, site rules and style kept. | |
+| 1.1 | H | A 2.2 store (a key, a custom mode, vocabulary, a changed hotkey) read by this build. | The pages show the masked key, the custom mode last, the terms in All languages and the hotkey. | |
+| 1.2 | H | A live call with dictionary terms. | The terms go with the request, one call per provider. | |
+| 1.3 | H | A packed 2.2.0 updated to a packed 3.0.0 with one signing key. | Off until accepted; see "Packed upgrade" at the end. | |
+| 1.4 | H | A page open during that update, with the 2.2 pill showing. | While off, a press gives the orphan notice. After accepting, one working pill with no reload. | |
+| 1.6 | H | A 3.0 store stamped back to version 2 by 2.2, read by this build. | Dictionary, site rules and style kept, keywords merged. | |
 
 ## 2. Settings page and quick panel (L0)
 
@@ -49,14 +54,15 @@ The upgrade is one way: a browser taken back to 2.2.0 shows an empty vocabulary.
 | 2.4 | H | Window under about 720 px, light and dark. | The sidebar stacks, nothing scrolls sideways, text readable. | |
 | 2.5 | H | The real popup from the toolbar icon. | Status, Provider, Mode, This site, Today, Open settings. | |
 | 2.6 | H | Open settings with no settings tab, then again with one open on Modes. | A new tab at Home; then the same tab comes to the front, still on Modes, with no reload. | |
-| 2.7 | M | The settings tab in a second OS window, focus the first, Open settings from its popup. | The second window comes to the front with the tab active. | |
+| 2.7 | M | Two real OS windows (the harness display has no window manager). The settings tab in a second window, focus the first, Open settings from its popup. | The second window comes to the front with the tab active. | |
 | 2.8 | H | Pick a provider with no key in the popup. | "Add API key" shows and opens Provider. | |
 | 2.9 | H | Change the mode in the popup. | The toast names it; the pill shows it within a second. | |
-| 2.10 | H | For each of Provider, Recording, Speech, Modes: change it, wait a second, close the tab, reopen. | The change is there. Paste a key, Test works, Clear empties it. | |
+| 2.10 | H | Maximum length and a spoken language: change, wait a second, close the tab. Clear on a key. | Stored. | |
+| 2.10b | M | Provider: switch provider; paste a key; Test says it works; Clear empties it, toast "Key cleared"; paste it back. Hotkey: click, press a new chord; Esc cancels while armed. | As stated, and each is there after you close and reopen the tab. | |
 | 2.11 | H | Type a mode prompt, wait a second, Ctrl+W, reopen. Same with a key. | Both are there. | |
 | 2.12 | H | Settings page and popup open: change the mode in the popup, the maximum length on the page. | Both stay. | |
 | 2.13 | H | Reset to defaults, two clicks. | Keeps keys, provider, spoken languages, dictionary, site rules. Everything else resets; custom modes go. | |
-| 2.14 | M | Tab through the settings page with a screen reader on. | The order follows the screen; a sidebar link moves focus to the page heading; rings show. | |
+| 2.14 | M | Tab through the settings page with a screen reader on, also Home's day squares and the Sites table. | The order follows the screen; a sidebar link moves focus to the page heading; rings show; each day reads like "Monday, dictated". | |
 
 ## 3. Home (L1)
 
@@ -68,6 +74,7 @@ The upgrade is one way: a browser taken back to 2.2.0 shows an empty vocabulary.
 | 3.4 | H | Thresholds: under 30 s of talking; under 100 words. | "Shows after 30 s of talking", "Shows after 100 words"; past them, the numbers. | |
 | 3.5 | H | Seven day squares. | Monday first, today outlined, days to come dashed, dictated days filled. | |
 | 3.6 | H | Clear history. | "Dictate once to see your stats." with no reload. | |
+| 3.7 | H | Dictate with Settings, Usage and data open; a dictation in Email. | The table updates with no Refresh; Refined by a mode goes up by one. | |
 
 ## 4. Dictionary (L2)
 
@@ -80,7 +87,7 @@ The upgrade is one way: a browser taken back to 2.2.0 shows an empty vocabulary.
 | 4.5 | H | Remove a chip by mouse and by keyboard; double-click an x; Remove group, two clicks. | One term each; focus moves on; the group goes after the second click. | |
 | 4.6 | H | Export CSV, then import the same file. | "Nothing new: all N terms are already in the dictionary." | |
 | 4.7 | H | Import: one term per line; an unknown language; past 100 terms. | Into All languages; "Line N: unknown language"; "over the 100 term limit by N". Nothing imported on an error. | |
-| 4.8 | M | Open the export in real Excel; save as CSV UTF-8 and import; save as plain CSV with Greek; save as Unicode Text. | Greek reads right; the UTF-8 file imports; the others are refused with their texts. | |
+| 4.8 | M | Open the export in real Excel; save as CSV UTF-8 and import; save as plain CSV with Greek; save as Unicode Text. | Greek reads right; the UTF-8 file imports; "This file is not UTF-8. Save it as CSV UTF-8 and try again. Nothing was imported."; "Line 1: the term contains a tab. Nothing was imported." | |
 | 4.9 | H | Two settings tabs: add a term in one. | The other shows it; text being typed there stays. | |
 | 4.10 | H | Dictate with a term from any group. | It goes with the request, one live call per provider. | |
 | 4.11 | M | An IME (Greek polytonic or similar) in the add field. | Composition is not cut. | |
@@ -94,11 +101,15 @@ The upgrade is one way: a browser taken back to 2.2.0 shows an empty vocabulary.
 | 5.3 | H | Mode on this site Email. | Used here and in its frames; the global mode unchanged; other sites use the global mode. | |
 | 5.4 | H | The pill's menu on that site. | Mode marked This site, Use active mode first. A pick changes the site, not the global mode. Use active mode clears it. | |
 | 5.5 | H | A custom mode set on a site, then deleted. | The site falls back; the row goes unless it hides the pill. | |
-| 5.6 | H | The popup on chrome://extensions, the Web Store, a `file:` page, the new tab page. | "Not available on this page". | |
+| 5.6 | H | The popup on chrome://extensions, a `file:` page, the new tab page. | "Not available on this page". | |
+| 5.6b | M | The popup on the Web Store. | Same. | |
 | 5.7 | H | Add site: a full URL; the same again; `not a host`; Hide pill off with no mode; a draft left unsaved. | `example.com` row; "example.com already has a rule."; refused; "Turn on Hide pill or choose a mode."; no rule. | |
 | 5.8 | H | Change a mode in a Sites row, change it from the pill on that site, come back and toggle Hide pill on the row. | The newer mode survives. | |
-| 5.9 | H | Back to a page after the rule changed; a real prerender. | The current rule applies. | |
-| 5.10 | M | Open the real popup on a site, tick Hide pill, watch the page behind it. | The idle pill goes with the popup open. | |
+| 5.9 | H | Back to a page after the rule changed. | The current rule applies. | |
+| 5.9b | M | Hide a site you visit daily, type its address from another site so Chrome may prerender it, click a field. The reverse from a hidden site to a normal one. | No pill; then the pill. | |
+| 5.9c | H | A field scrolled out of view, the hotkey, on a normal and a hidden site. | The pill in the corner, or Minimal at the bottom centre; back at the field on a scroll. | |
+| 5.9d | H | Click the pill's mode button across its width. | The menu opens from every point. | |
+| 5.10 | H | The real action popup: with Hide pill on, untick it with the page open, each style; tick it in lane item 1. | The page follows. | |
 
 ## 6. Sound and clipboard (L4)
 
@@ -111,12 +122,14 @@ The upgrade is one way: a browser taken back to 2.2.0 shows an empty vocabulary.
 | 6.5 | H | Always copy on: textarea, contenteditable, cross-origin frame, a multi-line Greek result, a long hold, a silence auto-stop over 5 s after the last key. | Text in the field, same text on the clipboard, no "Not copied". | |
 | 6.6 | H | Close the tab during processing, Always copy off. | The paste gives the text (review fix). | |
 | 6.7 | H | Slow provider, focus moved. | "The field lost focus. Text copied to clipboard." and no page prompt. | |
+| 6.7b | H | A build without `clipboardWrite`, a write left pending. | "Could not insert. Click here to copy the text." about 1 s later; a click copies. | |
 | 6.8 | M | Real speakers and a real microphone, no headphones, usual volume, Play sounds on, OpenAI then Gemini. Press the hotkey, say nothing, stop after 3 s. | "No speech detected." Any text means the start tone got into the recording: note it. | |
 | 6.9 | M | Same, speaking one sentence right after the start tone. | Only that sentence; its first words not cut. | |
 | 6.10 | M | Listen to each tone. | Clean end, no click. Audible at low volume and over another tab's audio. | |
 | 6.11 | M | A Bluetooth headset. | Note whether the start tone is late or lost, and whether a tail is cut. | |
-| 6.12 | M | A real Google Doc: with Always copy on and off, also after a silence auto-stop. | "Copied to clipboard. The field could not be edited."; the paste gives the text; no page prompt. | |
+| 6.12 | M | A real Google Doc, Always copy off, then on: dictate. Then Settings, Recording, Silence auto-stop on: press the hotkey once, speak for over 5 s, stop talking and let it end, with no key or mouse in between. | "Copied to clipboard. The field could not be edited."; the paste gives the text; no page prompt. | |
 | 6.13 | H | chrome://extensions, Details. | The list reads "Modify data you copy and paste." | |
+| 6.14 | M | Hold to talk on a physical keyboard for over 5 s, always copy on. | The text lands, no "Not copied". | |
 
 ## 7. Pill styles (L5)
 
@@ -130,7 +143,7 @@ The upgrade is one way: a browser taken back to 2.2.0 shows an empty vocabulary.
 | 7.6 | M | The same with Settings in a second OS window, side by side. | As 7.5. | |
 | 7.7 | H | Reduced motion. | Bars static, clock runs, no pulse, Dot opens at once, steady ring. | |
 | 7.8 | H | TinyMCE at `tiny.cloud`, each style, with and without Hide pill. | The text lands; two indicators are expected on such an editor. | |
-| 7.9 | M | Forced colors on, by eye. | Selected card and focus rings visible; the pill readable. | |
+| 7.9 | M | Forced colors on (DevTools, Rendering, or a Windows contrast theme), by eye, on Settings, Appearance and a recording on `fields.html`. | Selected card and focus rings visible; the pill readable. | |
 
 ## 8. A recording in a frame out of sight (L5)
 
@@ -160,8 +173,8 @@ Each with Pill, Dot and Minimal, on a recording in the top frame and in the cros
 | 9.5 | H | After the status ends under a modal. | The host leaves the top layer: the idle pill is under the modal, as in 2.2. | |
 | 9.6 | H | The page calls `hidePopover()` on the host; removes the host. | Back within a second. | |
 | 9.7 | H | A held pointer on Stop; keyboard focus on Stop; an open menu scrolled; the processing pulse. | Each survives the raises. | |
-| 9.8 | M | A real site with a native modal you use (GitHub, for example), and a real video in fullscreen, in Chrome on your screen. | The indicator shows; nothing flickers. | |
-| 9.9 | M | A screen reader during a recording under a modal. | Known limit: inert, so statuses are not announced. Note what you hear with no modal: a status read once. | |
+| 9.8 | M | A real site with a native modal you use (GitHub's command palette, for example), and a real video in fullscreen, in Chrome on your screen. | The indicator shows; nothing flickers. | |
+| 9.9 | M | A screen reader on `fields.html`, a dictation, then the same on the 9.8 site with its modal open. | With no modal a status is read once. Under a modal it is inert: note what you hear. | |
 
 Known limit: under a modal the indicator and statuses can be seen, not clicked. The hotkey works; close the dialog to click a click-to-copy status.
 
@@ -171,8 +184,8 @@ Known limit: under a modal the indicator and statuses can be seen, not clicked. 
 |---|-----|-----|----------|--------|
 | 10.1 | H | Hold to talk. | The text lands on release. | |
 | 10.2 | H | Dictation in frames and shadow roots. | The text lands. | |
-| 10.3 | H | The insertion ladder: textarea, contenteditable, Slate-style and Lexical-style editors on `fields.html`; one Ctrl+Z removes the text. | Inserted once; undo works. | |
-| 10.4 | M | Your real sites: Gmail, Notion, Slack, ChatGPT, claude.ai, Facebook. | Inserted once, or also on the clipboard with the warning. | |
+| 10.3 | H | Textarea and contenteditable on `fields.html`: type, dictate, one Ctrl+Z. | Inserted once; undo removes exactly the dictated text. Slate and Lexical rungs are unit tests; 10.4 is their real check. | |
+| 10.4 | M | Your real sites: Gmail, Notion, Slack, ChatGPT, claude.ai, Facebook. | Inserted once, or also on the clipboard with "Could not confirm the insert. The text is also on the clipboard." | |
 | 10.5 | H | Orphan: extension off with a page open, a press; extension reload with a page open. | "VoiceType was turned off or updated. Reload this page."; after a reload the new copy records. | |
 | 10.6 | H | Password field. | "VoiceType does not record in password fields." and no recording. | |
 | 10.7 | H | Cost: the Done status, Today in the popup, Usage and data. | One session per dictation, the right cost. | |
@@ -183,7 +196,8 @@ Known limit: under a modal the indicator and statuses can be seen, not clicked. 
 | # | Run | How | Expected | Result |
 |---|-----|-----|----------|--------|
 | 11.1 | H | `document.documentElement.style.zoom = '2'` and `'0.75'` in the console, each style, also in frame 0 over a mirror. | The indicator stays in the window, in its place. | |
-| 11.2 | H | "Could not insert. Click here to copy" up, press the hotkey. | The press copies; the next press records. | |
+| 11.2 | H | "Could not insert. Click here to copy the text." up (a build without `clipboardWrite`, as 6.7b), press the hotkey. | "Copied to clipboard."; the next press records. | |
+| 11.2b | M | A press within a moment of the text landing, on a real page. Unit tests cover the guard; no harness hits the window. | "Still processing", then the result's status; no recording. | |
 | 11.3 | H | Gemini and OpenAI, real speech, one take each. | The sentence comes back. | |
 
 ## 12. Anything else on real hardware

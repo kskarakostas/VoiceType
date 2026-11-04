@@ -3,7 +3,7 @@
 ## 3.0.0 (2026-11-04)
 
 ### Added
-- A settings page in a tab, with a sidebar: Home, Modes, Dictionary, and under Settings: Provider, Recording, Speech, Sites, Appearance, Sound and clipboard, Usage and data. Text saves as you type, so nothing is lost if you close the tab a second after typing. It also opens from Extension options on `chrome://extensions`.
+- A settings page in a tab, with a sidebar: Home, Modes, Dictionary, and under Settings: Provider, Recording, Speech, Sites, Appearance, Sound and clipboard, Usage and data. Settings save as you type, so nothing is lost if you close the tab a second after typing. It also opens from Extension options on `chrome://extensions`.
 - Home: time saved, words, speaking speed, sessions refined by a mode, days dictated, this week's cost and cost per 1,000 words. Word counts start with 3.0, so older sessions do not skew them.
 - Dictionary: terms grouped by language, up to 100 in all, each unique across the groups, with CSV import and export. Every term goes with every dictation.
 - Site rules: hide the pill on a site, or give a site its own mode. The hotkey still records on a hidden site, with a small indicator. On a site with a mode, a mode picked in the pill menu updates that site; Use active mode clears it.
@@ -14,7 +14,7 @@
 ### Changed
 - The toolbar popup is now a quick panel: status, provider, active mode, this site's rule, today's sessions and cost, and Open settings. Everything else moved to the settings page.
 - The vocabulary list became the Dictionary. Your terms move into its All languages group. A browser taken back to 2.2.0 after this update shows an empty vocabulary; coming forward again keeps your dictionary and site rules.
-- New permission: `clipboardWrite`, "Modify data you copy and paste". Always copy needs it, and it also ends the stall under Fixed. VoiceType does not read the clipboard. A packed or store install stays off after the update until you accept it from the Chrome menu; an unpacked build asks nothing.
+- New permission: `clipboardWrite`, "Modify data you copy and paste". Always copy needs it, and it also ends the stall under Fixed. VoiceType does not read the clipboard. A store install stays off after the update until you accept it from the Chrome menu; an unpacked build asks nothing.
 - Reset to defaults also keeps your dictionary and site rules. Custom modes are deleted as before, so a site rule that uses one loses its mode.
 - A site's rule goes by hostname, with leading `www.` and trailing dots dropped.
 

@@ -54,7 +54,7 @@ Not just transcription: compose emails, translate languages, or ask AI questions
 Hold the hotkey while you speak and let go to insert, or tap to start and tap again to stop. Works in iframes and fields in open shadow roots too.
 
 ### 📊 Home and Usage
-See this week's time saved, words, speaking speed and cost per 1,000 words. Sessions, audio time and estimated cost by period and provider. Never get surprised by your bill.
+See this week's time saved, words, speaking speed and cost per 1,000 words, plus sessions, audio time and estimated cost by period and provider.
 
 ### 📖 Dictionary
 Keep names and jargon by language, up to 100 terms, with CSV import and export.
@@ -66,7 +66,7 @@ Hide the pill on a site, or give a site its own mode.
 Dot (the default), Pill or Minimal. Optional sounds, and an option to also copy every result.
 
 ### 🔒 Privacy First
-Keys stay in your browser's local extension storage, readable only by VoiceType's background, popup and settings page, never synced. Audio goes straight to the provider you chose. No server of ours exists.
+Keys stay in your browser's local extension storage, readable only by VoiceType's own extension pages, never synced. Audio goes straight to the provider you chose. No server of ours exists.
 
 </td>
 </tr>
@@ -141,13 +141,13 @@ Keys stay in your browser's local extension storage, readable only by VoiceType'
 
 | Mode | Icon | What it does |
 |------|:----:|--------------|
-| **Default** | 🎤 | Transcription only: no text model, no extra cost |
+| **Default** | 🎤 | Transcription only as shipped: no text model, no extra cost |
 | **Email** | 📧 | Transforms your ideas into formatted emails |
 | **Translate** | 🌐 | Speak in any language, get text in another |
 | **Instruct** | 💡 | Ask AI questions, get responses in the text field |
 
-- Every mode except Default sends the transcript through the provider's text model (`gpt-6-luna` or `gemini-3.8-flash`), which adds a small text cost.
-- Translate's target language (English, Greek, Spanish, French or German) is picked in the pill menu while Translate is the active mode.
+- A mode with instructions sends the transcript through the provider's text model (`gpt-6-luna` or `gemini-3.8-flash`), which adds a small text cost. Default ships with none; give it instructions and it does the same.
+- Translate's target language (English, Greek, Spanish, French or German) is picked in the pill menu while Translate is the active mode. Minimal has no menu, so pick it on Dot or Pill.
 - Add your own modes on the settings page under **Modes, Add mode**: an icon, a name and instructions for the text model. Empty instructions mean plain transcription. `{{targetLanguage}}` in the instructions is replaced with Translate's target language.
 
 ---
@@ -192,9 +192,9 @@ Then in Chrome 140 or newer:
 
 ### 3. Configure & Go
 
-1. Click the VoiceType icon in Chrome, then **Add API key**. The settings page opens at **Provider**
-2. Paste your API key. It saves on its own
-3. Click into any text field, then hold `Ctrl+Shift+Space` while you speak, or point at the dot beside the field and click **REC**
+1. Pin the VoiceType icon from the puzzle piece menu and click it, then **Add API key**. The settings page opens at **Provider**
+2. Using Gemini? Select **Gemini** at the top of that page first. Paste your API key. It saves on its own
+3. Open a web page (VoiceType does not run on Chrome's own pages or its extension pages) and click into a text field, then hold `Ctrl+Shift+Space` while you speak, or point at the dot beside the field and click **REC**
 4. The first time, VoiceType opens a tab asking for the microphone. Choose **Allow while visiting the site**, then start again
 
 ---
@@ -211,7 +211,7 @@ To change it, open the settings page, click the key under **Settings, Recording,
 
 On Windows, do not choose a combination with both Ctrl and Alt: AltGr reports as Ctrl+Alt, so typing characters such as `@` or `€` would trigger it.
 
-The hotkey works on web pages once they have loaded. Extensions cannot run on `chrome://` pages, the Chrome Web Store or the new tab page, so it does nothing there.
+The hotkey works on web pages once they have loaded. Extensions cannot run on `chrome://` pages, the Chrome Web Store or the new tab page, and VoiceType does not run on its own settings page, so it does nothing there.
 
 Only real key presses count. A web page cannot trigger the hotkey with synthetic key events from its own scripts.
 
@@ -225,7 +225,7 @@ The first recording opens a VoiceType tab that asks for the microphone. Choose *
 
 While VoiceType records, Chrome shows its microphone indicator in the system tray or menu bar; the website's tab shows none. The microphone is released after every recording.
 
-Blocked it by mistake? Open `chrome://settings/content/microphone`, remove VoiceType from the blocked list, and start again.
+Blocked it by mistake? Open `chrome://settings/content/microphone`, find VoiceType under "Not allowed to use your microphone", set it to Allow, and start again.
 
 ---
 
@@ -236,10 +236,10 @@ Blocked it by mistake? Open `chrome://settings/content/microphone`, remove Voice
 - If the text arrives while you are in another window or tab, or after you dictated into a field inside an embedded frame (an iframe) and then clicked into the page, it waits until you come back to that field and is inserted then. Until then the pill says "Return to the field to insert, or click here to copy." If you dictated into a field on the page and then clicked into a field inside an embedded frame, the text is copied to the clipboard instead.
 - With no field focused (hotkey only), the text is copied to the clipboard.
 - If the tab closed, or left for a page VoiceType cannot run on, before the text arrived, the text is copied to the clipboard. No status can tell you, as the page is gone.
-- Google Docs does not accept inserted text; VoiceType copies it and you paste with `Ctrl+V`.
+- Google Docs does not accept inserted text; VoiceType copies it and you paste with `Ctrl+V` (`Cmd+V` on a Mac).
 - In rich editors (Gmail, Notion, Slack, ChatGPT, Facebook, claude.ai and others), if VoiceType cannot confirm the insert, the text is also on the clipboard. It is never inserted twice.
 - In text boxes, one `Ctrl+Z` removes exactly the dictated text.
-- Fields inside iframes and open shadow roots work too.
+- Fields inside iframes and open shadow roots work too. VoiceType does not record in password fields, and input types such as number or date get no pill.
 - With **Always copy the result** on, every dictation also goes to the clipboard, replacing what is there. If that copy fails, the status says "Not copied." and the text still goes to the field.
 
 ---
@@ -260,7 +260,7 @@ The settings page opens in a tab, also from **Extension options** on `chrome://e
   - **Pill**: the full bar beside the field, always in view.
   - **Minimal**: nothing until you record, then a small indicator at the bottom of the page. Start and stop with the hotkey. There is no menu on the page.
 - **Sound and clipboard**: **Play sounds** gives short tones for start, stop, done and error. **Always copy the result** also copies every dictation. Both are off by default.
-- Every change saves on its own; there is no Save button. A new mode is saved with **Create mode**.
+- Every change saves on its own; there is no Save button. A new mode is saved with **Create mode**, a new site rule with **Add**.
 - **Clear history** and **Reset to defaults** need two separate clicks: the first changes the button's label, the second confirms. A double click or a held Enter does not confirm them.
 - **Reset to defaults** keeps your API keys, provider, spoken languages, dictionary and site rules. Custom modes are deleted, so a site rule that uses one loses its mode.
 
@@ -297,7 +297,7 @@ The extension is free. You need an API key from OpenAI (pay-per-use) or Google G
 <details>
 <summary><b>Which provider should I use?</b></summary>
 <br>
-Both are accurate for dictation. Gemini's transcribe model removes filler words on its own. OpenAI is the default. Costs are comparable; see **Settings, Usage and data**.
+Both are accurate for dictation. Gemini's transcribe model removes filler words on its own. OpenAI is the default. Costs are comparable; see the Pricing Estimate below.
 </details>
 
 <details>
@@ -332,13 +332,13 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 |---------|----------|
 | **"Could not load javascript 'content.js'" or "Could not load manifest"** | You selected the repository folder. Run `npm run build`, then choose the `dist/` folder in **Load unpacked** |
 | **"Add an API key" message** | Click the extension icon, then **Add API key**, and paste your key on the settings page |
-| **Microphone not working** | VoiceType asks in its own tab, not in the site's address bar. If the pill says the microphone is blocked, open `chrome://settings/content/microphone`, remove VoiceType from the blocked list, and start again |
+| **Microphone not working** | VoiceType asks in its own tab, not in the site's address bar. If the pill says the microphone is blocked, open `chrome://settings/content/microphone`, find VoiceType under "Not allowed to use your microphone", set it to Allow, and start again |
 | **Asked for the microphone every time** | You chose "Allow this time". Reset it at `chrome://settings/content/microphone`, start a recording and choose **Allow while visiting the site** |
 | **Hotkey doesn't work** | Click into the page first. Browser shortcuts such as `Ctrl+T` never reach a page; set another hotkey under Settings, Recording, Hotkey |
 | **"VoiceType was turned off or updated. Reload this page."** | VoiceType was turned off on `chrome://extensions`, or that tab could not be switched to the new version. Turn VoiceType on if it is off, then reload the page |
 | **Text went to the clipboard** | Focus moved before the text arrived, or the site does not accept inserted text. Paste with `Ctrl+V` |
 | **Transcription fails** | Check your API key and account balance |
-| **VoiceType is off after an update** | A packed or store install stays off until you accept the new permission: open the Chrome menu, click the VoiceType line, then **Accept permissions**. Loading the new build unpacked asks nothing |
+| **VoiceType is off after an update** | A store install stays off until you accept the new permission: open the Chrome menu, click the VoiceType line, then **Accept permissions**. Loading the new build unpacked asks nothing |
 | **Names or jargon come out wrong** | Add them on the Dictionary page, spelled as they should appear |
 | **Mixed-language speech comes out garbled** | Tick every language you speak under Settings, Speech, Spoken languages |
 | **Poor quality** | Speak clearly, reduce background noise, or try the other provider |
@@ -362,8 +362,8 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 
 | Mode | To the speech model | To the text model |
 |------|---------------------|-------------------|
-| Default | Audio, spoken languages, dictionary terms | Nothing |
-| Any other mode | Audio, spoken languages, dictionary terms | The transcript text and the mode's instructions, never the audio |
+| No instructions (Default as shipped) | Audio, spoken languages, dictionary terms | Nothing |
+| With instructions | Audio, spoken languages, dictionary terms | The transcript text and the mode's instructions, never the audio |
 
 - Everything goes straight from your browser to the provider you chose, with your key. Both steps use that same provider.
 - On Gemini, speech recognition already removes filler words and self-corrections and formats the text, even in Default. On OpenAI, Default returns the transcript as recognized.
@@ -372,7 +372,7 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 
 ## 🔒 Privacy
 
-- ✅ API keys stored in plain text in Chrome's local extension storage, readable only by VoiceType's background service worker, popup and settings page, never synced, never sent anywhere but the provider
+- ✅ API keys stored in plain text in Chrome's local extension storage, readable only by VoiceType's own service worker and extension pages, never synced, never sent anywhere but the provider
 - ✅ Web pages never receive your keys or your microphone; audio is recorded in VoiceType's own extension page
 - ✅ Audio sent directly to OpenAI/Google (not our servers)
 - ✅ Site rules and your dictionary stay on this device; dictionary terms go to the provider with each recording
