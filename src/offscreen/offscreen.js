@@ -1,5 +1,5 @@
-// Offscreen document entry. Only chrome.runtime exists here: levels and results go to the
-// service worker, which relays them to the recording tab.
+// Offscreen document entry: it records audio, plays cues and copies results. Only chrome.runtime
+// exists here: levels and results go to the service worker, which relays them to the recording tab.
 import { MSG } from '../shared/messages.js';
 import { createCapture } from './capture.js';
 import { createCuePlayer } from './cues.js';
@@ -76,7 +76,7 @@ const capture = createCapture({
 const cues = createCuePlayer({ createContext: () => new AudioContext() });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Content scripts broadcast to every extension context; only the service worker drives capture.
+  // Content scripts broadcast to every extension context; only the service worker drives this document.
   if (sender.tab) return false;
   if (message?.action === MSG.OFFSCREEN_START) {
     capture.start({ maxSec: Number(message.maxSec), silenceSec: Number(message.silenceSec) || 0, captureId: message.captureId }).then(sendResponse);

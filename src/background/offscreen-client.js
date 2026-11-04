@@ -1,9 +1,10 @@
 const JUSTIFICATION = 'Record dictation audio, and play cues and copy results when those settings are on.';
 
 /**
- * The one offscreen document that records audio. Chrome allows a single offscreen document per
- * extension, so creation is shared between concurrent callers, and the "single offscreen document"
- * rejection (a create that raced ours, or one this worker forgot after a restart) counts as success.
+ * The one offscreen document: it records audio, plays cues and copies results. Chrome allows a
+ * single offscreen document per extension, so creation is shared between concurrent callers, and
+ * the "single offscreen document" rejection (a create that raced ours, or one this worker forgot
+ * after a restart) counts as success.
  * @param {{
  *   runtime: Pick<typeof chrome.runtime, 'getContexts'|'getURL'|'sendMessage'>,
  *   offscreen: Pick<typeof chrome.offscreen, 'createDocument'>,

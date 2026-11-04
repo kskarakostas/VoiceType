@@ -826,7 +826,7 @@ describe('cues', () => {
   });
 
   it('cue row 21: freed while dictate ran', async () => {
-    for (const outcome of [{ ...DICTATION }, { success: false, error: 'No speech detected.', tone: 'error' }]) {
+    for (const [outcome, copied] of [[{ ...DICTATION }, null], [{ success: false, error: 'No speech detected.', tone: 'error' }, undefined]]) {
       const t = setup({ settings: { sounds: true, alwaysCopy: true } });
       const pending = deferred();
       t.deps.dictate.mockImplementationOnce(() => pending.promise);
@@ -840,6 +840,7 @@ describe('cues', () => {
       await flush();
       expect(t.cues()).toEqual(['start', 'stop']);
       expect(t.copies()).toEqual([]);
+      expect(t.result().copied).toBe(copied);
     }
   });
 
