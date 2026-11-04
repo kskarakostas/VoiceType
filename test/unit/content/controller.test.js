@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createController, FOCUS_OUT_MS, PROCESSING_TIMEOUT_MS } from '../../../src/content/controller.js';
 import { isValidInput, deepActiveElement } from '../../../src/content/fields.js';
 import { MSG } from '../../../src/shared/messages.js';
-import { STATUS_MS } from '../../../src/content/pill.js';
+import { Pill, STATUS_MS } from '../../../src/content/pill.js';
 
 const RECT = { top: 100, left: 400, width: 300, height: 30 };
 const ORPHAN = 'VoiceType was turned off or updated. Reload this page.';
@@ -360,6 +360,23 @@ describe('a frame without keyboard focus', () => {
     await t.controller.release({ held: true });
     expect(t.actions()).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING]);
     expect(t.controller.state).toBe('processing');
+  });
+});
+
+describe('a recording started before any focusIn', () => {
+  it('holds its result as a field focused through focusIn would', async () => {
+    const t = setup();
+    // At boot focus events are ignored until the first settings answer.
+    $('a').focus();
+    await t.controller.press();
+    await t.controller.toggle();
+    // Chromium blanks a frame's activeElement when another frame takes the focus.
+    $('a').blur();
+    t.deps.hasFocus.mockReturnValue(false);
+    t.controller.handleMessage({ action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null });
+    await flush();
+    expect(lastStatus(t.pill)[0]).toBe('Return to the field to insert, or click here to copy.');
+    expect(t.deps.copyText).not.toHaveBeenCalled();
   });
 });
 
@@ -1074,6 +1091,8 @@ describe('hidden site', () => {
   function hiddenSetup(options) {
     const t = setup(options);
     t.controller.setSettings(hidden());
+    // The first answer settles once, with nothing shown yet.
+    t.pill.hide.mockClear();
     return t;
   }
 
@@ -1211,6 +1230,64 @@ describe('hidden site', () => {
     $('b').focus();
     t.controller.focusIn($('b'));
     expect(t.deps.watchAnchor).toHaveBeenCalledWith($('b'), expect.any(Function));
+  });
+
+  describe('a field scrolled out of view', () => {
+    const OFFSCREEN = { ...RECT, top: -500 };
+    const noop = () => {};
+
+    /** The real pill: only it tells a pill shown offscreen from one that is hidden. */
+    function withRealPill() {
+      const t = setup();
+      let box = RECT;
+      let onChange = null;
+      const pill = new Pill({
+        onRec: noop, onStatusClick: noop, onMenuOpen: noop, onMode: noop, onUseActive: noop, onProvider: noop, onTargetLang: noop,
+      }, { shadowMode: 'open' });
+      const controller = createController({
+        ...t.deps,
+        pill,
+        rectOf: () => ({ ...box }),
+        watchAnchor: (_, fn) => {
+          onChange = fn;
+          return () => { onChange = null; };
+        },
+      });
+      const scroll = (next) => {
+        box = next;
+        onChange?.();
+      };
+      return { controller, pill, scroll, watching: () => onChange !== null };
+    }
+
+    afterEach(() => {
+      document.querySelectorAll('voicetype-host').forEach((el) => el.remove());
+    });
+
+    it('does not bring the pill back after the status ended', async () => {
+      const t = withRealPill();
+      t.controller.setSettings(hidden());
+      await recordAndStop(t);
+      t.controller.handleMessage(RESULT);
+      await flush();
+      t.scroll(OFFSCREEN);
+      vi.advanceTimersByTime(STATUS_MS.success);
+      expect(t.watching()).toBe(false);
+      t.scroll(RECT);
+      expect(t.pill.visible).toBe(false);
+    });
+
+    it('does not bring back an idle pill that a hide push found offscreen', () => {
+      const t = withRealPill();
+      t.controller.setSettings(shown());
+      $('a').focus();
+      t.controller.focusIn($('a'));
+      t.scroll(OFFSCREEN);
+      expect(t.pill.visible).toBe(false);
+      t.controller.handleMessage({ action: MSG.SETTINGS_CHANGED, settings: hidden() });
+      t.scroll(RECT);
+      expect(t.pill.visible).toBe(false);
+    });
   });
 
   it('keeps the field focused last for delivery across frames', async () => {

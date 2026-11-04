@@ -502,6 +502,45 @@ describe('first settings answer', () => {
     expect(shadow().querySelector('.vt').hidden).toBe(false);
   });
 
+  it('a window blur during the wait is not lost', async () => {
+    const { answer } = holdSettings();
+    field().focus();
+    await loadInstance();
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    window.dispatchEvent(new Event('blur'));
+    answer(site(false));
+    await flush();
+    await vi.waitFor(() => expect(shadow().querySelector('.vt').hidden).toBe(true));
+    expect(document.activeElement).toBe(field());
+  });
+
+  it('a focused window keeps the pill after the wait', async () => {
+    const { answer } = holdSettings();
+    field().focus();
+    await loadInstance();
+    answer(site(false));
+    await sleep(FOCUS_OUT_MS + 20);
+    expect(shadow().querySelector('.vt').hidden).toBe(false);
+  });
+
+  it('a throw while applying the answer leaves focus working', async () => {
+    // Handle the rejection the boot chain passes on, so it does not fail the run as unhandled.
+    const { finally: original } = Promise.prototype;
+    vi.spyOn(Promise.prototype, 'finally').mockImplementation(function handled(fn) {
+      const next = original.call(this, fn);
+      next.catch(() => {});
+      return next;
+    });
+    const { answer } = holdSettings();
+    field().focus();
+    await loadInstance();
+    answer({ ...site(false), modes: { get default() { throw new Error('bad modes'); } } });
+    await flush();
+    expect(hosts()).toHaveLength(1);
+    other().focus();
+    expect(shadow().querySelector('.vt').hidden).toBe(false);
+  });
+
   it('the hotkey during the wait records with the pill, whatever the answer says', async () => {
     const { t, answer } = holdSettings();
     field().focus();

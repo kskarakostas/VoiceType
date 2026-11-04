@@ -187,9 +187,12 @@ export function boot({
   window.addEventListener('pagehide', onPageHide);
   chrome.runtime.onMessage.addListener(onMessage);
 
-  loadSettings().then(() => {
+  // finally: an answer that fails to apply must not leave focus ignored for good.
+  loadSettings().finally(() => {
     booted = true;
     // Injected after an update, or at document_idle after the user already clicked into a field.
     controller.focusIn(deepActiveElement(document));
+    // A blur during the wait was ignored: settle against where the focus is now.
+    controller.focusOut();
   });
 }

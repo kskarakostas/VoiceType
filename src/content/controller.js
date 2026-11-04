@@ -115,7 +115,8 @@ export function createController(deps) {
   function settle() {
     if (inactive() || state !== 'idle' || statusBusy) return;
     if (hiddenSite()) {
-      if (pill.visible) hide();
+      // Not gated on pill.visible: a pill offscreen would come back when its field scrolls back.
+      hide();
       return;
     }
     // Another frame or window has the focus. This frame keeps its active field, but only the
@@ -250,6 +251,8 @@ export function createController(deps) {
       return;
     }
     target = isValidInput(active) ? active : null;
+    // A press during the first settings read comes before any focusIn.
+    if (target) lastField = target;
     stopQueued = false;
     state = 'starting';
     clearNotice();
