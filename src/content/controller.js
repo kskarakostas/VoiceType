@@ -36,7 +36,7 @@ const NO_RESPONSE = 'No response from VoiceType. Try again.';
 const CLICK_TO_COPY = 'Could not insert. Click here to copy the text.';
 const HOLD_NOTICE = 'Return to the field to insert, or click here to copy.';
 const PASSWORD_NOTICE = 'VoiceType does not record in password fields.';
-const FOCUS_NOTICE = 'Click into the field you want to dictate into, then press REC.';
+const FOCUS_NOTICE = 'Click into the field you want to dictate into, then try again.';
 const NOT_COPIED = ' Not copied.';
 const AUTO_STOP = Object.freeze({
   maxTime: { text: 'Max time reached', tone: 'info' },

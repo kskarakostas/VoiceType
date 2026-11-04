@@ -154,7 +154,7 @@ describe('toggle', () => {
   });
 
   it('start failure tones (needsPermission sticky info)', async () => {
-    const permission = 'Allow the microphone in the VoiceType tab that just opened, then press REC again.';
+    const permission = 'Allow the microphone in the VoiceType tab that just opened, then try again.';
     let reply = { ok: false, reason: 'needsPermission', error: permission };
     const t = setup({ replies: { [MSG.START_RECORDING]: () => reply } });
     $('a').focus();
@@ -328,7 +328,7 @@ describe('password fields', () => {
 });
 
 describe('a frame without keyboard focus', () => {
-  const NO_FOCUS = ['Click into the field you want to dictate into, then press REC.', { tone: 'info', sticky: false, clickable: false }];
+  const NO_FOCUS = ['Click into the field you want to dictate into, then try again.', { tone: 'info', sticky: false, clickable: false }];
 
   it('REC while another frame or window has the focus sends nothing and says where to click', async () => {
     const t = setup();
@@ -393,7 +393,7 @@ describe('a pending click-to-copy status', () => {
 
   it.each([
     ['a password field has the focus', 'VoiceType does not record in password fields.', () => focusPasswordField()],
-    ['another frame or window has the focus', 'Click into the field you want to dictate into, then press REC.', (t) => t.deps.hasFocus.mockReturnValue(false)],
+    ['another frame or window has the focus', 'Click into the field you want to dictate into, then try again.', (t) => t.deps.hasFocus.mockReturnValue(false)],
   ])('stays clickable when a start is refused because %s', async (_name, notice, refuse) => {
     const t = setup({ insert: 'failed' });
     await recordAndStop(t);
@@ -452,9 +452,9 @@ describe('service worker messages', () => {
     const t = setup();
     t.controller.handleMessage({
       action: MSG.RECORDING_STATE, state: 'idle', reason: 'permission',
-      notice: { text: 'Microphone allowed. Press REC again.', tone: 'success' },
+      notice: { text: 'Microphone allowed. Try again.', tone: 'success' },
     });
-    expect(lastStatus(t.pill)).toEqual(['Microphone allowed. Press REC again.', { tone: 'success', sticky: true, clickable: false }]);
+    expect(lastStatus(t.pill)).toEqual(['Microphone allowed. Try again.', { tone: 'success', sticky: true, clickable: false }]);
     $('a').focus();
     await t.controller.toggle();
     const calls = t.pill.setStatus.mock.calls.length;
@@ -859,7 +859,7 @@ describe('another frame or window has focus', () => {
     await t.controller.toggle();
     expect(t.send).not.toHaveBeenCalled();
     expect(t.controller.state).toBe('idle');
-    expect(lastStatus(t.pill)).toEqual(['Click into the field you want to dictate into, then press REC.', { tone: 'info', sticky: false, clickable: false }]);
+    expect(lastStatus(t.pill)).toEqual(['Click into the field you want to dictate into, then try again.', { tone: 'info', sticky: false, clickable: false }]);
   });
 
   /**

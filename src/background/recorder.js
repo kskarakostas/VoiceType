@@ -5,8 +5,10 @@ import { MSG } from '../shared/messages.js';
 import { ruleFor } from '../shared/sites.js';
 
 const BUSY = 'VoiceType is busy in another tab. Try again in a moment.';
+const IN_OTHER_FIELD = 'VoiceType is recording in another field of this page. Click back into it to stop.';
+const STILL_WORKING = 'VoiceType is still working on this page. Try again in a moment.';
 const NO_KEY = 'Add an API key in VoiceType settings.';
-const NEEDS_PERMISSION = 'Allow the microphone in the VoiceType tab that just opened, then press REC again.';
+const NEEDS_PERMISSION = 'Allow the microphone in the VoiceType tab that just opened, then try again.';
 const DENIED = 'Microphone blocked for VoiceType. Allow it at chrome://settings/content/microphone.';
 const MIC_ERROR = 'Could not start the microphone.';
 const CANCELLED = 'Recording cancelled.';
@@ -43,6 +45,11 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   const fail = (reason, error) => ({ ok: false, reason, error });
   const owns = (endpoint) => session !== null
     && session.endpoint.tabId === endpoint.tabId && session.endpoint.frameId === endpoint.frameId;
+  /** What a refused start hears: the session may be on this very page, in another frame. */
+  const refusal = ({ tabId, frameId }) => {
+    if (tabId !== session.endpoint.tabId || frameId === session.endpoint.frameId) return BUSY;
+    return session.state === 'processing' ? STILL_WORKING : IN_OTHER_FIELD;
+  };
   /** The current session, when this offscreen report came from its capture. */
   const reporter = (captureId) => (session !== null && captureId === session.captureId ? session : null);
 
@@ -197,7 +204,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
      */
     async start(endpoint, tabUrl) {
       if (session) {
-        if (!owns(endpoint) || session.state === 'processing') return fail('busy', BUSY);
+        if (!owns(endpoint) || session.state === 'processing') return fail('busy', refusal(endpoint));
         // The same frame asked again: recording already, or share the start in flight.
         return session.state === 'recording' ? { ok: true } : session.starting;
       }
@@ -315,7 +322,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       if (!endpoint) return;
       pendingPermission = null;
       const notice = granted
-        ? { text: 'Microphone allowed. Press REC again.', tone: 'success' }
+        ? { text: 'Microphone allowed. Try again.', tone: 'success' }
         : { text: 'Microphone not allowed.', tone: 'error' };
       await toTab(endpoint, { action: MSG.RECORDING_STATE, state: 'idle', reason: 'permission', notice });
     },

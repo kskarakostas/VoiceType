@@ -8,7 +8,9 @@ const A_CHILD = { tabId: 1, frameId: 5 };
 const B = { tabId: 2, frameId: 0 };
 
 const BUSY = { ok: false, reason: 'busy', error: 'VoiceType is busy in another tab. Try again in a moment.' };
-const NEEDS_PERMISSION = { ok: false, reason: 'needsPermission', error: 'Allow the microphone in the VoiceType tab that just opened, then press REC again.' };
+const IN_OTHER_FIELD = { ok: false, reason: 'busy', error: 'VoiceType is recording in another field of this page. Click back into it to stop.' };
+const STILL_WORKING = { ok: false, reason: 'busy', error: 'VoiceType is still working on this page. Try again in a moment.' };
+const NEEDS_PERMISSION = { ok: false, reason: 'needsPermission', error: 'Allow the microphone in the VoiceType tab that just opened, then try again.' };
 const DENIED = { ok: false, reason: 'denied', error: 'Microphone blocked for VoiceType. Allow it at chrome://settings/content/microphone.' };
 const DICTATION = { success: true, text: 'final', raw: 'raw', cost: 0.001, warning: null };
 const RESULT = { ...DICTATION, copied: null };
@@ -130,9 +132,20 @@ describe('start', () => {
     const { deps, recorder } = setup();
     await recorder.start(A);
     expect(await recorder.start(B)).toEqual(BUSY);
-    expect(await recorder.start(A_CHILD)).toEqual(BUSY);
+    expect(await recorder.start(A_CHILD)).toEqual(IN_OTHER_FIELD);
     expect(deps.toOffscreen).toHaveBeenCalledTimes(1);
     expect(recorder.session.endpoint).toEqual(A);
+  });
+
+  it('another frame of the tab hears the same while the start is in flight', async () => {
+    const reply = deferred();
+    const { recorder } = setup({ startReply: () => reply.promise });
+    const starting = recorder.start(A_CHILD);
+    await vi.waitFor(() => expect(recorder.session.state).toBe('starting'));
+    expect(await recorder.start(A)).toEqual(IN_OTHER_FIELD);
+    expect(await recorder.start(B)).toEqual(BUSY);
+    reply.resolve({ ok: true });
+    await starting;
   });
 
   it('concurrent starts from two tabs: one records, the other is busy', async () => {
@@ -146,6 +159,7 @@ describe('start', () => {
     await recorder.start(A);
     await recorder.stop(A);
     expect(await recorder.start(A)).toEqual(BUSY);
+    expect(await recorder.start(A_CHILD)).toEqual(STILL_WORKING);
     expect(await recorder.start(B)).toEqual(BUSY);
   });
 
@@ -806,7 +820,7 @@ describe('permission and tabs', () => {
     await recorder.onPermissionResult({ granted: true });
     expect(tabMessages()).toEqual([{
       endpoint: A_CHILD, action: MSG.RECORDING_STATE, state: 'idle', reason: 'permission',
-      notice: { text: 'Microphone allowed. Press REC again.', tone: 'success' },
+      notice: { text: 'Microphone allowed. Try again.', tone: 'success' },
     }]);
   });
 
@@ -877,8 +891,10 @@ describe('cues', () => {
     const t = setup(SOUNDS);
     await t.recorder.start(A);
     expect(await t.recorder.start(B)).toEqual(BUSY);
+    expect(await t.recorder.start(A_CHILD)).toEqual(IN_OTHER_FIELD);
     await t.recorder.stop(A);
     expect(await t.recorder.start(A)).toEqual(BUSY);
+    expect(await t.recorder.start(A_CHILD)).toEqual(STILL_WORKING);
     await flush();
     expect(t.cues()).toEqual(['start']);
   });

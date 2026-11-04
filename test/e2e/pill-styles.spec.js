@@ -10,6 +10,7 @@ import {
 
 const STYLES = ['pill', 'dot', 'minimal'];
 const HOLD = 'Return to the field to insert, or click here to copy.';
+const IN_OTHER_FIELD = 'VoiceType is recording in another field of this page. Click back into it to stop.';
 const SENTINEL = 'clipboard before the copy';
 const HIDE_ONLY = Object.freeze({ hidePill: true, mode: null });
 /** Long enough to see processing, and to click into another field meanwhile. */
@@ -660,7 +661,7 @@ for (const [name, url, selector] of FRAMES) {
       // Frame 0 asks to record while the frame does: the worker refuses and frame 0 gets a status.
       await page.keyboard.press(HOTKEY);
 
-      await expect.poll(async () => (await mirrorQuery(page, STATUS))?.text ?? '', { message: 'frame 0 status' }).toContain('busy');
+      await expect.poll(async () => (await mirrorQuery(page, STATUS))?.text ?? '', { message: 'frame 0 status' }).toBe(IN_OTHER_FIELD);
       const mini = await mirrorQuery(page, MINI);
       const status = await mirrorQuery(page, STATUS);
       expect(mini).not.toBeNull();
