@@ -520,6 +520,214 @@ describe('a pending click-to-copy status', () => {
   });
 });
 
+describe('a press while a result is still landing', () => {
+  const STILL = ['Still processing', { tone: 'info', sticky: false, clickable: false }];
+  const COPIED = ['Copied to clipboard.', { tone: 'success', sticky: false, clickable: false }];
+  const CLICK = [CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true }];
+  const result = (text = 'hello') => ({ action: MSG.DICTATION_RESULT, success: true, text, raw: text, cost: 0, warning: null });
+
+  /** A stopped recording whose result sits in a pending step. */
+  async function landing(t, step) {
+    const pending = deferred();
+    t.deps[step].mockImplementationOnce(() => pending.promise);
+    await recordAndStop(t);
+    if (step === 'copyText') $('a').blur();
+    t.controller.handleMessage(result());
+    await flush();
+    expect(t.deps[step]).toHaveBeenCalledTimes(1);
+    expect(t.controller.state).toBe('idle');
+    t.send.mockClear();
+    return pending;
+  }
+
+  /** Neither way in starts anything, and each says so. */
+  async function expectRefused(t) {
+    for (const act of [() => t.controller.press(), () => t.controller.toggle()]) {
+      t.pill.setStatus.mockClear();
+      await act();
+      expect(lastStatus(t.pill)).toEqual(STILL);
+    }
+    expect(t.send).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('idle');
+  }
+
+  it.each([
+    ['inserted', 'done', (status) => expect(status[0]).toMatch(/^Done /)],
+    ['failed', 'error', (status) => expect(status).toEqual(CLICK)],
+  ])('during insertText: nothing starts, and the outcome %s stands', async (outcome, shown, expectStatus) => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await expectRefused(t);
+    pending.resolve(outcome);
+    await flush();
+    expect(t.pill.setState).toHaveBeenLastCalledWith(shown);
+    expectStatus(lastStatus(t.pill));
+    expect(t.send).not.toHaveBeenCalled();
+  });
+
+  it('records on the next press once insertText is done', async () => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.press();
+    pending.resolve('inserted');
+    await flush();
+    await t.controller.press();
+    expect(t.send).toHaveBeenCalledWith({ action: MSG.START_RECORDING });
+    expect(t.controller.state).toBe('recording');
+    expect(t.pill.setState).toHaveBeenLastCalledWith('recording');
+  });
+
+  it('keeps a transcript that failed to insert: the next press copies that text', async () => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.press();
+    pending.resolve('failed');
+    await flush();
+    await t.controller.press();
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    expect(t.send).not.toHaveBeenCalled();
+  });
+
+  it('during copyText in place: nothing starts, the outcome stands, and the next press records', async () => {
+    const t = setup();
+    const pending = await landing(t, 'copyText');
+    await expectRefused(t);
+    pending.resolve(true);
+    await flush();
+    expect(lastStatus(t.pill)).toEqual(['The field lost focus. Text copied to clipboard.', { tone: 'warning', sticky: false, clickable: false }]);
+    await t.controller.press();
+    expect(t.controller.state).toBe('recording');
+  });
+
+  it('a failed copyText in place leaves the click-to-copy over the refusal', async () => {
+    const t = setup();
+    const pending = await landing(t, 'copyText');
+    await t.controller.press();
+    pending.resolve(false);
+    await flush();
+    expect(lastStatus(t.pill)).toEqual(CLICK);
+  });
+
+  it('during copyLast from a click: nothing starts, the outcome stands, and the next press records', async () => {
+    const t = setup({ insert: 'failed' });
+    await recordAndStop(t);
+    t.controller.handleMessage(result());
+    await flush();
+    t.send.mockClear();
+    const pending = deferred();
+    t.deps.copyText.mockImplementationOnce(() => pending.promise);
+    const clicked = t.controller.copyLast();
+    await flush();
+    await expectRefused(t);
+    pending.resolve(true);
+    await clicked;
+    expect(lastStatus(t.pill)).toEqual(COPIED);
+    await t.controller.press();
+    expect(t.controller.state).toBe('recording');
+    expect(t.pill.setState).toHaveBeenLastCalledWith('recording');
+  });
+
+  it('during the copy of a press: a second press is refused and copies nothing more', async () => {
+    const t = setup({ insert: 'failed' });
+    await recordAndStop(t);
+    t.controller.handleMessage(result());
+    await flush();
+    t.send.mockClear();
+    const pending = deferred();
+    t.deps.copyText.mockImplementationOnce(() => pending.promise);
+    const first = t.controller.press();
+    await flush();
+    await expectRefused(t);
+    expect(t.deps.copyText).toHaveBeenCalledTimes(1);
+    pending.resolve(true);
+    await first;
+    expect(lastStatus(t.pill)).toEqual(COPIED);
+  });
+
+  it('two copies at once: the guard holds until the last one is done', async () => {
+    const t = setup({ insert: 'failed' });
+    await recordAndStop(t);
+    t.controller.handleMessage(result());
+    await flush();
+    t.send.mockClear();
+    const first = deferred();
+    const second = deferred();
+    t.deps.copyText.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
+    const clicks = [t.controller.copyLast(), t.controller.copyLast()];
+    await flush();
+    first.resolve(true);
+    await clicks[0];
+    await expectRefused(t);
+    second.resolve(true);
+    await clicks[1];
+    await t.controller.press();
+    expect(t.controller.state).toBe('recording');
+  });
+
+  it.each([
+    ['the press that settles it', (t) => t.controller.press()],
+    ['the window regaining focus', (t) => t.controller.onWindowFocus()],
+  ])('a held result delivered by %s is guarded too', async (_name, settle) => {
+    const t = setup();
+    await recordAndStop(t);
+    t.deps.hasFocus.mockReturnValue(false);
+    t.controller.handleMessage(result());
+    await flush();
+    expect(lastStatus(t.pill)[0]).toBe('Return to the field to insert, or click here to copy.');
+    t.deps.hasFocus.mockReturnValue(true);
+    t.send.mockClear();
+    const pending = deferred();
+    t.deps.insertText.mockImplementationOnce(() => pending.promise);
+    settle(t);
+    await flush();
+    expect(t.deps.insertText).toHaveBeenCalledTimes(1);
+    await expectRefused(t);
+    pending.resolve('inserted');
+    await flush();
+    expect(lastStatus(t.pill)[0]).toMatch(/^Done /);
+    await t.controller.press();
+    expect(t.controller.state).toBe('recording');
+  });
+
+  it('a throw from insertText leaves presses working', async () => {
+    const t = setup();
+    t.deps.insertText.mockRejectedValueOnce(new Error('page broke it'));
+    await recordAndStop(t);
+    t.controller.handleMessage(result());
+    await flush();
+    expect(lastStatus(t.pill)).toEqual(CLICK);
+    await t.controller.press();
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    await t.controller.press();
+    expect(t.controller.state).toBe('recording');
+  });
+
+  it('a throw from copyText in copyLast leaves presses working', async () => {
+    const t = setup({ insert: 'failed' });
+    await recordAndStop(t);
+    t.controller.handleMessage(result());
+    await flush();
+    t.deps.copyText.mockRejectedValueOnce(new Error('no clipboard'));
+    await expect(t.controller.copyLast()).rejects.toThrow('no clipboard');
+    t.send.mockClear();
+    await t.controller.press();
+    expect(lastStatus(t.pill)).toEqual(COPIED);
+    await t.controller.press();
+    expect(t.controller.state).toBe('recording');
+  });
+
+  it('a press refused while landing leaves no hold to stop the next recording', async () => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.press();
+    pending.resolve('inserted');
+    await flush();
+    await t.controller.toggle();
+    await t.controller.release({ held: true });
+    expect(t.controller.state).toBe('recording');
+  });
+});
+
 describe('service worker messages', () => {
   it.each([
     ['maxTime', 'Max time reached', 'info'],

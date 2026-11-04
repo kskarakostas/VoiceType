@@ -77,6 +77,8 @@ export function createController(deps) {
   let copyPending = false;
   /** A press could not copy the pending result: it has been offered twice, so the next press records. */
   let pressCopyFailed = false;
+  /** Steps still putting a result in place or on the clipboard: `state` is idle, and their status is yet to come. */
+  let landing = 0;
   let statusTimer = null;
   let focusTimer = null;
   let watchdog = null;
@@ -89,6 +91,8 @@ export function createController(deps) {
   const presentation = () => (settings?.site?.hidePill === true ? 'minimal' : settings?.pillStyle ?? 'dot');
   /** No idle pill here. Recording, processing and statuses still show (V10). */
   const noIdlePill = () => presentation() === 'minimal';
+  /** Nothing is running, so a press may record. A step still landing would finish on top of the recording. */
+  const canStart = () => state === 'idle' && landing === 0;
 
   /** Show the pill at el (null: the corner) and follow it. */
   function anchorTo(el) {
@@ -311,7 +315,7 @@ export function createController(deps) {
   /** One path for REC clicks and hotkey taps. */
   async function toggle() {
     if (inactive()) return;
-    if (state === 'idle') return start();
+    if (canStart()) return start();
     if (state === 'starting') {
       stopQueued = true;
       return;
@@ -322,7 +326,7 @@ export function createController(deps) {
 
   async function press() {
     if (inactive()) return;
-    if (state === 'idle') {
+    if (canStart()) {
       pressStarted = true;
       return start();
     }
@@ -412,13 +416,35 @@ export function createController(deps) {
   }
 
   /**
+   * @template T
+   * @param {() => Promise<T>} step
+   * @returns {Promise<T>}
+   */
+  async function whileLanding(step) {
+    landing += 1;
+    try {
+      return await step();
+    } finally {
+      landing -= 1;
+    }
+  }
+
+  /**
+   * @param {Element|null} bound
+   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null }} result
+   */
+  function place(bound, result) {
+    return whileLanding(() => placeResult(bound, result));
+  }
+
+  /**
    * D12: the text goes into the field bound at REC start only while that field has focus,
    * this frame included; otherwise to the clipboard.
    * @param {Element|null} bound
    * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null }} result
    *   copied: the worker's always-copy outcome, false when that copy failed
    */
-  async function place(bound, { text, cost, warning, copied: alwaysCopied }) {
+  async function placeResult(bound, { text, cost, warning, copied: alwaysCopied }) {
     if (bound && bound.isConnected && deepActiveElement() === bound && deps.hasFocus()) {
       let outcome;
       try {
@@ -513,7 +539,11 @@ export function createController(deps) {
    * Click-to-copy: the click is a user gesture, so the clipboard write is allowed now.
    * @returns {Promise<boolean>} the text was copied
    */
-  async function copyLast() {
+  function copyLast() {
+    return whileLanding(copyResult);
+  }
+
+  async function copyResult() {
     if (inactive() || !lastResult) return false;
     held = null;
     const copied = await copyText(lastResult.text);
