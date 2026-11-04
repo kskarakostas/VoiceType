@@ -96,6 +96,9 @@ const ACCESS = new Map([
   [MSG.SET_SITE_MODE, ['content']],
   [MSG.SET_SITE_RULE, ['extension']],
   [MSG.FRAME_SIGHT, ['content']],
+  [MSG.GET_LAST_DICTATION, ['content']],
+  [MSG.GET_HISTORY, ['extension']],
+  [MSG.CLEAR_HISTORY, ['extension']],
 ]);
 
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
@@ -151,11 +154,12 @@ async function saveSiteRule(storage, host, ruleOf) {
  *   validateKey: (provider: string, key: string) => Promise<boolean>,
  *   summarize: typeof import('./usage.js').summarize,
  *   recorder: RecorderPort,
+ *   history: Pick<ReturnType<import('./history.js').createHistory>, 'list'|'lastFor'|'clear'>,
  *   identify: (sender: chrome.runtime.MessageSender|undefined) => SenderKind,
  * }} deps
  * @returns {(request: any, sender: chrome.runtime.MessageSender|undefined) => Promise<any>}
  */
-export function createRouter({ storage, validateKey, summarize, recorder, identify }) {
+export function createRouter({ storage, validateKey, summarize, recorder, history, identify }) {
   return async function handle(request, sender) {
     const action = request?.action;
     const allowed = ACCESS.get(action);
@@ -229,6 +233,19 @@ export function createRouter({ storage, validateKey, summarize, recorder, identi
 
       case MSG.CLEAR_USAGE:
         await storage.setUsageLog(emptyLog());
+        return { success: true };
+
+      case MSG.GET_LAST_DICTATION: {
+        // The site comes from the sender, never the request: a page reads its own site alone (V28).
+        const entry = await history.lastFor(siteKey(sender.tab?.url));
+        return { entry: entry && { raw: entry.raw, text: entry.text } };
+      }
+
+      case MSG.GET_HISTORY:
+        return { entries: await history.list() };
+
+      case MSG.CLEAR_HISTORY:
+        await history.clear();
         return { success: true };
 
       case MSG.START_RECORDING:

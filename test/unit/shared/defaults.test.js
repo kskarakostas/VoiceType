@@ -70,11 +70,12 @@ function fullV3Settings() {
     pillStyle: 'pill',
     sounds: true,
     alwaysCopy: true,
+    keepHistory: false,
   };
 }
 
 /** The v3 fields a v2 record gains when it migrates. */
-const V3_DEFAULTS = { siteRules: {}, pillStyle: 'dot', sounds: false, alwaysCopy: false };
+const V3_DEFAULTS = { siteRules: {}, pillStyle: 'dot', sounds: false, alwaysCopy: false, keepHistory: true };
 
 describe('defaults', () => {
   it('default mode has no prompt and all built-ins are flagged', () => {
@@ -287,6 +288,7 @@ describe('migrateSettings', () => {
       pillStyle: 'minimal',
       sounds: true,
       alwaysCopy: true,
+      keepHistory: false,
       ...overrides,
     });
 
@@ -300,6 +302,7 @@ describe('migrateSettings', () => {
         pillStyle: 'minimal',
         sounds: true,
         alwaysCopy: true,
+        keepHistory: false,
       });
       expect('keywords' in s).toBe(false);
       expect(s.dictionary).not.toBe(stored.dictionary);
@@ -318,7 +321,7 @@ describe('migrateSettings', () => {
 
     it('repairs what is malformed', () => {
       const s = migrateSettings(rolledBack({
-        dictionary: 'junk', siteRules: { 'not a host': { hidePill: true, mode: null }, 'example.com': { hidePill: 'x', mode: 'gone' } }, pillStyle: 'huge', sounds: 'yes', alwaysCopy: 1,
+        dictionary: 'junk', siteRules: { 'not a host': { hidePill: true, mode: null }, 'example.com': { hidePill: 'x', mode: 'gone' } }, pillStyle: 'huge', sounds: 'yes', alwaysCopy: 1, keepHistory: 'no',
       }));
       expect(s).toMatchObject({ ...V3_DEFAULTS, dictionary: { any: ['new'] } });
       expect(s.siteRules).toEqual({});
@@ -332,6 +335,27 @@ describe('migrateSettings', () => {
     const stored = fullV3Settings();
     expect(migrateSettings(stored)).toBe(stored);
     expect(stored).toEqual(fullV3Settings());
+  });
+
+  it('a stored v3 record with no keepHistory reads true', () => {
+    const { keepHistory: _keepHistory, ...stored } = fullV3Settings();
+    const s = migrateSettings(stored);
+    expect(s.keepHistory).toBe(true);
+    expect(s).toEqual({ ...fullV3Settings(), keepHistory: true });
+    expect(migrateSettings(s)).toBe(s);
+  });
+
+  it('a non-boolean keepHistory repairs to true', () => {
+    for (const bad of ['false', 0, 1, null, {}]) {
+      expect(migrateSettings({ ...fullV3Settings(), keepHistory: bad }).keepHistory, JSON.stringify(bad)).toBe(true);
+    }
+  });
+
+  it('keepHistory off survives migration and leaves the settings version alone', () => {
+    const s = migrateSettings({ ...fullV3Settings(), keepHistory: false });
+    expect(s.keepHistory).toBe(false);
+    expect(s.settingsVersion).toBe(3);
+    expect(DEFAULT_SETTINGS.keepHistory).toBe(true);
   });
 
   it('keeps valid edge values', () => {
@@ -404,6 +428,10 @@ describe('migrateSettings', () => {
       ['pillStyle', undefined, 'dot'],
       ['sounds', 'yes', false],
       ['alwaysCopy', 1, false],
+      ['keepHistory', 'no', true],
+      ['keepHistory', 0, true],
+      ['keepHistory', null, true],
+      ['keepHistory', undefined, true],
       ['dictionary', [], {}],
       ['dictionary', undefined, {}],
       ['dictionary', { any: ['a', 'A', ' '], xx: ['b'], el: 'c' }, { any: ['a'] }],
@@ -550,7 +578,7 @@ describe('toPublicSettings', () => {
   });
 
   it('keeps every other field', () => {
-    const { keys: _keys, siteRules: _siteRules, dictionary: _dictionary, ...rest } = withKeys();
+    const { keys: _keys, siteRules: _siteRules, dictionary: _dictionary, keepHistory: _keepHistory, ...rest } = withKeys();
     expect(toPublicSettings(withKeys())).toEqual({ ...rest, hasKey: { openai: true, gemini: false } });
   });
 
@@ -560,13 +588,18 @@ describe('toPublicSettings', () => {
     expect(pub).toMatchObject({ pillStyle: 'pill', sounds: true, alwaysCopy: true, hasKey: { openai: true, gemini: true } });
   });
 
+  it('toPublicSettings leaves keepHistory out', () => {
+    expect(toPublicSettings(freshSettings())).not.toHaveProperty('keepHistory');
+    expect(toPublicSettings(fullV3Settings())).not.toHaveProperty('keepHistory');
+  });
+
   it('drops an unknown field and still carries every known field plus hasKey', () => {
     const pub = toPublicSettings({ ...withKeys(), apiKey: 'sk-live-LEAK', draftKey: 'AQ.leak' });
     expect(pub).not.toHaveProperty('apiKey');
     expect(pub).not.toHaveProperty('draftKey');
-    const { keys: _keys, siteRules: _siteRules, dictionary: _dictionary, ...known } = withKeys();
+    const { keys: _keys, siteRules: _siteRules, dictionary: _dictionary, keepHistory: _keepHistory, ...known } = withKeys();
     expect(pub).toEqual({ ...known, hasKey: { openai: true, gemini: false } });
-    const hidden = ['keys', 'siteRules', 'dictionary'];
+    const hidden = ['keys', 'siteRules', 'dictionary', 'keepHistory'];
     expect(Object.keys(pub).sort()).toEqual([...Object.keys(DEFAULT_SETTINGS).filter((f) => !hidden.includes(f)), 'hasKey'].sort());
   });
 

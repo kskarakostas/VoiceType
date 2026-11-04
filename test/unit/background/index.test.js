@@ -10,6 +10,7 @@ function fakeChrome({ accessLevel = true } = {}) {
   const listeners = {};
   const on = (name) => ({ addListener: vi.fn((fn) => { listeners[name] = fn; }) });
   const store = {};
+  const session = {};
   const chrome = {
     runtime: {
       id: 'abc',
@@ -27,6 +28,10 @@ function fakeChrome({ accessLevel = true } = {}) {
         set: vi.fn(async (items) => { Object.assign(store, structuredClone(items)); }),
         setAccessLevel: accessLevel ? vi.fn(async () => {}) : undefined,
       },
+      session: {
+        get: vi.fn(async (key) => ({ [key]: structuredClone(session[key]) })),
+        set: vi.fn(async (items) => { Object.assign(session, structuredClone(items)); }),
+      },
       onChanged: on('storageChanged'),
     },
     tabs: {
@@ -37,7 +42,7 @@ function fakeChrome({ accessLevel = true } = {}) {
     },
     scripting: { executeScript: vi.fn(async () => []) },
   };
-  return { chrome, listeners, store };
+  return { chrome, listeners, store, session };
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -142,6 +147,76 @@ describe('service worker entry', () => {
     expect(full.keys.openai).toBe('sk-secret-123456');
     expect(await send(fake.listeners, { action: MSG.SAVE_SETTINGS, settings: {} }, PAGE)).toEqual({ success: false, error: 'Not allowed.' });
     expect(await send(fake.listeners, { action: 'nope' }, POPUP)).toEqual({ success: false, error: 'Unknown action' });
+  });
+});
+
+describe('history wiring', () => {
+  const ENTRY = { id: 'a', raw: 'raw words', text: 'final words', mode: 'default', host: 'example.com', ts: 1 };
+  const AT_EXAMPLE = { ...PAGE, tab: { id: 1, url: 'https://example.com/page' } };
+  const AT_OTHER = { ...OTHER_PAGE, tab: { id: 2, url: 'https://example.org/' } };
+  const on = () => freshSettings();
+  const off = () => ({ ...freshSettings(), keepHistory: false });
+
+  /** Report a settings write the way Chrome does and let the listener's work land. */
+  async function settingsChanged(oldValue, newValue) {
+    fake.listeners.storageChanged({ settings: { oldValue, newValue } }, 'local');
+    await flush();
+  }
+
+  beforeEach(() => { fake.session.history = [ENTRY]; });
+
+  it('turning keepHistory off clears history; a later unrelated save does not', async () => {
+    await settingsChanged(on(), off());
+    expect(fake.session.history).toEqual([]);
+    fake.session.history = [ENTRY];
+    await settingsChanged(off(), { ...off(), pillStyle: 'pill' });
+    expect(fake.session.history).toEqual([ENTRY]);
+  });
+
+  it('a save with keepHistory on leaves history alone', async () => {
+    await settingsChanged(on(), { ...on(), pillStyle: 'pill' });
+    await settingsChanged(off(), on());
+    expect(fake.session.history).toEqual([ENTRY]);
+  });
+
+  it('an old record with no keepHistory counts as on', async () => {
+    const { keepHistory: _keepHistory, ...before } = freshSettings();
+    await settingsChanged(before, off());
+    expect(fake.session.history).toEqual([]);
+  });
+
+  it('a change in another area clears nothing', async () => {
+    fake.listeners.storageChanged({ settings: { oldValue: on(), newValue: off() } }, 'sync');
+    await flush();
+    expect(fake.session.history).toEqual([ENTRY]);
+  });
+
+  it('a failed clear warns and still pushes the settings to the tabs', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fake.chrome.storage.session.set.mockRejectedValueOnce(new Error('down'));
+    await settingsChanged(on(), off());
+    expect(warn).toHaveBeenCalledWith('VoiceType: could not clear history', expect.any(Error));
+    expect(fake.chrome.tabs.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('answers each sender from chrome.storage.session', async () => {
+    expect(await send(fake.listeners, { action: MSG.GET_LAST_DICTATION }, AT_EXAMPLE)).toEqual({ entry: { raw: 'raw words', text: 'final words' } });
+    expect(await send(fake.listeners, { action: MSG.GET_LAST_DICTATION }, AT_OTHER)).toEqual({ entry: null });
+    expect(await send(fake.listeners, { action: MSG.GET_HISTORY }, POPUP)).toEqual({ entries: [ENTRY] });
+    expect(await send(fake.listeners, { action: MSG.GET_HISTORY }, AT_EXAMPLE)).toEqual({ success: false, error: 'Not allowed.' });
+    expect(await send(fake.listeners, { action: MSG.CLEAR_HISTORY }, POPUP)).toEqual({ success: true });
+    expect(fake.session.history).toEqual([]);
+  });
+
+  it('a dictation lands in chrome.storage.session under the site of its tab, nothing in storage.local', async () => {
+    fake.session.history = [];
+    fake.store.settings = { ...freshSettings(), keys: { openai: 'sk-secret-123456', gemini: '' } };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ text: 'spoken words', usage: {} }), { status: 200 })));
+    await send(fake.listeners, { action: MSG.START_RECORDING }, AT_EXAMPLE);
+    const [{ captureId }] = fake.chrome.runtime.sendMessage.mock.calls.map(([m]) => m).filter((m) => m.action === MSG.OFFSCREEN_START);
+    await send(fake.listeners, { action: MSG.OFFSCREEN_DONE, audioBase64: 'QUJD', mimeType: 'audio/webm', durationSec: 2, reason: 'user', captureId }, OFFSCREEN);
+    expect(fake.session.history).toEqual([{ id: expect.any(String), raw: 'spoken words', text: 'spoken words', mode: 'default', host: 'example.com', ts: expect.any(Number) }]);
+    expect(JSON.stringify(fake.store)).not.toContain('spoken words');
   });
 });
 

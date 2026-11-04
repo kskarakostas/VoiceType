@@ -7,6 +7,7 @@ import { createRouter, createValidateKey, senderKind, userMessage } from './rout
 import { runDictation, ADAPTERS } from './pipeline.js';
 import { applyUsage, summarize } from './usage.js';
 import { createDictate } from './dictate.js';
+import { createHistory } from './history.js';
 import { createRecorder } from './recorder.js';
 import { createOffscreenClient } from './offscreen-client.js';
 import { broadcast, reinject, sendToFrame } from './tabs.js';
@@ -21,6 +22,7 @@ import { broadcast, reinject, sendToFrame } from './tabs.js';
 })();
 
 const storage = createStorage(chrome.storage.local);
+const history = createHistory({ area: chrome.storage.session });
 const offscreenClient = createOffscreenClient({ runtime: chrome.runtime, offscreen: chrome.offscreen });
 const recorder = createRecorder({
   ensureOffscreen: () => offscreenClient.ensure(),
@@ -28,7 +30,7 @@ const recorder = createRecorder({
   toTab: (endpoint, message) => sendToFrame(chrome.tabs, endpoint, message),
   openPermissionPage: async () => { await chrome.tabs.create({ url: chrome.runtime.getURL('permission.html') }); },
   getSettings: () => storage.getSettings(),
-  dictate: createDictate({ storage, runDictation, applyUsage, userMessage }),
+  dictate: createDictate({ storage, history, runDictation, applyUsage, userMessage }),
 });
 
 // Built from the id: URL parsers outside Chrome give chrome-extension: URLs an opaque 'null' origin,
@@ -40,6 +42,7 @@ const handle = createRouter({
   validateKey: createValidateKey(ADAPTERS),
   summarize,
   recorder,
+  history,
   identify: (sender) => senderKind(sender, { extensionId: chrome.runtime.id, extensionOrigin, offscreenUrl }),
 });
 
@@ -58,6 +61,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const next = changes.settings?.newValue;
   if (areaName !== 'local' || !next || typeof next !== 'object') return;
   const migrated = migrateSettings(next);
+  // Turning it off clears what is held (V27). Only the turn does: a later save while off has nothing to clear.
+  if (changes.settings.oldValue?.keepHistory !== false && migrated.keepHistory === false) {
+    history.clear().catch((err) => console.warn('VoiceType: could not clear history', err));
+  }
   const pub = toPublicSettings(migrated);
   broadcast(chrome.tabs, (tab) => ({ action: MSG.SETTINGS_CHANGED, settings: { ...pub, site: ruleFor(migrated, tab.url) } }));
 });

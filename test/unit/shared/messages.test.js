@@ -28,6 +28,9 @@ const CONTRACT = {
   OFFSCREEN_COPY: 'offscreenCopy',
   FRAME_SIGHT: 'frameSight',
   RECORDING_MIRROR: 'recordingMirror',
+  GET_LAST_DICTATION: 'getLastDictation',
+  GET_HISTORY: 'getHistory',
+  CLEAR_HISTORY: 'clearHistory',
 };
 
 describe('MSG', () => {

@@ -27,6 +27,9 @@ export const MSG = Object.freeze({
   OFFSCREEN_COPY: 'offscreenCopy',
   FRAME_SIGHT: 'frameSight',
   RECORDING_MIRROR: 'recordingMirror',
+  GET_LAST_DICTATION: 'getLastDictation',
+  GET_HISTORY: 'getHistory',
+  CLEAR_HISTORY: 'clearHistory',
 });
 
 /**
@@ -58,4 +61,6 @@ export const MSG = Object.freeze({
  * @typedef {{ seen: boolean }} FrameSight
  * What frame 0 shows for a subframe recording out of sight.
  * @typedef {{ state: 'recording'|'processing'|'idle', elapsedMs: number }} RecordingMirror
+ * What a content script may know of the history: the last dictation on its own site, these two fields only.
+ * @typedef {{ entry: { raw: string, text: string } | null }} LastDictation
  */

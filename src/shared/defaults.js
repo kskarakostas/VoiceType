@@ -41,8 +41,9 @@ export const TARGET_LANGUAGES = Object.freeze([
  *   pillStyle: 'pill'|'dot'|'minimal',
  *   sounds: boolean,
  *   alwaysCopy: boolean,
+ *   keepHistory: boolean,
  * }} Settings
- * @typedef {Omit<Settings, 'keys'|'siteRules'|'dictionary'> & { hasKey: { openai: boolean, gemini: boolean } }} PublicSettings
+ * @typedef {Omit<Settings, 'keys'|'siteRules'|'dictionary'|'keepHistory'> & { hasKey: { openai: boolean, gemini: boolean } }} PublicSettings
  */
 
 /** @type {Record<string, Mode>} */
@@ -101,6 +102,7 @@ export const DEFAULT_SETTINGS = deepFreeze({
   pillStyle: 'dot',
   sounds: false,
   alwaysCopy: false,
+  keepHistory: true,
 });
 
 /** @returns {Settings} */
@@ -293,6 +295,7 @@ function validateV3(v) {
   if (!PILL_STYLES.includes(v.pillStyle)) fix.pillStyle = DEFAULT_SETTINGS.pillStyle;
   if (typeof v.sounds !== 'boolean') fix.sounds = DEFAULT_SETTINGS.sounds;
   if (typeof v.alwaysCopy !== 'boolean') fix.alwaysCopy = DEFAULT_SETTINGS.alwaysCopy;
+  if (typeof v.keepHistory !== 'boolean') fix.keepHistory = DEFAULT_SETTINGS.keepHistory;
   return applyFix(v, fix);
 }
 
@@ -340,8 +343,8 @@ export function migrateSettings(stored) {
   return validateV3(migrateV1(v));
 }
 
-/** Fields a web page never sees: the keys, and the site rules and terms no content code reads. */
-const PRIVATE_FIELDS = Object.freeze(['keys', 'siteRules', 'dictionary']);
+/** Fields a web page never sees: the keys, and the site rules, terms and history choice no content code reads. */
+const PRIVATE_FIELDS = Object.freeze(['keys', 'siteRules', 'dictionary', 'keepHistory']);
 
 /** Settings fields a web page may see: every known field except PRIVATE_FIELDS. */
 const PUBLIC_FIELDS = Object.freeze(Object.keys(DEFAULT_SETTINGS).filter((field) => !PRIVATE_FIELDS.includes(field)));

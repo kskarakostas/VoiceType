@@ -252,6 +252,7 @@ describe('settings page reset (V21)', () => {
       translateTargetLang: 'German', languages: ['el'], dictionary: { any: ['x'] }, pillGap: 16,
       hotkey: { code: 'KeyD', ctrl: false, shift: false, alt: true, meta: false }, autoStopSilenceSec: 3,
       siteRules: { 'a.com': { hidePill: true, mode: 'custom_1' } }, pillStyle: 'minimal', sounds: true, alwaysCopy: true,
+      keepHistory: false,
     });
     const fresh = freshSettings();
     for (const field of Object.keys(fresh)) {

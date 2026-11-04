@@ -13,6 +13,7 @@ const STRANGER = { kind: 'unknown' };
 const CONTENT = { kind: 'content', tab: { id: 7 }, frameId: 3 };
 const TOP_FRAME = { kind: 'content', tab: { id: 7 } };
 const NOT_ALLOWED = { success: false, error: 'Not allowed.' };
+const ENTRY = Object.freeze({ id: 'id-1', raw: 'raw words', text: 'final words', mode: 'email', host: 'example.com', ts: 1000 });
 
 let stored, usageLog, deps, handle;
 beforeEach(() => {
@@ -42,6 +43,11 @@ beforeEach(() => {
       onOffscreenError: vi.fn(async () => {}),
       onPermissionResult: vi.fn(async () => {}),
       onFrameSight: vi.fn(),
+    },
+    history: {
+      list: vi.fn(async () => [ENTRY]),
+      lastFor: vi.fn(async (host) => (host === ENTRY.host ? ENTRY : null)),
+      clear: vi.fn(async () => {}),
     },
     identify: vi.fn((sender) => sender?.kind ?? 'unknown'),
   };
@@ -302,6 +308,63 @@ describe('keys and usage', () => {
     expect(await handle({ action: MSG.CLEAR_USAGE }, POPUP)).toEqual({ success: true });
     expect(deps.storage.setUsageLog).toHaveBeenCalledTimes(1);
     expect(usageLog).toEqual(emptyLog());
+  });
+});
+
+describe('history', () => {
+  const pageOf = (url) => ({ kind: 'content', tab: { id: 7, url }, frameId: 3 });
+
+  it('GET_LAST_DICTATION answers from the sender tab host only', async () => {
+    expect(await handle({ action: MSG.GET_LAST_DICTATION, host: 'other.com' }, pageOf('https://www.example.com/page'))).toEqual({ entry: { raw: 'raw words', text: 'final words' } });
+    expect(deps.history.lastFor).toHaveBeenCalledTimes(1);
+    expect(deps.history.lastFor).toHaveBeenCalledWith('example.com');
+    expect(await handle({ action: MSG.GET_LAST_DICTATION, host: 'example.com' }, pageOf('https://other.com/'))).toEqual({ entry: null });
+  });
+
+  it.each([['a chrome page', 'chrome://settings/'], ['a file page', 'file:///home/a.html'], ['no url', undefined]])('GET_LAST_DICTATION is null with no host: %s', async (_name, url) => {
+    expect(await handle({ action: MSG.GET_LAST_DICTATION }, pageOf(url))).toEqual({ entry: null });
+    expect(deps.history.lastFor).toHaveBeenCalledWith(null);
+  });
+
+  it('GET_LAST_DICTATION returns raw and text alone', async () => {
+    const { entry } = await handle({ action: MSG.GET_LAST_DICTATION }, pageOf('https://example.com/'));
+    expect(Object.keys(entry).sort()).toEqual(['raw', 'text']);
+  });
+
+  it('GET_LAST_DICTATION is for content senders', async () => {
+    for (const sender of [POPUP, OFFSCREEN, STRANGER]) {
+      expect(await handle({ action: MSG.GET_LAST_DICTATION }, sender)).toEqual(NOT_ALLOWED);
+    }
+    expect(deps.history.lastFor).not.toHaveBeenCalled();
+  });
+
+  it('GET_HISTORY gives extension pages every entry', async () => {
+    expect(await handle({ action: MSG.GET_HISTORY }, POPUP)).toEqual({ entries: [ENTRY] });
+  });
+
+  it('CLEAR_HISTORY clears for extension pages', async () => {
+    expect(await handle({ action: MSG.CLEAR_HISTORY }, POPUP)).toEqual({ success: true });
+    expect(deps.history.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it('GET_HISTORY and CLEAR_HISTORY refuse content senders', async () => {
+    for (const sender of [pageOf('https://example.com/'), OFFSCREEN, STRANGER]) {
+      expect(await handle({ action: MSG.GET_HISTORY }, sender)).toEqual(NOT_ALLOWED);
+      expect(await handle({ action: MSG.CLEAR_HISTORY }, sender)).toEqual(NOT_ALLOWED);
+    }
+    expect(deps.history.list).not.toHaveBeenCalled();
+    expect(deps.history.clear).not.toHaveBeenCalled();
+  });
+
+  it('a save through SAVE_SETTINGS can turn keepHistory off, a content patch cannot', async () => {
+    expect(await handle({ action: MSG.SAVE_SETTINGS, settings: { keepHistory: false } }, POPUP)).toEqual({ success: true });
+    expect(stored.keepHistory).toBe(false);
+    expect(await handle({ action: MSG.UPDATE_SETTINGS, patch: { keepHistory: true } }, CONTENT)).toEqual({ success: false, error: 'Invalid settings.' });
+    expect(stored.keepHistory).toBe(false);
+  });
+
+  it('a page reads no keepHistory from GET_SETTINGS', async () => {
+    expect(await handle({ action: MSG.GET_SETTINGS }, CONTENT)).not.toHaveProperty('keepHistory');
   });
 });
 
