@@ -3,6 +3,8 @@
 // on an open tab. Run with `npm run test:e2e`, which builds dist/ first.
 import { test, expect } from '@playwright/test';
 import { freshSettings } from '../../src/shared/defaults.js';
+import { siteKey } from '../../src/shared/sites.js';
+import { SITE_KEYS } from '../fixtures/site-keys.js';
 import {
   launchExtension, seedSettings, openFields, pillQuery, pillStatus, waitForPill, clickPill, focusField,
   PORT, TRANSCRIPT, DUMMY_KEY, STOP, RECORD_MS,
@@ -321,4 +323,30 @@ test('a mode pick changes only this site\'s rule', async () => {
   await clickPill(page, '[data-mode="translate"]');
 
   await expect.poll(storedRules).toEqual({ ...other, localhost: { hidePill: false, mode: 'translate' } });
+});
+
+test('siteKey answers the same in Chromium, whose URL parser is not Node\'s', async () => {
+  const page = await openFields(context);
+  const inputs = SITE_KEYS.map(([input]) => input);
+
+  const keys = await page.evaluate(({ source, inputs: all }) => {
+    const inBrowser = (0, eval)(`(${source})`);
+    return all.map((input) => inBrowser(input));
+  }, { source: siteKey.toString(), inputs });
+
+  expect(inputs.map((input, i) => [input, keys[i]])).toEqual(SITE_KEYS.map((row) => [...row]));
+});
+
+test('the Sites page refuses text that is not a host', async () => {
+  const other = { 'a.test': OTHER_HOST_RULE };
+  await seedRules(other);
+  const page = await openSitesPage();
+  const host = page.locator('#site-add-host');
+
+  await host.fill('not a host');
+  await host.press('Enter');
+
+  await expect(page.locator('#site-add-error')).toHaveText('Enter a hostname or a URL, such as example.com.');
+  await expect(host).toHaveValue('not a host');
+  expect(await storedRules()).toEqual(other);
 });

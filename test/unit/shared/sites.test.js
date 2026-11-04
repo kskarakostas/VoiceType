@@ -1,68 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { siteKey, ruleFor, withSiteRule, pageSite } from '../../../src/shared/sites.js';
+import { SITE_KEYS } from '../../fixtures/site-keys.js';
 
 describe('siteKey', () => {
-  it.each([
-    ['https://www.Example.com/path?q', 'example.com'],
-    ['http://sub.example.com:8080/', 'sub.example.com'],
-    ['Example.COM', 'example.com'],
-    ['www.example.com', 'example.com'],
-    ['  docs.google.com  ', 'docs.google.com'],
-    ['www.www.example.com', 'example.com'],
-    ['chrome://extensions', null],
-    ['file:///tmp/a.html', null],
-    ['about:blank', null],
-    ['chrome-extension://abc/options.html', null],
-    ['', null],
-    ['   ', null],
-    [null, null],
-    [42, null],
-    ['http://', null],
-  ])('siteKey normalizes hosts per V8: %j -> %j', (input, expected) => {
-    expect(siteKey(input)).toBe(expected);
-  });
-
-  it.each([
-    ['https://WWW.Example.COM./x', 'example.com'],
-    ['example.com.', 'example.com'],
-    ['example.com:8080/a', 'example.com'],
-    ['localhost:3000', 'localhost'],
-    ['example.com/login?next=https://x.com', 'example.com'],
-    ['https://user:pw@example.com/', 'example.com'],
-    ['http://ελληνικά.gr/', 'xn--hxargifdar.gr'],
-    ['ελληνικά.gr', 'xn--hxargifdar.gr'],
-    ['http://[::1]:8080/', '[::1]'],
-    ['__proto__', '__proto__'],
-    ['mailto:a@b.com', null],
-    ['a@b.com', null],
-    ['user:pw@evil.com', null],
-    ['javascript:alert(1)', null],
-    ['data:text/html,x', null],
-    ['about:blank', null],
-    ['blob:https://x.com/1', null],
-    ['chrome://extensions', null],
-    ['file:///a', null],
-    ['www.', null],
-  ])('siteKey reads a scheme only at the start: %j -> %j', (input, expected) => {
-    expect(siteKey(input)).toBe(expected);
-  });
-
-  it.each([
-    ['tel:123', 'tel'],
-    ['javascript:1', 'javascript'],
-  ])('a numeric tail reads as host and port: %j -> %j', (input, expected) => {
-    expect(siteKey(input)).toBe(expected);
-  });
-
-  it.each([
-    ['www.www.a.com', 'a.com'],
-    ['WWW.www.www.a.com', 'a.com'],
-    ['https://www.www.a.com/x', 'a.com'],
-    ['a.com..', 'a.com'],
-    ['a.com...', 'a.com'],
-    ['www.www.a.com..', 'a.com'],
-    ['www.www.', null],
-  ])('siteKey drops every leading www. and trailing dot: %j -> %j', (input, expected) => {
+  it.each(SITE_KEYS)('siteKey(%j) is %j', (input, expected) => {
     expect(siteKey(input)).toBe(expected);
   });
 

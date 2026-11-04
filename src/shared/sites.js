@@ -4,10 +4,13 @@
 
 /**
  * Normalize an `http:`/`https:` URL or a bare hostname to a site key: the hostname
- * lowercased, every leading `www.` and trailing dot dropped, so a key maps to itself. A
- * scheme counts only at the start of the input and needs `://`, so `tel:123` and
- * `javascript:1` read as host and port. Returns null for non-strings, blank input, any
- * other scheme, a bare host carrying `@`, or input the URL parser rejects.
+ * lowercased, every leading `www.` and trailing dot dropped. A key maps to itself, except
+ * a numeric tail with two or more trailing dots (`1..` gives `1`, which parses as an IPv4
+ * address). A scheme counts only at the start of the input and needs `://`, so `tel:123`
+ * and `javascript:1` read as host and port. Returns null for non-strings, blank input, any
+ * other scheme, a bare host carrying `@`, input the URL parser rejects, or a hostname that
+ * is not letters, digits, `_`, `-` and `.`, or a bracketed IPv6 literal. Parsers differ:
+ * Chromium keeps `not a host` as `not%20a%20host` where Node throws.
  * @param {unknown} input
  * @returns {string|null}
  */
@@ -24,7 +27,8 @@ export function siteKey(input) {
     return null;
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  // URL already lowercases the hostname of http(s) URLs.
+  // URL already lowercases the hostname of http(s) URLs and punycodes it.
+  if (!/^(?:[a-z0-9_.-]+|\[[0-9a-f:]+\])$/.test(url.hostname)) return null;
   return url.hostname.replace(/^(?:www\.)+/, '').replace(/\.+$/, '') || null;
 }
 
