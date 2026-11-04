@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createDictate } from '../../../src/background/dictate.js';
+import { BOOKKEEPING_LIMIT_MS, createDictate } from '../../../src/background/dictate.js';
 import { createStorage } from '../../../src/background/storage.js';
 import { applyUsage } from '../../../src/background/usage.js';
 import { userMessage } from '../../../src/background/router.js';
@@ -97,5 +97,47 @@ describe('createDictate', () => {
     const real = createDictate({ storage, runDictation: deps.runDictation, applyUsage, userMessage });
     await Promise.all([real(input), real(input)]);
     expect((await storage.getUsageLog()).total.sessions).toBe(2);
+  });
+
+  describe('the bookkeeping limit (V34)', () => {
+    const delivered = { success: true, text: 'final', raw: 'raw', cost: 0.0009, warning: null };
+
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('is 2 seconds', () => {
+      expect(BOOKKEEPING_LIMIT_MS).toBe(2000);
+    });
+
+    it('returns the transcript when the usage write never settles', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      deps.storage.updateUsageLog.mockReturnValueOnce(new Promise(() => {}));
+      const settled = vi.fn();
+      const pending = dictate(input).then((message) => { settled(); return message; });
+      await vi.advanceTimersByTimeAsync(BOOKKEEPING_LIMIT_MS - 1);
+      expect(settled).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await pending).toEqual(delivered);
+      expect(warn).toHaveBeenCalledWith('VoiceType: usage logging failed', expect.any(Error));
+    });
+
+    it('returns at once when the usage write ends early', async () => {
+      expect(await dictate(input)).toEqual(delivered);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('leaves no timer when the usage write fails', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      deps.storage.updateUsageLog.mockRejectedValueOnce(new Error('quota'));
+      expect(await dictate(input)).toEqual(delivered);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('starts no timer for a failed dictation', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      deps.runDictation.mockRejectedValueOnce(new ProviderError('No speech detected.', { code: 'empty' }));
+      await dictate(input);
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });

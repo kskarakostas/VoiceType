@@ -83,9 +83,13 @@ export function createController(deps) {
   let focusTimer = null;
   let watchdog = null;
   let orphan = false;
+  /** Orphaned under a click-to-copy status: the terminal notice waits for that click (V35). */
+  let orphanNoticeOwed = false;
   let dead = false;
 
   const inactive = () => orphan || dead;
+  /** A click can still copy: everything else stops at inactive(), but a click-to-copy outlives the orphaning. */
+  const canCopy = () => !dead && (!orphan || orphanNoticeOwed);
   const gap = () => (Number.isFinite(settings?.pillGap) && settings.pillGap >= 0 ? settings.pillGap : DEFAULT_GAP);
   /** The stored style, or Minimal where this site's rule hides the pill. */
   const presentation = () => (settings?.site?.hidePill === true ? 'minimal' : settings?.pillStyle ?? 'dot');
@@ -544,14 +548,15 @@ export function createController(deps) {
   }
 
   async function copyResult() {
-    if (inactive() || !lastResult) return false;
+    if (!canCopy() || !lastResult) return false;
     held = null;
     const copied = await copyText(lastResult.text);
-    if (inactive()) return false;
+    if (!canCopy()) return false;
     if (copied) {
       pressCopyFailed = false;
       pill.setState('idle');
-      notify('Copied to clipboard.', { tone: 'success' });
+      if (orphanNoticeOwed) showOrphanNotice();
+      else notify('Copied to clipboard.', { tone: 'success' });
     } else {
       notify('Copy failed. Click here to try again.', { tone: 'error', sticky: true, clickable: true });
     }
@@ -565,7 +570,8 @@ export function createController(deps) {
   async function save(message) {
     if (inactive()) return;
     const reply = await send(message);
-    if (inactive()) return;
+    // A click-to-copy status is the way to a paid transcript: a failed save does not replace it (V35).
+    if (inactive() || copyPending) return;
     if (!reply) notify(NO_REPLY, { tone: 'error' });
     else if (reply.success !== true) notify(textOr(reply.error, 'Could not save the setting.'), { tone: 'error' });
   }
@@ -588,7 +594,16 @@ export function createController(deps) {
     return save({ action: MSG.SET_SITE_MODE, mode: null });
   }
 
-  /** The extension was turned off, reloaded or updated under this page: say so, then do nothing more. */
+  function showOrphanNotice() {
+    orphanNoticeOwed = false;
+    ensureVisible();
+    pill.setStatus(ORPHAN_NOTICE, { tone: 'error', sticky: true, terminal: true });
+  }
+
+  /**
+   * The extension was turned off, reloaded or updated under this page: say so, then do nothing
+   * more. A click-to-copy status stays first: lastResult holds its text, held included (V35).
+   */
   function orphaned() {
     if (inactive()) return;
     orphan = true;
@@ -603,8 +618,8 @@ export function createController(deps) {
     pressStarted = false;
     held = null;
     pill.setState('idle');
-    ensureVisible();
-    pill.setStatus(ORPHAN_NOTICE, { tone: 'error', sticky: true, terminal: true });
+    if (copyPending) orphanNoticeOwed = true;
+    else showOrphanNotice();
   }
 
   /** Remove everything this instance added. Also runs after orphaned(): a newer copy replaces this one. */

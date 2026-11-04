@@ -2,6 +2,31 @@ import { redact } from './providers/errors.js';
 import { warnFailure } from './router.js';
 import { countWords } from './usage.js';
 
+/** Once a transcript exists, the bookkeeping shares this long (V34), then the result goes out regardless. */
+export const BOOKKEEPING_LIMIT_MS = 2000;
+
+/**
+ * Run the bookkeeping for a finished transcript under the limit. Never throws: logging is
+ * bookkeeping, and a paid transcript is never lost over it. A step past the limit runs on unawaited.
+ * @param {() => Promise<unknown>} step
+ * @returns {Promise<void>}
+ */
+async function keepBooks(step) {
+  let timer;
+  try {
+    await Promise.race([
+      step(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Bookkeeping timed out.')), BOOKKEEPING_LIMIT_MS);
+      }),
+    ]);
+  } catch (err) {
+    console.warn('VoiceType: usage logging failed', err);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * One dictation from recorded audio to the message the tab receives. Never throws.
  * @param {{
@@ -23,15 +48,10 @@ export function createDictate({ storage, runDictation, applyUsage, userMessage }
       // The text goes to a web page: redact again in case a provider echoed a key.
       return { success: false, error: redact(userMessage(err)), tone: 'error' };
     }
-    try {
-      await storage.updateUsageLog((log) => applyUsage(log, {
-        provider: result.provider, audioSeconds: result.audioSeconds, cost: result.cost, mode: modeKey,
-        words: countWords(result.raw),
-      }));
-    } catch (err) {
-      // Logging is bookkeeping; never lose a paid transcript over it.
-      console.warn('VoiceType: usage logging failed', err);
-    }
+    await keepBooks(() => storage.updateUsageLog((log) => applyUsage(log, {
+      provider: result.provider, audioSeconds: result.audioSeconds, cost: result.cost, mode: modeKey,
+      words: countWords(result.raw),
+    })));
     return { success: true, text: result.text, raw: result.raw, cost: result.cost, warning: result.warning ?? null };
   };
 }

@@ -518,6 +518,169 @@ describe('a pending click-to-copy status', () => {
     expect(t.send).not.toHaveBeenCalled();
     expect(lastStatus(t.pill)).toEqual([notice, { tone: 'info', sticky: false, clickable: false }]);
   });
+
+  const HOLD_STATUS = ['Return to the field to insert, or click here to copy.', { tone: 'info', sticky: true, clickable: true }];
+  const ORPHAN_STATUS = [ORPHAN, { tone: 'error', sticky: true, terminal: true }];
+  const COPIED = ['Copied to clipboard.', { tone: 'success', sticky: false, clickable: false }];
+  const REFUSED = { [MSG.UPDATE_SETTINGS]: { success: false, error: 'Invalid settings.' } };
+
+  /** Records and leaves the result held, because another frame or window has the focus. */
+  async function holdResult(t) {
+    await recordAndStop(t);
+    t.deps.hasFocus.mockReturnValue(false);
+    t.controller.handleMessage({ action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null });
+    await flush();
+    expect(lastStatus(t.pill)).toEqual(HOLD_STATUS);
+    t.send.mockClear();
+  }
+
+  describe('and a failed menu save (V35)', () => {
+    it.each([
+      ['refused', REFUSED],
+      ['unanswered', { [MSG.UPDATE_SETTINGS]: null }],
+    ])('a failed menu save leaves a click-to-copy status up when %s', async (_name, replies) => {
+      const t = setup({ insert: 'failed', replies });
+      await strandResult(t);
+      const statuses = t.pill.setStatus.mock.calls.length;
+      await t.controller.choose({ provider: 'gemini' });
+      expect(t.send).toHaveBeenCalledTimes(1);
+      expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
+      await t.controller.copyLast();
+      expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+      expect(lastStatus(t.pill)).toEqual(COPIED);
+    });
+
+    it('a failed menu save leaves a held-result status up', async () => {
+      const t = setup({ replies: REFUSED });
+      await holdResult(t);
+      const statuses = t.pill.setStatus.mock.calls.length;
+      await t.controller.choose({ provider: 'gemini' });
+      expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
+      await t.controller.copyLast();
+      expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    });
+
+    it('a failed menu save still reports with no copy pending', async () => {
+      const t = setup({ insert: 'failed', replies: REFUSED });
+      await strandResult(t);
+      await t.controller.copyLast();
+      await t.controller.choose({ provider: 'gemini' });
+      expect(lastStatus(t.pill)).toEqual(['Invalid settings.', { tone: 'error', sticky: false, clickable: false }]);
+    });
+  });
+
+  describe('on a page orphaned under it (V35)', () => {
+    it('an orphaned page keeps a click-to-copy status, and its click copies', async () => {
+      const t = setup({ insert: 'failed' });
+      await strandResult(t);
+      const statuses = t.pill.setStatus.mock.calls.length;
+      t.pill.clearStatus.mockClear();
+      t.controller.orphaned();
+      expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
+      expect(t.pill.clearStatus).not.toHaveBeenCalled();
+      expect(t.pill.hide).not.toHaveBeenCalled();
+      expect(await t.controller.copyLast()).toBe(true);
+      expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    });
+
+    it('the orphan notice follows that click', async () => {
+      const t = setup({ insert: 'failed' });
+      await strandResult(t);
+      t.controller.orphaned();
+      expect(lastStatus(t.pill)).toEqual(COPY_STATUS);
+      await t.controller.copyLast();
+      expect(lastStatus(t.pill)).toEqual(ORPHAN_STATUS);
+      vi.advanceTimersByTime(60000);
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(ORPHAN_STATUS);
+      expect(t.pill.hide).not.toHaveBeenCalled();
+    });
+
+    it('an orphaned page with a held result offers the same', async () => {
+      const t = setup();
+      await holdResult(t);
+      const statuses = t.pill.setStatus.mock.calls.length;
+      t.controller.orphaned();
+      expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
+      await t.controller.onWindowFocus();
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      await t.controller.copyLast();
+      expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+      expect(lastStatus(t.pill)).toEqual(ORPHAN_STATUS);
+    });
+
+    it('a copy that fails on an orphaned page can be clicked again', async () => {
+      const t = setup({ insert: 'failed' });
+      await strandResult(t);
+      t.controller.orphaned();
+      t.deps.copyText.mockResolvedValueOnce(false);
+      expect(await t.controller.copyLast()).toBe(false);
+      expect(lastStatus(t.pill)).toEqual(COPY_FAILED);
+      expect(await t.controller.copyLast()).toBe(true);
+      expect(t.deps.copyText).toHaveBeenCalledTimes(2);
+      expect(lastStatus(t.pill)).toEqual(ORPHAN_STATUS);
+    });
+
+    it('a copy running when the page is orphaned brings the notice', async () => {
+      const t = setup({ insert: 'failed' });
+      await strandResult(t);
+      const pending = deferred();
+      t.deps.copyText.mockImplementationOnce(() => pending.promise);
+      const click = t.controller.copyLast();
+      await flush();
+      t.controller.orphaned();
+      pending.resolve(true);
+      await click;
+      expect(lastStatus(t.pill)).toEqual(ORPHAN_STATUS);
+    });
+
+    it('a second click running when the first one copied leaves the notice', async () => {
+      const t = setup({ insert: 'failed' });
+      await strandResult(t);
+      t.controller.orphaned();
+      const first = deferred();
+      const second = deferred();
+      t.deps.copyText.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
+      const clicks = [t.controller.copyLast(), t.controller.copyLast()];
+      await flush();
+      first.resolve(true);
+      await clicks[0];
+      expect(lastStatus(t.pill)).toEqual(ORPHAN_STATUS);
+      const statuses = t.pill.setStatus.mock.calls.length;
+      second.resolve(false);
+      await clicks[1];
+      expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
+      vi.advanceTimersByTime(60000);
+      expect(t.pill.hide).not.toHaveBeenCalled();
+    });
+
+    it('nothing else works: a press, a REC click or a menu choice starts nothing', async () => {
+      const t = setup({ insert: 'failed' });
+      await strandResult(t);
+      t.controller.orphaned();
+      const statuses = t.pill.setStatus.mock.calls.length;
+      await t.controller.press();
+      await t.controller.toggle();
+      await t.controller.choose({ provider: 'gemini' });
+      expect(t.send).not.toHaveBeenCalled();
+      expect(t.deps.copyText).not.toHaveBeenCalled();
+      expect(t.controller.state).toBe('idle');
+      expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
+    });
+
+    it('a result already placed gives the notice at once, and copyLast does not replace it', async () => {
+      const t = setup();
+      await recordAndStop(t);
+      t.controller.handleMessage({ action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null });
+      await flush();
+      t.controller.orphaned();
+      expect(lastStatus(t.pill)).toEqual(ORPHAN_STATUS);
+      const statuses = t.pill.setStatus.mock.calls.length;
+      expect(await t.controller.copyLast()).toBe(false);
+      expect(t.deps.copyText).not.toHaveBeenCalled();
+      expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
+    });
+  });
 });
 
 describe('a press while a result is still landing', () => {
