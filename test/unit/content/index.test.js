@@ -537,6 +537,20 @@ describe('a frame out of sight', () => {
     expect(hosts()).toHaveLength(0);
   });
 
+  it('the extension going away removes the mirror and leaves the notice', async () => {
+    const t = installChrome();
+    const field = document.getElementById('field');
+    field.focus();
+    await loadInstance();
+    deliver(t, mirrorMessage('recording'));
+    expect(hosts()).toHaveLength(2);
+    delete t.chrome.runtime.id;
+    field.dispatchEvent(hotkey('keydown'));
+    await flush();
+    expect(hosts()).toHaveLength(1);
+    expect(statusText()).toBe(ORPHAN);
+  });
+
   it('pagehide removes the mirror, so the back-forward cache keeps no false recording', async () => {
     const t = installChrome();
     await loadInstance();

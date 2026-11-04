@@ -73,6 +73,8 @@ export function boot({
   function becomeOrphan() {
     orphan = true;
     controller.orphaned();
+    // No worker is left to end it, and its clock would run on until the mirror's own timeout.
+    mirror.destroy();
   }
 
   /**
