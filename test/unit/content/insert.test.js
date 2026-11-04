@@ -604,13 +604,13 @@ describe('markInsertion', () => {
   it('reads the offsets after an insert in a textarea', async () => {
     const el = textarea('Hello  there', 6);
     await insertText(el, 'world', deps({ execCommand: formExec }));
-    expect(markInsertion(el, 'world')).toEqual({ start: 6, end: 11 });
+    expect(markInsertion(el, 'world')).toEqual({ start: 6, end: 11, length: el.value.length });
   });
 
   it('reads them when the setter rung inserted', async () => {
     const el = textarea('ab', 1);
     await insertText(el, 'X', deps({ execCommand: () => false }));
-    expect(markInsertion(el, 'X')).toEqual({ start: 1, end: 2 });
+    expect(markInsertion(el, 'X')).toEqual({ start: 1, end: 2, length: 3 });
   });
 
   it('is null for an input with no selection support', async () => {
@@ -639,12 +639,13 @@ describe('markInsertion', () => {
 });
 
 describe('replaceInsertion', () => {
-  const MARK = { start: 6, end: 13 };
+  /** The mark of 'refined' at offset 6, read when the field was as long as it is now. */
+  const at = (el) => ({ start: 6, end: 13, length: el.value.length });
 
   it('puts raw in place of the exact text, keeping what is around it', async () => {
     const el = textarea('Hello refined there', 19);
     const d = deps({ execCommand: formExec });
-    expect(await replaceInsertion(el, MARK, 'refined', 'raw words', d)).toBe('inserted');
+    expect(await replaceInsertion(el, at(el), 'refined', 'raw words', d)).toBe('inserted');
     expect(el.value).toBe('Hello raw words there');
     expect(d.writeClipboard).not.toHaveBeenCalled();
   });
@@ -653,21 +654,21 @@ describe('replaceInsertion', () => {
     const el = textarea('Hello refined', 2);
     const seen = [];
     const d = deps({ execCommand: (text) => { seen.push([el.selectionStart, el.selectionEnd]); return formExec(text); } });
-    await replaceInsertion(el, MARK, 'refined', 'raw', d);
+    await replaceInsertion(el, at(el), 'refined', 'raw', d);
     expect(seen).toEqual([[6, 13]]);
   });
 
   it('works when raw holds the text, which no count can tell from a second insert', async () => {
     const el = textarea('refined', 7);
     const d = deps({ execCommand: formExec });
-    expect(await replaceInsertion(el, { start: 0, end: 7 }, 'refined', 'refined text', d)).toBe('inserted');
+    expect(await replaceInsertion(el, { start: 0, end: 7, length: 7 }, 'refined', 'refined text', d)).toBe('inserted');
     expect(el.value).toBe('refined text');
   });
 
   it('is null when the text moved', async () => {
     const el = textarea('typed Hello refined', 0);
     const d = deps({ execCommand: formExec });
-    expect(await replaceInsertion(el, MARK, 'refined', 'raw', d)).toBeNull();
+    expect(await replaceInsertion(el, at(el), 'refined', 'raw', d)).toBeNull();
     expect(el.value).toBe('typed Hello refined');
     expect(d.writeClipboard).not.toHaveBeenCalled();
   });
@@ -675,27 +676,94 @@ describe('replaceInsertion', () => {
   it('is null when the field holds other text there', async () => {
     const el = textarea('Hello refinEd', 0);
     const d = deps({ execCommand: formExec });
-    expect(await replaceInsertion(el, MARK, 'refined', 'raw', d)).toBeNull();
+    expect(await replaceInsertion(el, at(el), 'refined', 'raw', d)).toBeNull();
     expect(el.value).toBe('Hello refinEd');
   });
 
   it('never leaves the selection moved when it refuses', async () => {
     const el = textarea('other text here', 3);
-    await replaceInsertion(el, MARK, 'refined', 'raw', deps({ execCommand: formExec }));
+    await replaceInsertion(el, at(el), 'refined', 'raw', deps({ execCommand: formExec }));
     expect([el.selectionStart, el.selectionEnd]).toEqual([3, 3]);
+  });
+
+  it('is null when the same text was typed before it, so the offsets still read true', async () => {
+    const el = textarea('OK.OK.', 0);
+    const d = deps({ execCommand: formExec });
+    expect(await replaceInsertion(el, { start: 0, end: 3, length: 3 }, 'OK.', 'okay', d)).toBeNull();
+    expect(el.value).toBe('OK.OK.');
+    expect([el.selectionStart, el.selectionEnd]).toEqual([0, 0]);
+  });
+
+  it('is null when text was added after it', async () => {
+    const el = textarea('refined more', 0);
+    expect(await replaceInsertion(el, { start: 0, end: 7, length: 7 }, 'refined', 'raw', deps({ execCommand: formExec }))).toBeNull();
+    expect(el.value).toBe('refined more');
+  });
+
+  describe('when the ladder leaves the field as it was', () => {
+    it.each([
+      ['clipboard'], ['failed'], ['unverified'],
+    ])('collapses the caret to the end of the text on %s', async (outcome) => {
+      const el = textarea('Hello refined there', 0);
+      const insert = vi.fn(async () => outcome);
+      expect(await replaceInsertion(el, at(el), 'refined', 'raw', { insertText: insert })).toBe(outcome);
+      expect(insert).toHaveBeenCalledTimes(1);
+      expect([el.selectionStart, el.selectionEnd]).toEqual([13, 13]);
+    });
+
+    it('does so with the real ladder, when a page refuses the text', async () => {
+      const el = textarea('Hello refined there', 0);
+      el.addEventListener('beforeinput', (event) => event.preventDefault());
+      const d = deps({ execCommand: () => false });
+      const outcome = await replaceInsertion(el, at(el), 'refined', 'raw', d);
+      expect(outcome).not.toBe('inserted');
+      expect(el.value).toBe('Hello refined there');
+      expect([el.selectionStart, el.selectionEnd]).toEqual([13, 13]);
+    });
+
+    it('leaves the selection alone when the value did change', async () => {
+      const el = textarea('Hello refined there', 0);
+      const insert = vi.fn(async () => {
+        el.value = 'Hello raw there';
+        el.setSelectionRange(9, 9);
+        return 'unverified';
+      });
+      await replaceInsertion(el, at(el), 'refined', 'raw', { insertText: insert });
+      expect([el.selectionStart, el.selectionEnd]).toEqual([9, 9]);
+    });
+
+    it('leaves the selection alone on a verified outcome, whatever the value', async () => {
+      const el = textarea('Hello refined there', 0);
+      await replaceInsertion(el, at(el), 'refined', 'raw', { insertText: async () => 'inserted' });
+      expect([el.selectionStart, el.selectionEnd]).toEqual([6, 13]);
+    });
+
+    it('leaves the caret after raw on an insert', async () => {
+      const el = textarea('Hello refined there', 0);
+      await replaceInsertion(el, at(el), 'refined', 'raw', deps({ execCommand: formExec }));
+      expect(el.value).toBe('Hello raw there');
+      expect([el.selectionStart, el.selectionEnd]).toEqual([9, 9]);
+    });
+
+    it('survives a field that lost its selection support meanwhile', async () => {
+      const el = textarea('Hello refined there', 0);
+      const insert = vi.fn(async () => 'clipboard');
+      vi.spyOn(el, 'setSelectionRange').mockImplementationOnce(() => {}).mockImplementationOnce(() => { throw new Error('InvalidStateError'); });
+      expect(await replaceInsertion(el, at(el), 'refined', 'raw', { insertText: insert })).toBe('clipboard');
+    });
   });
 
   it('is null for a field with no selection support', async () => {
     document.body.innerHTML = '<input id="mail" type="email" value="Hello refined">';
     const el = document.getElementById('mail');
     el.focus();
-    expect(await replaceInsertion(el, MARK, 'refined', 'raw', deps({ execCommand: formExec }))).toBeNull();
+    expect(await replaceInsertion(el, at(el), 'refined', 'raw', deps({ execCommand: formExec }))).toBeNull();
     expect(el.value).toBe('Hello refined');
   });
 
   it('is null for a contenteditable, whatever it reads at the offsets', async () => {
     const el = editable('Hello refined');
-    expect(await replaceInsertion(el, MARK, 'refined', 'raw', deps())).toBeNull();
+    expect(await replaceInsertion(el, { start: 6, end: 13, length: 13 }, 'refined', 'raw', deps())).toBeNull();
     expect(el.textContent).toBe('Hello refined');
   });
 });

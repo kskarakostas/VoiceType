@@ -168,34 +168,43 @@ export async function insertText(target, text, deps = {}) {
 
 /**
  * Where text inserted a moment ago lies in a form field, read from the caret the insert left
- * after it. Null without offsets (a contenteditable, an input with no selection support) and
- * when the field does not hold exactly this text there: a page may have changed it on the way in.
+ * after it, with the field's length then. Null without offsets (a contenteditable, an input with
+ * no selection support) and when the field does not hold exactly this text there: a page may
+ * have changed it on the way in.
  * @param {Element} el
  * @param {string} text
- * @returns {{ start: number, end: number }|null}
+ * @returns {{ start: number, end: number, length: number }|null}
  */
 export function markInsertion(el, text) {
   if (!isFormField(el) || typeof el.selectionEnd !== 'number') return null;
   const end = el.selectionEnd;
   const start = end - text.length;
-  return start >= 0 && el.value.slice(start, end) === text ? { start, end } : null;
+  return start >= 0 && el.value.slice(start, end) === text ? { start, end, length: el.value.length } : null;
 }
 
 /**
  * Puts raw over text at the mark through the ladder, so one Ctrl+Z restores text. Null, with the
- * field and its selection untouched, unless text is exactly at the mark: it never searches
- * (V31). Whether el may be written at all is for the caller to check.
+ * field and its selection untouched, unless text is exactly at the mark in a field of the same
+ * length, so the same words typed before it do not pass: it never searches (V31). A ladder that
+ * left the field as it was leaves the caret after text, not a selection one key would replace.
+ * Whether el may be written at all is for the caller to check.
  * @param {Element} el
- * @param {{ start: number, end: number }} mark
+ * @param {{ start: number, end: number, length: number }} mark
  * @param {string} text
  * @param {string} raw
  * @param {InsertDeps & { insertText?: typeof insertText }} [deps]
  * @returns {Promise<InsertOutcome|null>}
  */
-export async function replaceInsertion(el, { start, end }, text, raw, deps = {}) {
-  if (!isFormField(el) || typeof el.selectionStart !== 'number' || el.value.slice(start, end) !== text) return null;
+export async function replaceInsertion(el, { start, end, length }, text, raw, deps = {}) {
+  if (!isFormField(el) || typeof el.selectionStart !== 'number') return null;
+  const before = el.value;
+  if (before.length !== length || before.slice(start, end) !== text) return null;
   el.setSelectionRange(start, end);
-  return (deps.insertText ?? insertText)(el, raw, deps);
+  const outcome = await (deps.insertText ?? insertText)(el, raw, deps);
+  if (outcome !== 'inserted' && el.value === before) {
+    try { el.setSelectionRange(end, end); } catch { /* no selection support */ }
+  }
+  return outcome;
 }
 
 /** Focuses the target, fixes the caret and records the state every rung is judged against. */

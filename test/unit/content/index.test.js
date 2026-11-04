@@ -88,6 +88,12 @@ async function flush() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
 const hosts = () => document.documentElement.querySelectorAll('voicetype-host');
 const shadow = () => hosts()[0].shadowRoot;
 const statusText = () => shadow().querySelector('[role="status"]').textContent;
@@ -327,6 +333,52 @@ describe('wiring', () => {
     shadow().querySelector('[data-history="copy"]').click();
     await flush();
     expect(copied).toHaveBeenCalledWith('refined');
+  });
+
+  it('reopening drops the entry before any reply: a Clear since the last open shows no section', async () => {
+    let reply2;
+    installChrome((message) => {
+      if (message.action !== MSG.GET_LAST_DICTATION) return reply(message);
+      if (reply2) return reply2.promise;
+      reply2 = deferred();
+      return { entry: { raw: 'raw', text: 'cleared text' } };
+    });
+    document.getElementById('field').focus();
+    await loadInstance();
+    const more = shadow().querySelector('.more');
+    more.click();
+    await flush();
+    expect(shadow().querySelector('[data-history]')).not.toBeNull();
+    more.click();
+
+    more.click();
+    await flush();
+
+    expect(shadow().querySelector('[data-history]')).toBeNull();
+    reply2.resolve({ entry: null });
+    await flush();
+    expect(shadow().querySelector('[data-history]')).toBeNull();
+  });
+
+  it('a reply that arrives brings the section back', async () => {
+    let second;
+    installChrome((message) => {
+      if (message.action !== MSG.GET_LAST_DICTATION) return reply(message);
+      if (second) return second.promise;
+      second = deferred();
+      return { entry: { raw: 'raw', text: 'older' } };
+    });
+    document.getElementById('field').focus();
+    await loadInstance();
+    const more = shadow().querySelector('.more');
+    more.click();
+    await flush();
+    more.click();
+    more.click();
+    await flush();
+    second.resolve({ entry: { raw: 'raw', text: 'newer' } });
+    await flush();
+    expect(shadow().querySelector('[data-history="copy"]')).not.toBeNull();
   });
 
   it('a menu whose reply is lost shows no last dictation', async () => {

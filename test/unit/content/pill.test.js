@@ -812,7 +812,7 @@ describe('menu', () => {
       expect(actions(pill)).toEqual([['insert', 'Insert'], ['copy', 'Copy'], ['undo', 'Undo AI edit']]);
     });
 
-    it('sits between Provider and the footer, so its arrival moves no setting under the pointer', () => {
+    it('sits between Provider and the footer', () => {
       const { pill } = makePill();
       pill.mount();
       pill.renderMenu(settings(), { todayCost: 0, todaySessions: 0, totalCost: 0 }, { refined: false });

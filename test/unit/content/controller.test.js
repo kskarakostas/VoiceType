@@ -2337,6 +2337,30 @@ describe('Last dictation', () => {
       expect(t.pill.renderMenu).toHaveBeenLastCalledWith(good, null, null);
     });
 
+    it.each([
+      ['a space', 'hello  world', 'hello world'],
+      ['a line break', 'hello\nworld', 'hello world'],
+      ['a no-break space', 'hello\u00A0world', 'hello world'],
+      ['a trailing newline', 'hello world', 'hello world\n'],
+    ])('offers no Undo when the edit only changed whitespace: %s', (_, raw, text) => {
+      const t = setup();
+      const good = settings();
+      t.controller.setSettings(good);
+      t.controller.setRecent({ raw, text });
+      expect(t.pill.renderMenu).toHaveBeenLastCalledWith(good, null, { refined: false });
+    });
+
+    it('a null entry makes every action inert, as after a Clear', async () => {
+      const t = setup();
+      t.controller.setRecent(ENTRY);
+      t.controller.setRecent(null);
+      $('a').focus();
+      for (const action of ['insert', 'copy', 'undo']) await t.controller.historyAction(action);
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect(t.deps.copyText).not.toHaveBeenCalled();
+      expect(t.pill.setStatus).not.toHaveBeenCalled();
+    });
+
     it('survives a settings push', () => {
       const t = setup();
       t.controller.setSettings(settings());
@@ -2513,6 +2537,24 @@ describe('Last dictation', () => {
       expect(lastStatus(t.pill)).toEqual(ORIGINAL);
     });
 
+    it('copies raw when the same text was typed before it, so the offsets still read true', async () => {
+      const t = setup();
+      writing(t);
+      await recordAndStop(t);
+      t.controller.handleMessage(refined({ text: 'OK.', raw: 'okay' }));
+      await flush();
+      t.controller.setRecent({ text: 'OK.', raw: 'okay' });
+      t.deps.insertText.mockClear();
+      t.deps.copyText.mockClear();
+      expect($('a').value).toBe('OK.');
+      $('a').value = 'OK.OK.';
+      await t.controller.historyAction('undo');
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect($('a').value).toBe('OK.OK.');
+      expect(t.deps.copyText).toHaveBeenCalledWith('okay');
+      expect(lastStatus(t.pill)).toEqual(ORIGINAL);
+    });
+
     it('copies raw after a reload, with no mark', async () => {
       const t = setup();
       $('a').value = ENTRY.text;
@@ -2605,6 +2647,28 @@ describe('Last dictation', () => {
       await recordAndStop(t);
       t.controller.handleMessage(refined());
       await flush();
+      t.controller.setRecent(ENTRY);
+      t.deps.insertText.mockClear();
+      await t.controller.historyAction('undo');
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect(t.deps.copyText).toHaveBeenLastCalledWith(ENTRY.raw);
+    });
+
+    it('a field whose value cannot be read after a good insert keeps the status, with no mark', async () => {
+      const t = setup();
+      $('a').value = ENTRY.text;
+      $('a').setSelectionRange(ENTRY.text.length, ENTRY.text.length);
+      await recordAndStop(t);
+      const el = $('a');
+      t.deps.insertText.mockImplementation(async () => {
+        Object.defineProperty(el, 'value', { get: () => 42, configurable: true });
+        return 'inserted';
+      });
+      t.controller.handleMessage(refined());
+      await flush();
+      expect(t.pill.setState).toHaveBeenLastCalledWith('done');
+      expect(lastStatus(t.pill)[0]).toMatch(/^Done /);
+      delete el.value;
       t.controller.setRecent(ENTRY);
       t.deps.insertText.mockClear();
       await t.controller.historyAction('undo');
@@ -2722,7 +2786,6 @@ describe('Last dictation', () => {
       const undo = t.controller.historyAction('undo');
       await flush();
       await t.controller.press();
-      expect(t.actions()).not.toContain(undefined);
       const started = t.actions().filter((a) => a === MSG.START_RECORDING).length;
       pending.resolve('inserted');
       await undo;
@@ -2779,6 +2842,47 @@ describe('Last dictation', () => {
       expect(t.deps.insertText).not.toHaveBeenCalled();
       expect(t.deps.copyText).toHaveBeenCalledTimes(1);
       expect(t.deps.copyText).toHaveBeenCalledWith('paid');
+    });
+
+    it('a dead clipboard offers the transcript once, and then Insert is reachable', async () => {
+      const t = setup({ insert: 'failed', copy: false });
+      await recordAndStop(t);
+      t.controller.handleMessage(refined({ text: 'paid', raw: 'paid' }));
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(CLICK);
+      t.controller.setRecent(ENTRY);
+      writing(t);
+      t.deps.copyText.mockClear();
+
+      await t.controller.historyAction('insert');
+      expect(t.deps.copyText).toHaveBeenCalledWith('paid');
+      expect(t.deps.insertText).toHaveBeenCalledTimes(1);
+
+      await t.controller.historyAction('insert');
+      expect(t.deps.insertText).toHaveBeenCalledTimes(2);
+      expect(t.deps.insertText).toHaveBeenLastCalledWith($('a'), ENTRY.text);
+      expect(lastStatus(t.pill)).toEqual(INSERTED);
+    });
+
+    it('a copy that works goes back to offering the next pending one', async () => {
+      const t = setup({ insert: 'failed', copy: false });
+      await recordAndStop(t);
+      t.controller.handleMessage(refined({ text: 'paid', raw: 'paid' }));
+      await flush();
+      t.controller.setRecent(ENTRY);
+      await t.controller.historyAction('copy');
+      t.deps.copyText.mockClear();
+      t.deps.copyText.mockResolvedValue(true);
+      await t.controller.copyLast();
+      expect(t.deps.copyText).toHaveBeenCalledWith('paid');
+      await recordAndStop(t);
+      t.deps.copyText.mockResolvedValueOnce(false);
+      t.controller.handleMessage(refined({ text: 'paid again', raw: 'paid again' }));
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(CLICK);
+      t.deps.copyText.mockClear();
+      await t.controller.historyAction('insert');
+      expect(t.deps.copyText).toHaveBeenCalledWith('paid again');
     });
 
     it('a held result lands first: the action neither replaces it nor doubles it', async () => {

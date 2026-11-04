@@ -3,6 +3,7 @@
 import { MSG } from '../shared/messages.js';
 import { formatCost } from '../shared/pricing.js';
 import { isPasswordField } from './fields.js';
+import { normalizeForCompare } from './insert.js';
 import { STATUS_MS } from './pill.js';
 
 /**
@@ -72,9 +73,9 @@ export function createController(deps) {
   /** A press refused because a result is landing, kept while the chord stays down (V38). */
   let pressQueued = false;
   let lastResult = null;
-  /** The newest dictation of this site as of the last menu open: `{ raw, text }`, or null (V28). */
+  /** The newest dictation of this site as of this menu open: `{ raw, text, refined }`, or null (V28). */
   let recent = null;
-  /** Where the last verified insert in a form field lies, for Undo AI edit (V31): `{ el, start, end, text, raw }`. */
+  /** Where the last verified insert in a form field lies, for Undo AI edit (V31): `{ el, start, end, length, text, raw }`. */
   let insertMark = null;
   /** A result for a field that kept this frame's focus while another frame or window had it. */
   let held = null;
@@ -206,7 +207,7 @@ export function createController(deps) {
   }
 
   function render() {
-    if (settings) pill.renderMenu(settings, usage, recent && { refined: recent.raw !== recent.text });
+    if (settings) pill.renderMenu(settings, usage, recent && { refined: recent.refined });
   }
 
   /** @param {unknown} next */
@@ -233,7 +234,10 @@ export function createController(deps) {
   function setRecent(entry) {
     if (inactive()) return;
     const { raw, text } = /** @type {any} */ (entry) ?? {};
-    recent = typeof raw === 'string' && typeof text === 'string' && text ? { raw, text } : null;
+    // An edit of whitespace alone gets no Undo: the ladder's read-back could not tell it happened.
+    recent = typeof raw === 'string' && typeof text === 'string' && text
+      ? { raw, text, refined: normalizeForCompare(raw) !== normalizeForCompare(text) }
+      : null;
     render();
   }
 
@@ -473,6 +477,21 @@ export function createController(deps) {
   const hasLiveFocus = (el) => Boolean(el?.isConnected) && deepActiveElement() === el && deps.hasFocus();
 
   /**
+   * The mark for text just inserted into el. A field that cannot be read gets none, so Undo
+   * copies: the insert itself went well and still has its status to report.
+   * @param {Element} el
+   * @param {string} text
+   */
+  function markFor(el, text) {
+    try {
+      const mark = markInsertion(el, text);
+      return mark && { ...mark, el, text, raw: lastResult.raw };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Say how an insert ended.
    * @param {import('./insert.js').InsertOutcome} outcome
    * @param {() => void} inserted says it for a verified insert
@@ -511,10 +530,7 @@ export function createController(deps) {
         outcome = 'failed';
       }
       if (inactive()) return;
-      if (outcome === 'inserted') {
-        const mark = markInsertion(bound, text);
-        insertMark = mark && { ...mark, el: bound, text, raw: lastResult.raw };
-      }
+      if (outcome === 'inserted') insertMark = markFor(bound, text);
       reportInsert(outcome, () => {
         const suffix = alwaysCopied === false ? NOT_COPIED : '';
         if (unpaid) notify('Inserted.', { tone: 'success' });
@@ -624,8 +640,8 @@ export function createController(deps) {
     }
     // A transcript waiting on a click goes first, as for REC: lastResult is the way to it (V35).
     if (held) return deliverHeld();
-    if (copyPending) {
-      await copyLast();
+    if (copyPending && !pressCopyFailed) {
+      pressCopyFailed = !(await copyLast());
       return;
     }
     const { raw, text } = recent;

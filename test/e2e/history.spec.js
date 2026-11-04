@@ -205,6 +205,24 @@ test('a dictation the mode left alone offers no Undo', async () => {
   expect(await pillQuery(page, UNDO)).toBeNull();
 });
 
+test('a Clear since the last open: reopening the menu shows no section', async () => {
+  const page = await openFields(context);
+  const textarea = page.locator('#ta');
+  await focusField(page, textarea);
+  await dictate(page);
+  await expect(textarea).toHaveValue(REFINED);
+  await openMenu(page);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await pillQuery(page, INSERT))?.width ?? 0).toBe(0);
+
+  await serviceWorker.evaluate(() => chrome.storage.session.remove('history'));
+  await clickPill(page, MENU);
+  await waitForPill(page, '.usage');
+
+  expect(await pillQuery(page, INSERT)).toBeNull();
+  expect(await pillQuery(page, COPY)).toBeNull();
+});
+
 test('a page of another site shows no section', async () => {
   const page = await openFields(context);
   const textarea = page.locator('#ta');

@@ -31,7 +31,7 @@ export function buildMenuSections(helpers, { modes, active, marked, activeMode, 
   const sections = [modesSection(helpers, modes, active, marked)];
   if (activeMode?.hasLanguageOption) sections.push(translateSection(helpers, settings.translateTargetLang));
   sections.push(providerSection(helpers, settings));
-  // Below the settings: it arrives after the menu opens and must not move one under the pointer.
+  // After the settings: it arrives once the menu is open, and a menu placed below the pill grows downwards.
   if (recent) sections.push(recentSection(helpers, recent));
   sections.push(footerSection(helpers, settings, usage));
   return sections;

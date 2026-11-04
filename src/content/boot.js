@@ -34,7 +34,8 @@ export function boot({
   const pill = new Pill({
     onRec: () => { controller.toggle(); },
     onStatusClick: () => { controller.copyLast(); },
-    onMenuOpen: () => { loadSettings({ forMenu: true }); },
+    // The entry held from the last open may have been cleared or replaced since: none until the reply.
+    onMenuOpen: () => { controller.setRecent(null); loadSettings({ forMenu: true }); },
     onMode: (key) => { controller.chooseMode(key); },
     onUseActive: () => { controller.useActiveMode(); },
     onProvider: (id) => { controller.choose({ provider: id }); },
