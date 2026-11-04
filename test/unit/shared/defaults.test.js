@@ -396,6 +396,12 @@ describe('migrateSettings', () => {
     expect(migrateSettings(s)).toBe(s);
   });
 
+  it('a dropped key does not claim its host', () => {
+    const siteRules = { 'a.com': 'junk', 'A.com': { hidePill: true, mode: null } };
+    const s = migrateSettings({ ...fullV3Settings(), siteRules });
+    expect(s.siteRules).toEqual({ 'a.com': { hidePill: true, mode: null } });
+  });
+
   it('a site rule whose mode was removed falls back to no mode', () => {
     const stored = fullV3Settings();
     stored.siteRules = { 'notes.example': { hidePill: true, mode: 'custom_1' }, 'x.example': { hidePill: false, mode: 'custom_1' } };
