@@ -140,6 +140,16 @@ describe('settings page shell', () => {
     );
   });
 
+  it('History sits after Dictionary, in the routes and the markup', async () => {
+    await start(fakeChrome());
+    const ids = ROUTES.map((r) => r.id);
+    expect(ids.indexOf('history')).toBe(ids.indexOf('dictionary') + 1);
+    const sections = [...document.querySelectorAll('section[data-route]')].map((s) => s.dataset.route);
+    expect(sections.indexOf('history')).toBe(sections.indexOf('dictionary') + 1);
+    expect(navLink('dictionary').closest('li').nextElementSibling.querySelector('a')).toBe(navLink('history'));
+    expect(navLink('history').closest('[data-group]')).toBeNull();
+  });
+
   it('no page shows a placeholder', async () => {
     await start(fakeChrome());
     expect(document.querySelector('.placeholder')).toBeNull();

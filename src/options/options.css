@@ -276,6 +276,15 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .preview-dot { top: 19px; left: 112px; width: 10px; height: 10px; border-radius: 50%; }
 .preview-mini { bottom: 6px; left: 50%; width: 28px; height: 8px; border-radius: 999px; transform: translateX(-50%); }
 
+/* History */
+
+.history-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.history-entry { display: grid; gap: 4px; }
+.history-entry + .history-entry { padding-top: 10px; border-top: 1px solid var(--border); }
+.history-meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.history-text { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.history-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
 /* Narrow windows: the sidebar stacks above the content. */
 
 @media (max-width: 719.98px) {

@@ -1,12 +1,12 @@
 // End-to-end coverage for the settings page and the quick-panel popup in the built extension:
 // route opening with tab reuse, saves that survive closing the tab, a mouse press on the
-// Dictionary's buttons, the pill following a change made on the page, Reset to defaults, and Home
-// counting a dictation. Run with
+// Dictionary's buttons, the pill following a change made on the page, Reset to defaults, Home
+// counting a dictation, and History and Copy last over a real dictation. Run with
 // `npm run test:e2e`, which builds dist/ first.
 import { test, expect } from '@playwright/test';
 import { migrateSettings } from '../../src/shared/defaults.js';
 import { CONFIRM_GUARD_MS } from '../../src/ui/form.js';
-import { launchExtension, seedSettings, openFields, pillQuery, focusField, dictate, DUMMY_KEY, TRANSCRIPT } from './helpers.js';
+import { launchExtension, seedSettings, openFields, pillQuery, focusField, dictate, DUMMY_KEY, PORT, TRANSCRIPT } from './helpers.js';
 
 /** The acceptance budget: closing the tab this long after typing keeps the value (spec 6.1). */
 const CLOSE_AFTER_MS = 1000;
@@ -246,4 +246,50 @@ test('Home counts the words of a dictation', async () => {
   // written before the page opens: this covers Home's load on mount.
   await expect(page.locator('#home-words-week')).toHaveText('2');
   await expect(page.locator('#home-days li[aria-current="date"]')).toHaveAttribute('data-state', 'dictated');
+});
+
+test('History shows a real dictation on an open page, Copy and Copy last copy it, and off clears it', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  await serviceWorker.evaluate(() => chrome.storage.session.remove('history'));
+  // The worker owns the entries: the open page hears of this one through storage.onChanged.
+  const page = await openSettingsPage('history');
+  await expect(page.locator('#history-empty')).toHaveText('No dictations yet.');
+
+  const fields = await openFields(context);
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `http://localhost:${PORT}` });
+  const textarea = fields.locator('#ta');
+  await focusField(fields, textarea);
+  await dictate(fields);
+  await expect(textarea).toHaveValue(TRANSCRIPT);
+
+  const entry = page.locator('#history-list .history-entry');
+  await expect(entry).toHaveCount(1);
+  await expect(entry.locator('.history-text')).toHaveText(TRANSCRIPT);
+  await expect(entry.locator('.history-meta')).toContainText('localhost');
+  await expect(entry.getByRole('button', { name: 'Copy original' })).toHaveCount(0);
+
+  const clipboard = async () => {
+    await fields.bringToFront();
+    return fields.evaluate(() => navigator.clipboard.readText());
+  };
+  await fields.evaluate(() => navigator.clipboard.writeText('before the copy'));
+  await page.bringToFront();
+  await entry.getByRole('button', { name: /^Copy dictation/ }).click();
+  await expect(page.locator('#toast')).toHaveText('Copied to clipboard.');
+  expect(await clipboard()).toBe(TRANSCRIPT);
+
+  await fields.evaluate(() => navigator.clipboard.writeText('before Copy last'));
+  const popup = await openPopup();
+  await expect(popup.locator('#copy-last')).toBeEnabled();
+  await popup.locator('#copy-last').click();
+  await expect(popup.locator('#toast')).toHaveText('Copied to clipboard.');
+  expect(await clipboard()).toBe(TRANSCRIPT);
+
+  await page.bringToFront();
+  await page.locator('#keep-history').click();
+  await expect(page.locator('#history-empty')).toHaveText('History is off.');
+  await expect(entry).toHaveCount(0);
+  await expect.poll(() => serviceWorker.evaluate(async () => (await chrome.storage.session.get('history')).history ?? [])).toEqual([]);
+  await popup.reload();
+  await expect(popup.locator('#copy-last')).toBeHidden();
 });

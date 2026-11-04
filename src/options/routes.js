@@ -6,6 +6,7 @@ export const ROUTES = Object.freeze([
   { id: 'home', title: 'Home' },
   { id: 'modes', title: 'Modes' },
   { id: 'dictionary', title: 'Dictionary' },
+  { id: 'history', title: 'History' },
   { id: 'settings/provider', title: 'Provider' },
   { id: 'settings/recording', title: 'Recording' },
   { id: 'settings/speech', title: 'Speech' },

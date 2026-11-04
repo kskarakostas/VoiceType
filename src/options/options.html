@@ -24,6 +24,7 @@
         <li><a href="#home">Home</a></li>
         <li><a href="#modes">Modes</a></li>
         <li><a href="#dictionary">Dictionary</a></li>
+        <li><a href="#history">History</a></li>
         <li class="nav-group" data-group="settings">
           <span class="nav-group-label" id="nav-group-settings">Settings</span>
           <ul class="nav-list" aria-labelledby="nav-group-settings">
@@ -150,6 +151,21 @@
             <div class="dictionary-add">
               <select id="dictionary-language"></select>
               <button type="button" class="btn" id="dictionary-add-group">Add language</button>
+            </div>
+          </div>
+        </section>
+
+        <section data-route="history" aria-labelledby="h-history" hidden>
+          <h1 id="h-history" tabindex="-1">History</h1>
+          <div class="card">
+            <label class="check"><input type="checkbox" id="keep-history" aria-describedby="keep-history-hint">Keep recent dictations</label>
+            <p class="hint" id="keep-history-hint">Your last 20 dictations stay in memory until you close the browser. Turning this off clears them.</p>
+          </div>
+          <div class="card">
+            <p class="hint" id="history-empty" hidden></p>
+            <ul class="history-list" id="history-list" hidden></ul>
+            <div class="card-actions">
+              <button type="button" class="btn btn-danger" id="clear-history" disabled>Clear</button>
             </div>
           </div>
         </section>
@@ -325,7 +341,7 @@
           <div class="card">
             <h2>Reset</h2>
             <button type="button" class="btn btn-danger btn-block" id="reset" aria-describedby="reset-hint">Reset to defaults</button>
-            <p class="hint" id="reset-hint">Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the hotkey, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary and site rules.</p>
+            <p class="hint" id="reset-hint">Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the hotkey, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.</p>
           </div>
         </section>
       </main>

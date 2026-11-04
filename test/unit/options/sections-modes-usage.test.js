@@ -12,7 +12,7 @@ import { formatChord } from '../../../src/shared/chord.js';
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/options/options.html'), 'utf8');
 const SETTINGS_CHANGE = { settings: { newValue: {} } };
 const RESET_PROMPT = 'Click again to reset. Custom modes will be deleted.';
-const RESET_HINT = 'Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the hotkey, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary and site rules.';
+const RESET_HINT = 'Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the hotkey, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.';
 
 function bucket(sessions, audioSeconds, cost) {
   return {
@@ -276,12 +276,12 @@ describe('settings page reset (V21)', () => {
 
     expect(chrome.saves()).toHaveLength(1);
     const patch = chrome.saves()[0];
-    for (const kept of ['keys', 'provider', 'languages', 'dictionary', 'siteRules', 'settingsVersion']) {
+    for (const kept of ['keys', 'provider', 'languages', 'dictionary', 'siteRules', 'keepHistory', 'settingsVersion']) {
       expect(Object.hasOwn(patch, kept), kept).toBe(false);
     }
     expect(patch.modes).toEqual(freshSettings().modes);
     expect(patch).toMatchObject({ activeMode: 'default', pillStyle: 'dot', sounds: false, alwaysCopy: false });
-    const { settingsVersion, keys, provider, languages, dictionary, siteRules, ...reset } = freshSettings();
+    const { settingsVersion, keys, provider, languages, dictionary, siteRules, keepHistory, ...reset } = freshSettings();
     expect(patch).toEqual(reset);
 
     expect(page.settings.keys).toEqual({ openai: 'sk-proj-abcdefgh1234', gemini: 'AQ.gemini-key-0001' });
@@ -290,6 +290,20 @@ describe('settings page reset (V21)', () => {
     expect($('hotkey').textContent).toBe(formatChord(freshSettings().hotkey));
     expect(row('select', 'custom_1')).toBeNull();
     expect($('toast').textContent).toBe('Settings reset');
+  });
+
+  it('Reset keeps keepHistory', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome(offDefaults());
+    const page = await start(chrome, 'settings/usage');
+    const button = $('reset');
+    button.click();
+    await vi.advanceTimersByTimeAsync(CONFIRM_GUARD_MS);
+    button.click();
+    await flush();
+    expect(Object.hasOwn(chrome.saves()[0], 'keepHistory')).toBe(false);
+    expect(page.settings.keepHistory).toBe(false);
+    expect($('reset-hint').textContent).toContain('the history choice');
   });
 
   it('reset shows the V21 prompt and hint', async () => {

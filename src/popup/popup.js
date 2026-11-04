@@ -1,7 +1,7 @@
 // VoiceType popup: a quick panel over the settings page. A trusted extension page: it reads the
 // full settings, saves only the field an edit changed (provider or activeMode) or the current
 // site's rule, and re-reads when stored settings change. Everything else lives on the settings
-// page, which it opens (V6).
+// page, which it opens (V6). Copy last copies the newest dictation (V29).
 import { MSG } from '../shared/messages.js';
 import { formatCost } from '../shared/pricing.js';
 import { fillModeSelect } from '../ui/form.js';
@@ -14,6 +14,7 @@ import { createSiteBlock } from './site-block.js';
 
 const LOAD_ERROR = 'Could not load settings. Close and reopen the popup.';
 const OPEN_ERROR = 'Could not open settings.';
+const COPY_ERROR = 'Could not copy.';
 
 /**
  * Wire the quick panel, load settings and today's usage, and save the provider, the active mode
@@ -29,10 +30,11 @@ export async function initPopup({ chrome, document, window }) {
     ready: $('status-ready'), addKey: $('add-key'), banner: $('banner'), bannerText: $('banner-text'),
     providerRadios: [...document.querySelectorAll('input[name="provider"]')],
     mode: $('active-mode'), todaySessions: $('today-sessions'), todayCost: $('today-cost'),
-    openSettings: $('open-settings'), toast: $('toast'),
+    copyLast: $('copy-last'), openSettings: $('open-settings'), toast: $('toast'),
   };
 
   let toastTimer;
+  let lastText = null;
 
   function toast(text, tone = 'info') {
     el.toast.textContent = text;
@@ -56,6 +58,15 @@ export async function initPopup({ chrome, document, window }) {
     fillModeSelect(el.mode, settings.modes);
     el.mode.value = settings.activeMode;
     block.render();
+    renderCopyLast();
+  }
+
+  // Off drops the text as well: the worker has cleared it, so it must not come back when on returns.
+  function renderCopyLast() {
+    const { keepHistory } = state.settings();
+    if (!keepHistory) lastText = null;
+    el.copyLast.hidden = !keepHistory;
+    el.copyLast.disabled = lastText === null;
   }
 
   for (const radio of el.providerRadios) {
@@ -83,12 +94,27 @@ export async function initPopup({ chrome, document, window }) {
   el.addKey.addEventListener('click', () => openRoute('settings/provider'));
   el.openSettings.addEventListener('click', () => openRoute(null));
 
+  el.copyLast.addEventListener('click', async () => {
+    try {
+      await window.navigator.clipboard.writeText(lastText);
+      toast('Copied to clipboard.', 'success');
+    } catch {
+      toast(COPY_ERROR, 'error');
+    }
+  });
+
   async function loadUsage() {
     const stats = await client.send({ action: MSG.GET_USAGE });
     const today = stats?.today;
     if (!today || typeof today !== 'object') return;
     el.todaySessions.textContent = String(today.sessions || 0);
     el.todayCost.textContent = formatCost(today.estimatedCost || 0);
+  }
+
+  async function loadLast() {
+    const reply = await client.send({ action: MSG.GET_HISTORY });
+    lastText = reply?.entries?.[0]?.text ?? null;
+    renderCopyLast();
   }
 
   // Load.
@@ -99,6 +125,7 @@ export async function initPopup({ chrome, document, window }) {
   }
   await block.start();
   await loadUsage();
+  await loadLast();
 
   return {
     get settings() { return state.settings(); },

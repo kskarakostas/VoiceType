@@ -116,6 +116,9 @@ describe('popup quick panel', () => {
     expect(order).toEqual(['status', 'Provider', 'Mode', 'This site', 'Today', 'open-settings']);
     expect($('open-settings').textContent.trim()).toBe('Open settings');
     expect($('banner').hidden).toBe(true);
+    expect($('copy-last').textContent.trim()).toBe('Copy last');
+    expect($('copy-last').compareDocumentPosition($('open-settings'))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect($('today-cost').compareDocumentPosition($('copy-last'))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect($('site-block').querySelector('h2').textContent.trim()).toBe('This site');
     expect($('site-block').textContent).not.toContain('coming in a later update');
   });
@@ -501,5 +504,87 @@ describe('popup This site block', () => {
     chrome.fire(SETTINGS_CHANGE, 'local');
     await flush();
     expect([...$('site-mode').options].map((o) => o.textContent)).toContain('📧 Mail');
+  });
+});
+
+describe('popup Copy last (V29)', () => {
+  const NEWER = { id: 'e2', raw: 'raw newer', text: 'newer text', mode: 'email', host: 'example.com', ts: 2 };
+  const OLDER = { id: 'e1', raw: 'older', text: 'older', mode: 'default', host: null, ts: 1 };
+
+  function stubClipboard(writeText = vi.fn(async () => {})) {
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText } });
+    return writeText;
+  }
+  afterEach(() => {
+    delete window.navigator.clipboard;
+  });
+
+  it('Copy last copies the newest text', async () => {
+    const writeText = stubClipboard();
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: [NEWER, OLDER] });
+    await start(chrome);
+    expect($('copy-last').hidden).toBe(false);
+    expect($('copy-last').disabled).toBe(false);
+    $('copy-last').click();
+    await flush();
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('newer text');
+    expect($('toast').textContent).toBe('Copied to clipboard.');
+    expect($('toast').dataset.tone).toBe('success');
+  });
+
+  it('Copy last is disabled with no entry', async () => {
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: [] });
+    await start(chrome);
+    expect($('copy-last').hidden).toBe(false);
+    expect($('copy-last').disabled).toBe(true);
+  });
+
+  it('Copy last is disabled when history cannot be read', async () => {
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, null);
+    await start(chrome);
+    expect($('copy-last').disabled).toBe(true);
+  });
+
+  it('Copy last is hidden with keepHistory off', async () => {
+    const stored = storedSettings();
+    stored.keepHistory = false;
+    await start(fakeChrome(stored));
+    expect($('copy-last').hidden).toBe(true);
+  });
+
+  it('going off in another page hides it and lets go of the text', async () => {
+    const writeText = stubClipboard();
+    const stored = storedSettings();
+    const chrome = fakeChrome(stored);
+    chrome.script(MSG.GET_HISTORY, { entries: [NEWER] });
+    await start(chrome);
+    stored.keepHistory = false;
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect($('copy-last').hidden).toBe(true);
+    stored.keepHistory = true;
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect($('copy-last').hidden).toBe(false);
+    expect($('copy-last').disabled).toBe(true);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('a rejected clipboard write shows a toast and throws nothing', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    stubClipboard(vi.fn(async () => { throw new Error('NotAllowedError'); }));
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: [NEWER] });
+    await start(chrome);
+    $('copy-last').click();
+    await flush();
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+    expect($('toast').textContent).toBe('Could not copy.');
+    expect($('toast').dataset.tone).toBe('error');
   });
 });

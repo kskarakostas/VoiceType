@@ -19,7 +19,7 @@ describe('settings page routes', () => {
 
   it('sidebar order matches the spec', () => {
     expect(ROUTES.map((r) => r.title)).toEqual([
-      'Home', 'Modes', 'Dictionary', 'Provider', 'Recording', 'Speech', 'Sites', 'Appearance', 'Sound and clipboard', 'Usage and data',
+      'Home', 'Modes', 'Dictionary', 'History', 'Provider', 'Recording', 'Speech', 'Sites', 'Appearance', 'Sound and clipboard', 'Usage and data',
     ]);
     expect(Object.isFrozen(ROUTES)).toBe(true);
   });

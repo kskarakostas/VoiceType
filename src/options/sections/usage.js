@@ -1,6 +1,7 @@
 // Settings, Usage and data: the usage table with Refresh and Clear history, and Reset to defaults.
 // Ported from the 2.2 popup unchanged in behaviour, except that Reset follows V21: it keeps the
-// keys, provider, spoken languages, dictionary and site rules, and resets every other field.
+// keys, provider, spoken languages, dictionary, site rules and keepHistory (V27), and resets every
+// other field.
 import { MSG } from '../../shared/messages.js';
 import { PROVIDERS } from '../../shared/models.js';
 import { formatCost } from '../../shared/pricing.js';
@@ -76,7 +77,7 @@ export function createUsageSection(ctx) {
       return ctx.commit((s) => {
         const kept = {
           keys: { ...s.keys }, provider: s.provider, languages: [...s.languages],
-          dictionary: structuredClone(s.dictionary), siteRules: structuredClone(s.siteRules),
+          dictionary: structuredClone(s.dictionary), siteRules: structuredClone(s.siteRules), keepHistory: s.keepHistory,
         };
         Object.assign(s, freshSettings(), kept);
       }, 'Settings reset');
