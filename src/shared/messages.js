@@ -21,6 +21,8 @@ export const MSG = Object.freeze({
   OFFSCREEN_DONE: 'offscreenDone',
   OFFSCREEN_ERROR: 'offscreenError',
   PERMISSION_RESULT: 'permissionResult',
+  SET_SITE_MODE: 'setSiteMode',
+  SET_SITE_RULE: 'setSiteRule',
 });
 
 /**
@@ -38,4 +40,7 @@ export const MSG = Object.freeze({
  * @typedef {{ level: number, captureId: string }} OffscreenLevel
  * @typedef {{ audioBase64: string, mimeType: string, durationSec: number, reason: 'user'|'maxTime'|'silence'|'ended', captureId: string }} OffscreenDone
  * @typedef {{ error: string, captureId: string }} OffscreenError
+ * The rule of the top-level page. Content scripts get this one rule, never `siteRules`.
+ * @typedef {{ hidePill: boolean, mode: string|null }} SiteState
+ * @typedef {import('./defaults.js').PublicSettings & { site: SiteState }} ContentSettings
  */

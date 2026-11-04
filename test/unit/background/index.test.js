@@ -102,6 +102,30 @@ describe('service worker entry', () => {
     expect(JSON.stringify(fake.chrome.tabs.sendMessage.mock.calls)).not.toContain('sk-live-LEAK');
   });
 
+  it('each tab gets its own site', async () => {
+    fake.chrome.tabs.query.mockResolvedValue([{ id: 1, url: 'https://a.com/' }, { id: 2 }]);
+    const settings = freshSettings();
+    settings.keys.openai = 'sk-secret-123456';
+    settings.siteRules = {
+      'a.com': { hidePill: true, mode: 'email' },
+      'b.com': { hidePill: false, mode: 'email' },
+    };
+    fake.listeners.storageChanged({ settings: { newValue: settings } }, 'local');
+    await flush();
+    const [[, first], [, second]] = fake.chrome.tabs.sendMessage.mock.calls;
+    expect(fake.chrome.tabs.query).toHaveBeenCalledTimes(1);
+    expect(first.settings.site).toEqual({ hidePill: true, mode: 'email' });
+    expect(second.settings.site).toEqual({ hidePill: false, mode: null });
+    for (const message of [first, second]) {
+      expect(message.action).toBe(MSG.SETTINGS_CHANGED);
+      expect(message.settings).not.toHaveProperty('siteRules');
+      expect(message.settings).not.toHaveProperty('keys');
+      expect(JSON.stringify(message)).not.toContain('b.com');
+      expect(JSON.stringify(message)).not.toContain('sk-secret');
+    }
+    expect(JSON.stringify(second)).not.toContain('a.com');
+  });
+
   it('ignores removed settings, usage writes and other areas', async () => {
     fake.listeners.storageChanged({ settings: { oldValue: freshSettings() } }, 'local');
     fake.listeners.storageChanged({ usageLog: { newValue: { version: 2 } } }, 'local');

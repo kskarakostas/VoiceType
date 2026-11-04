@@ -22,6 +22,8 @@ const CONTRACT = {
   OFFSCREEN_DONE: 'offscreenDone',
   OFFSCREEN_ERROR: 'offscreenError',
   PERMISSION_RESULT: 'permissionResult',
+  SET_SITE_MODE: 'setSiteMode',
+  SET_SITE_RULE: 'setSiteRule',
 };
 
 describe('MSG', () => {

@@ -2,6 +2,7 @@
 // may record, relays levels and results to the exact frame that asked, and frees the session on
 // every path so a closed tab or a lost frame never leaves the microphone on or the next start busy.
 import { MSG } from '../shared/messages.js';
+import { ruleFor } from '../shared/sites.js';
 
 const BUSY = 'VoiceType is busy in another tab. Try again in a moment.';
 const NO_KEY = 'Add an API key in the VoiceType popup.';
@@ -78,8 +79,12 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     }
   }
 
-  /** @returns {Promise<StartResponse>} */
-  async function begin(s) {
+  /**
+   * @param {NonNullable<typeof session>} s
+   * @param {string} [tabUrl]
+   * @returns {Promise<StartResponse>}
+   */
+  async function begin(s, tabUrl) {
     let settings;
     try {
       settings = await getSettings();
@@ -96,7 +101,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       session = null;
       return fail('noKey', NO_KEY);
     }
-    s.modeKey = settings.activeMode;
+    s.modeKey = ruleFor(settings, tabUrl).mode ?? settings.activeMode;
     s.minSec = settings.minRecordingTime;
 
     let reply = null;
@@ -139,9 +144,10 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   return {
     /**
      * @param {Endpoint} endpoint
+     * @param {string} [tabUrl] The top-level page; its site rule can fix the session's mode.
      * @returns {Promise<StartResponse>}
      */
-    async start(endpoint) {
+    async start(endpoint, tabUrl) {
       if (session) {
         if (!owns(endpoint) || session.state === 'processing') return fail('busy', BUSY);
         // The same frame asked again: recording already, or share the start in flight.
@@ -153,7 +159,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
         captureId: crypto.randomUUID(), stopRequested: false, starting: null,
       };
       session = s;
-      s.starting = begin(s);
+      s.starting = begin(s, tabUrl);
       return s.starting;
     },
 

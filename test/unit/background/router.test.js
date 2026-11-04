@@ -283,7 +283,7 @@ describe('recorder delegation', () => {
   it('recording actions go to the recorder with the sender frame as the endpoint', async () => {
     deps.recorder.start.mockResolvedValueOnce({ ok: false, reason: 'busy', error: 'VoiceType is busy in another tab. Try again in a moment.' });
     expect(await handle({ action: MSG.START_RECORDING }, CONTENT)).toEqual({ ok: false, reason: 'busy', error: 'VoiceType is busy in another tab. Try again in a moment.' });
-    expect(deps.recorder.start).toHaveBeenCalledWith({ tabId: 7, frameId: 3 });
+    expect(deps.recorder.start).toHaveBeenCalledWith({ tabId: 7, frameId: 3 }, undefined);
     expect(await handle({ action: MSG.STOP_RECORDING }, TOP_FRAME)).toEqual({ ok: true });
     expect(deps.recorder.stop).toHaveBeenCalledWith({ tabId: 7, frameId: 0 });
     expect(await handle({ action: MSG.CANCEL_RECORDING }, CONTENT)).toEqual({ ok: true });
@@ -305,6 +305,157 @@ describe('recorder delegation', () => {
     expect(deps.recorder.onPermissionResult).toHaveBeenLastCalledWith({ granted: true });
     await handle({ action: MSG.PERMISSION_RESULT, granted: 'yes' }, POPUP);
     expect(deps.recorder.onPermissionResult).toHaveBeenLastCalledWith({ granted: false });
+  });
+});
+
+describe('site rules', () => {
+  const ON_A = { kind: 'content', tab: { id: 7, url: 'https://www.a.com/x' } };
+  const ON_NEW_TAB = { kind: 'content', tab: { id: 7, url: 'chrome://newtab/' } };
+  const NO_URL = { kind: 'content', tab: { id: 7 } };
+  const INVALID = { success: false, error: 'Invalid settings.' };
+  const OK = { success: true };
+
+  beforeEach(() => {
+    stored.siteRules = {
+      'a.com': { hidePill: true, mode: 'email' },
+      'b.com': { hidePill: false, mode: 'custom_1' },
+    };
+  });
+
+  it('content GET_SETTINGS carries only its own site', async () => {
+    const reply = await handle({ action: MSG.GET_SETTINGS }, ON_A);
+    expect(reply.site).toEqual({ hidePill: true, mode: 'email' });
+    expect(JSON.stringify(reply)).not.toContain('b.com');
+    expect(JSON.stringify(reply)).not.toContain('siteRules');
+    expect(reply).not.toHaveProperty('keys');
+  });
+
+  it('a page with no rule gets the empty rule', async () => {
+    const reply = await handle({ action: MSG.GET_SETTINGS }, { kind: 'content', tab: { id: 7, url: 'https://c.com/' } });
+    expect(reply.site).toEqual({ hidePill: false, mode: null });
+    expect((await handle({ action: MSG.GET_SETTINGS }, NO_URL)).site).toEqual({ hidePill: false, mode: null });
+  });
+
+  it('a frame gets the rule of the top-level page', async () => {
+    const frame = { kind: 'content', url: 'https://frame.test/', tab: { id: 7, url: 'https://a.com/' } };
+    expect((await handle({ action: MSG.GET_SETTINGS }, frame)).site).toEqual({ hidePill: true, mode: 'email' });
+  });
+
+  it('the settings page gets no site field', async () => {
+    const reply = await handle({ action: MSG.GET_SETTINGS }, POPUP);
+    expect(reply).not.toHaveProperty('site');
+    expect(reply).toBe(stored);
+  });
+
+  it('SET_SITE_MODE updates the sender\'s rule, keeps hidePill, and ignores a host in the request', async () => {
+    const reply = await handle({ action: MSG.SET_SITE_MODE, mode: 'custom_1', host: 'b.com' }, ON_A);
+    expect(reply).toEqual(OK);
+    expect(stored.siteRules).toEqual({
+      'a.com': { hidePill: true, mode: 'custom_1' },
+      'b.com': { hidePill: false, mode: 'custom_1' },
+    });
+  });
+
+  it('SET_SITE_MODE creates a rule on a site without one', async () => {
+    const onC = { kind: 'content', tab: { id: 7, url: 'https://c.com/' } };
+    expect(await handle({ action: MSG.SET_SITE_MODE, mode: 'email' }, onC)).toEqual(OK);
+    expect(stored.siteRules['c.com']).toEqual({ hidePill: false, mode: 'email' });
+  });
+
+  it('a frame sets the mode of the top-level page', async () => {
+    const frame = { kind: 'content', url: 'https://b.com/', tab: { id: 7, url: 'https://a.com/' } };
+    expect(await handle({ action: MSG.SET_SITE_MODE, mode: 'custom_1' }, frame)).toEqual(OK);
+    expect(stored.siteRules).toEqual({
+      'a.com': { hidePill: true, mode: 'custom_1' },
+      'b.com': { hidePill: false, mode: 'custom_1' },
+    });
+  });
+
+  it('SET_SITE_MODE null clears the mode and deletes a rule that no longer hides', async () => {
+    const onB = { kind: 'content', tab: { id: 7, url: 'https://b.com/' } };
+    expect(await handle({ action: MSG.SET_SITE_MODE, mode: null }, onB)).toEqual(OK);
+    expect(stored.siteRules).toEqual({ 'a.com': { hidePill: true, mode: 'email' } });
+  });
+
+  it('SET_SITE_MODE null keeps a rule that hides the pill', async () => {
+    expect(await handle({ action: MSG.SET_SITE_MODE, mode: null }, ON_A)).toEqual(OK);
+    expect(stored.siteRules['a.com']).toEqual({ hidePill: true, mode: null });
+  });
+
+  it('SET_SITE_MODE refuses an unknown mode and writes nothing', async () => {
+    const before = stored;
+    for (const mode of ['nope', '__proto__', 'constructor', 5, undefined, true, ['email']]) {
+      expect(await handle({ action: MSG.SET_SITE_MODE, mode }, ON_A)).toEqual(INVALID);
+    }
+    expect(stored).toBe(before);
+  });
+
+  it('SET_SITE_MODE refuses a tab with no usable URL and writes nothing', async () => {
+    const before = stored;
+    const refused = { success: false, error: 'Not available on this page.' };
+    expect(await handle({ action: MSG.SET_SITE_MODE, mode: 'email' }, NO_URL)).toEqual(refused);
+    expect(await handle({ action: MSG.SET_SITE_MODE, mode: 'email', host: 'a.com' }, ON_NEW_TAB)).toEqual(refused);
+    expect(stored).toBe(before);
+  });
+
+  const accessRows = [
+    ['SET_SITE_MODE', 'extension', { action: MSG.SET_SITE_MODE, mode: 'email', host: 'b.com' }, POPUP],
+    ['SET_SITE_MODE', 'offscreen', { action: MSG.SET_SITE_MODE, mode: 'email', host: 'b.com' }, OFFSCREEN],
+    ['SET_SITE_MODE', 'unknown', { action: MSG.SET_SITE_MODE, mode: 'email', host: 'b.com' }, STRANGER],
+    ['SET_SITE_RULE', 'content', { action: MSG.SET_SITE_RULE, host: 'b.com', hidePill: true, mode: null }, ON_A],
+    ['SET_SITE_RULE', 'offscreen', { action: MSG.SET_SITE_RULE, host: 'b.com', hidePill: true, mode: null }, OFFSCREEN],
+    ['SET_SITE_RULE', 'unknown', { action: MSG.SET_SITE_RULE, host: 'b.com', hidePill: true, mode: null }, STRANGER],
+  ];
+  for (const [name, kind, request, sender] of accessRows) {
+    it(`${name} from ${kind} is not allowed`, async () => {
+      const before = stored;
+      expect(await handle(request, sender)).toEqual(NOT_ALLOWED);
+      expect(stored).toBe(before);
+    });
+  }
+
+  it('SET_SITE_RULE normalizes the host', async () => {
+    stored.siteRules = {};
+    expect(await handle({ action: MSG.SET_SITE_RULE, host: 'https://WWW.A.com/x', hidePill: true, mode: null }, POPUP)).toEqual(OK);
+    expect(stored.siteRules).toEqual({ 'a.com': { hidePill: true, mode: null } });
+  });
+
+  it('SET_SITE_RULE replaces the whole rule', async () => {
+    expect(await handle({ action: MSG.SET_SITE_RULE, host: 'a.com', hidePill: false, mode: 'custom_1' }, POPUP)).toEqual(OK);
+    expect(stored.siteRules['a.com']).toEqual({ hidePill: false, mode: 'custom_1' });
+  });
+
+  it('SET_SITE_RULE deletes an empty rule', async () => {
+    expect(await handle({ action: MSG.SET_SITE_RULE, host: 'a.com', hidePill: false, mode: null }, POPUP)).toEqual(OK);
+    expect(stored.siteRules).toEqual({ 'b.com': { hidePill: false, mode: 'custom_1' } });
+  });
+
+  it('SET_SITE_RULE refuses a bad host, hidePill or mode and writes nothing', async () => {
+    const before = stored;
+    const rows = [
+      { host: 'mailto:a@b.com', hidePill: true, mode: null },
+      { host: 5, hidePill: true, mode: null },
+      { hidePill: true, mode: null },
+      { host: 'a.com', hidePill: 'yes', mode: null },
+      { host: 'a.com', mode: null },
+      { host: 'a.com', hidePill: true, mode: 'nope' },
+      { host: 'a.com', hidePill: true, mode: '__proto__' },
+      { host: 'a.com', hidePill: true },
+    ];
+    for (const row of rows) expect(await handle({ action: MSG.SET_SITE_RULE, ...row }, POPUP)).toEqual(INVALID);
+    expect(stored).toBe(before);
+  });
+
+  it('an old payload cannot write rules through UPDATE_SETTINGS', async () => {
+    const before = stored;
+    expect(await handle({ action: MSG.UPDATE_SETTINGS, patch: { siteRules: {} } }, ON_A)).toEqual(INVALID);
+    expect(stored).toBe(before);
+  });
+
+  it('START_RECORDING passes the tab URL to the recorder', async () => {
+    const frame = { kind: 'content', url: 'https://frame.test/', tab: { id: 7, url: 'https://a.com/x' }, frameId: 3 };
+    await handle({ action: MSG.START_RECORDING }, frame);
+    expect(deps.recorder.start).toHaveBeenCalledWith({ tabId: 7, frameId: 3 }, 'https://a.com/x');
   });
 });
 

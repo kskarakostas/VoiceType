@@ -56,6 +56,44 @@ describe('start', () => {
     expect(recorder.session).toEqual({ endpoint: A, state: 'recording', modeKey: 'email', minSec: 1 });
   });
 
+  describe('site mode', () => {
+    const rule = (over) => ({ activeMode: 'default', siteRules: { 'a.com': { hidePill: false, mode: 'email', ...over } } });
+
+    it('a site rule\'s mode fixes the session mode', async () => {
+      const { recorder } = setup({ settings: rule() });
+      await recorder.start(A, 'https://a.com/');
+      expect(recorder.session.modeKey).toBe('email');
+    });
+
+    it('a hide-only rule leaves the active mode', async () => {
+      const { recorder } = setup({ settings: rule({ hidePill: true, mode: null }) });
+      await recorder.start(A, 'https://a.com/');
+      expect(recorder.session.modeKey).toBe('default');
+    });
+
+    it('a stale site mode falls back to the active mode', async () => {
+      const { recorder } = setup({ settings: rule({ mode: 'gone' }) });
+      await recorder.start(A, 'https://a.com/');
+      expect(recorder.session.modeKey).toBe('default');
+    });
+
+    it('no URL uses the active mode', async () => {
+      const { recorder } = setup({ settings: rule() });
+      await recorder.start(A);
+      expect(recorder.session.modeKey).toBe('default');
+    });
+
+    it('the mode stays fixed when the rule changes during the recording', async () => {
+      const { deps, recorder, settings, id } = setup({ settings: rule() });
+      await recorder.start(A, 'https://a.com/');
+      settings.siteRules = { 'a.com': { hidePill: false, mode: 'default' } };
+      settings.activeMode = 'translate';
+      await recorder.stop(A);
+      await recorder.onDone(done({ captureId: id() }));
+      expect(deps.dictate).toHaveBeenCalledWith(expect.objectContaining({ modeKey: 'email' }));
+    });
+  });
+
   it('gives every session its own capture id', async () => {
     const { recorder, ids } = setup();
     await recorder.start(A);

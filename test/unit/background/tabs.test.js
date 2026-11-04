@@ -4,15 +4,28 @@ import { broadcast, sendToFrame, reinject, REINJECT_URLS } from '../../../src/ba
 const NO_RECEIVER = 'Could not establish connection. Receiving end does not exist.';
 
 describe('broadcast', () => {
-  it('sends the message to every tab with an id, all frames', async () => {
+  it('sends each tab the message built for it, all frames', async () => {
     const tabsApi = {
-      query: vi.fn(async () => [{ id: 1 }, { id: 2 }, {}]),
+      query: vi.fn(async () => [{ id: 1, url: 'https://a.com/' }, { id: 2 }]),
       sendMessage: vi.fn(async () => undefined),
     };
-    const message = { action: 'settingsChanged', settings: { provider: 'openai' } };
-    await broadcast(tabsApi, message);
+    const messageFor = vi.fn((tab) => ({ action: 'settingsChanged', url: tab.url }));
+    await broadcast(tabsApi, messageFor);
+    expect(tabsApi.query).toHaveBeenCalledTimes(1);
     expect(tabsApi.query).toHaveBeenCalledWith({});
-    expect(tabsApi.sendMessage.mock.calls).toEqual([[1, message], [2, message]]);
+    expect(messageFor).toHaveBeenCalledTimes(2);
+    expect(tabsApi.sendMessage.mock.calls).toEqual([
+      [1, { action: 'settingsChanged', url: 'https://a.com/' }],
+      [2, { action: 'settingsChanged', url: undefined }],
+    ]);
+  });
+
+  it('skips a tab without an id', async () => {
+    const tabsApi = { query: vi.fn(async () => [{ url: 'https://a.com/' }, { id: 2 }]), sendMessage: vi.fn(async () => undefined) };
+    const messageFor = vi.fn(() => ({ action: 'x' }));
+    await broadcast(tabsApi, messageFor);
+    expect(messageFor).toHaveBeenCalledTimes(1);
+    expect(tabsApi.sendMessage.mock.calls).toEqual([[2, { action: 'x' }]]);
   });
 
   it('a tab without a receiver does not stop the others', async () => {
@@ -20,13 +33,15 @@ describe('broadcast', () => {
       query: vi.fn(async () => [{ id: 1 }, { id: 2 }]),
       sendMessage: vi.fn(async (id) => { if (id === 1) throw new Error(NO_RECEIVER); }),
     };
-    await expect(broadcast(tabsApi, { action: 'x' })).resolves.toBeUndefined();
+    await expect(broadcast(tabsApi, () => ({ action: 'x' }))).resolves.toBeUndefined();
     expect(tabsApi.sendMessage).toHaveBeenCalledTimes(2);
   });
 
   it('resolves when the tab query fails', async () => {
     const tabsApi = { query: vi.fn(async () => { throw new Error('no'); }), sendMessage: vi.fn() };
-    await expect(broadcast(tabsApi, { action: 'x' })).resolves.toBeUndefined();
+    const messageFor = vi.fn();
+    await expect(broadcast(tabsApi, messageFor)).resolves.toBeUndefined();
+    expect(messageFor).not.toHaveBeenCalled();
     expect(tabsApi.sendMessage).not.toHaveBeenCalled();
   });
 });

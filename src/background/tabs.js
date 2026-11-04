@@ -7,20 +7,21 @@ export const REINJECT_URLS = Object.freeze(['http://*/*', 'https://*/*', 'file:/
 const NO_RECEIVER = /Receiving end does not exist|No tab with id/i;
 
 /**
- * Send a message to every frame of every tab. Tabs without a receiver are skipped; never rejects.
- * @param {{ query: (info: object) => Promise<Array<{ id?: number }>>, sendMessage: (tabId: number, message: unknown) => Promise<unknown> }} tabsApi
- * @param {unknown} message
+ * Send every frame of every tab the message built for that tab. Tabs without a receiver are
+ * skipped; never rejects.
+ * @param {{ query: (info: object) => Promise<Array<{ id?: number, url?: string }>>, sendMessage: (tabId: number, message: unknown) => Promise<unknown> }} tabsApi
+ * @param {(tab: { id?: number, url?: string }) => unknown} messageFor
  * @returns {Promise<void>}
  */
-export async function broadcast(tabsApi, message) {
+export async function broadcast(tabsApi, messageFor) {
   let tabs;
   try {
     tabs = await tabsApi.query({});
   } catch {
     return;
   }
-  const ids = tabs.map((tab) => tab.id).filter((id) => typeof id === 'number');
-  await Promise.all(ids.map((id) => tabsApi.sendMessage(id, message).catch(() => {})));
+  const targets = tabs.filter((tab) => typeof tab.id === 'number');
+  await Promise.all(targets.map((tab) => tabsApi.sendMessage(tab.id, messageFor(tab)).catch(() => {})));
 }
 
 /**

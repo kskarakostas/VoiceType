@@ -1,6 +1,7 @@
 import { MSG } from '../shared/messages.js';
 import { applySettingsPatch, migrateSettings, toPublicSettings, DEFAULT_SETTINGS, SETTINGS_VERSION } from '../shared/defaults.js';
 import { PROVIDERS } from '../shared/models.js';
+import { ruleFor, siteKey, withSiteRule } from '../shared/sites.js';
 import { emptyLog } from './usage.js';
 import { ProviderError, redact } from './providers/errors.js';
 
@@ -8,7 +9,7 @@ import { ProviderError, redact } from './providers/errors.js';
  * @typedef {'offscreen'|'extension'|'content'|'unknown'} SenderKind
  * @typedef {{ tabId: number, frameId: number }} Endpoint
  * @typedef {{
- *   start: (endpoint: Endpoint) => Promise<import('../shared/messages.js').StartResponse>,
+ *   start: (endpoint: Endpoint, tabUrl?: string) => Promise<import('../shared/messages.js').StartResponse>,
  *   stop: (endpoint: Endpoint) => Promise<{ ok: boolean }>,
  *   cancel: (endpoint: Endpoint) => Promise<{ ok: boolean }>,
  *   onLevel: (level: number, captureId: string) => void,
@@ -91,6 +92,8 @@ const ACCESS = new Map([
   [MSG.OFFSCREEN_DONE, ['offscreen']],
   [MSG.OFFSCREEN_ERROR, ['offscreen']],
   [MSG.PERMISSION_RESULT, ['extension']],
+  [MSG.SET_SITE_MODE, ['content']],
+  [MSG.SET_SITE_RULE, ['extension']],
 ]);
 
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
@@ -119,6 +122,26 @@ function endpointOf(sender) {
 }
 
 /**
+ * Set one site's rule. Runs inside the settings queue, so `mode` is checked against the stored modes.
+ * @param {ReturnType<import('./storage.js').createStorage>} storage
+ * @param {string} host A site key.
+ * @param {unknown} mode Null or an own key of `modes`; `withSiteRule` must never see anything else.
+ * @param {(current: import('../shared/defaults.js').Settings) => boolean} hidePillOf
+ * @returns {Promise<{ success: true } | { success: false, error: string }>}
+ */
+async function saveSiteRule(storage, host, mode, hidePillOf) {
+  let error = null;
+  await storage.updateSettings((current) => {
+    if (mode !== null && (typeof mode !== 'string' || !Object.hasOwn(current.modes, mode))) {
+      error = 'Invalid settings.';
+      return null;
+    }
+    return { ...current, siteRules: withSiteRule(current.siteRules, host, { hidePill: hidePillOf(current), mode }) };
+  });
+  return error === null ? { success: true } : { success: false, error };
+}
+
+/**
  * @param {{
  *   storage: ReturnType<import('./storage.js').createStorage>,
  *   validateKey: (provider: string, key: string) => Promise<boolean>,
@@ -139,7 +162,7 @@ export function createRouter({ storage, validateKey, summarize, recorder, identi
     switch (action) {
       case MSG.GET_SETTINGS: {
         const settings = await storage.getSettings();
-        return kind === 'extension' ? settings : toPublicSettings(settings);
+        return kind === 'extension' ? settings : { ...toPublicSettings(settings), site: ruleFor(settings, sender.tab?.url) };
       }
 
       case MSG.SAVE_SETTINGS: {
@@ -166,6 +189,19 @@ export function createRouter({ storage, validateKey, summarize, recorder, identi
         return error === null ? { success: true } : { success: false, error };
       }
 
+      case MSG.SET_SITE_MODE: {
+        const url = sender.tab?.url;
+        const host = siteKey(url);
+        if (host === null) return { success: false, error: 'Not available on this page.' };
+        return saveSiteRule(storage, host, request.mode, (current) => ruleFor(current, url).hidePill);
+      }
+
+      case MSG.SET_SITE_RULE: {
+        const host = siteKey(request.host);
+        if (host === null || typeof request.hidePill !== 'boolean') return { success: false, error: 'Invalid settings.' };
+        return saveSiteRule(storage, host, request.mode, () => request.hidePill);
+      }
+
       case MSG.VALIDATE_KEY:
         try {
           await validateKey(request.provider, request.key);
@@ -183,7 +219,7 @@ export function createRouter({ storage, validateKey, summarize, recorder, identi
         return { success: true };
 
       case MSG.START_RECORDING:
-        return recorder.start(endpointOf(sender));
+        return recorder.start(endpointOf(sender), sender.tab?.url);
 
       case MSG.STOP_RECORDING:
         return recorder.stop(endpointOf(sender));

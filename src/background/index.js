@@ -1,6 +1,7 @@
 // VoiceType service worker. Listeners and wiring only; logic lives in the imported modules.
 import { MSG } from '../shared/messages.js';
 import { migrateSettings, toPublicSettings } from '../shared/defaults.js';
+import { ruleFor } from '../shared/sites.js';
 import { createStorage } from './storage.js';
 import { createRouter, createValidateKey, senderKind, userMessage } from './router.js';
 import { runDictation, ADAPTERS } from './pipeline.js';
@@ -51,11 +52,14 @@ chrome.runtime.onStartup.addListener(() => { storage.getSettings().catch(() => {
 
 chrome.tabs.onRemoved.addListener((tabId) => { recorder.onTabRemoved(tabId); });
 
-// Content scripts cannot read storage any more, so push key-free settings to every frame.
+// Content scripts cannot read storage any more, so push key-free settings to every frame, each
+// tab with the rule of its own site only.
 chrome.storage.onChanged.addListener((changes, areaName) => {
   const next = changes.settings?.newValue;
   if (areaName !== 'local' || !next || typeof next !== 'object') return;
-  broadcast(chrome.tabs, { action: MSG.SETTINGS_CHANGED, settings: toPublicSettings(migrateSettings(next)) });
+  const migrated = migrateSettings(next);
+  const pub = toPublicSettings(migrated);
+  broadcast(chrome.tabs, (tab) => ({ action: MSG.SETTINGS_CHANGED, settings: { ...pub, site: ruleFor(migrated, tab.url) } }));
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
