@@ -75,6 +75,8 @@ export function createController(deps) {
   let statusBusy = false;
   /** The status showing is sticky and clickable: a click on it is the way to a paid transcript. */
   let copyPending = false;
+  /** A press could not copy the pending result: it has been offered twice, so the next press records. */
+  let pressCopyFailed = false;
   let statusTimer = null;
   let focusTimer = null;
   let watchdog = null;
@@ -184,6 +186,7 @@ export function createController(deps) {
     deps.clearTimeout(statusTimer);
     statusTimer = null;
     statusBusy = false;
+    copyPending = false;
     pill.clearStatus();
   }
 
@@ -246,16 +249,18 @@ export function createController(deps) {
     // when this frame has the focus and no password field is focused.
     if (held) return deliverHeld();
     // So does REC on a pending click-to-copy: both are user gestures, and the next result would
-    // overwrite the transcript.
-    if (copyPending) {
+    // overwrite the transcript. Only once: a copy that cannot work must not block recording for good.
+    if (copyPending && !pressCopyFailed) {
       pressStarted = false;
-      return copyLast();
+      pressCopyFailed = !(await copyLast());
+      return;
     }
     const active = deepActiveElement();
     const refusal = startRefusal(active);
     if (refusal) {
       pressStarted = false;
-      notify(refusal, { tone: 'info' });
+      // A pending click-to-copy status is kept: replacing it would strand the transcript.
+      if (!copyPending) notify(refusal, { tone: 'info' });
       return;
     }
     target = isValidInput(active) ? active : null;
@@ -384,6 +389,7 @@ export function createController(deps) {
     stopQueued = false;
     pressStarted = false;
     held = null;
+    pressCopyFailed = false;
     if (state === 'processing') state = 'idle';
     if (!message.success) {
       pill.setState('error');
@@ -503,18 +509,23 @@ export function createController(deps) {
     }
   }
 
-  /** Click-to-copy: the click is a user gesture, so the clipboard write is allowed now. */
+  /**
+   * Click-to-copy: the click is a user gesture, so the clipboard write is allowed now.
+   * @returns {Promise<boolean>} the text was copied
+   */
   async function copyLast() {
-    if (inactive() || !lastResult) return;
+    if (inactive() || !lastResult) return false;
     held = null;
     const copied = await copyText(lastResult.text);
-    if (inactive()) return;
+    if (inactive()) return false;
     if (copied) {
+      pressCopyFailed = false;
       pill.setState('idle');
       notify('Copied to clipboard.', { tone: 'success' });
     } else {
       notify('Copy failed. Click here to try again.', { tone: 'error', sticky: true, clickable: true });
     }
+    return copied;
   }
 
   /**
