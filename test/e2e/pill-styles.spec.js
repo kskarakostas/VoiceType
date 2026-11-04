@@ -299,6 +299,31 @@ for (const [name, url] of FRAMES) {
   });
 }
 
+for (const [name, url] of FRAMES) {
+  test(`a held status stays by the field on a switch to Minimal, and copies, ${name} frame`, async () => {
+    await seedStyle('dot');
+    const page = await openPage();
+    const frame = await frameAt(page, url);
+    await focusField(frame, frame.locator('#frame-ta'));
+    await dictateWithHotkey(page, frame);
+    await page.locator('#ta').click();
+    await expect.poll(() => pillStatus(frame), { message: 'held status' }).toBe(HOLD);
+    await page.waitForTimeout(NO_PILL_MS);
+    const before = await pillQuery(frame, STATUS);
+
+    await seedStyle('minimal');
+
+    await expect.poll(() => widthOf(frame, '.body'), { timeout: PILL_SYNC_MS }).toBe(0);
+    const status = await pillQuery(frame, STATUS);
+    expect({ x: status.x, y: status.y }).toEqual({ x: before.x, y: before.y });
+
+    await page.mouse.click(status.x, status.y);
+
+    await expect.poll(() => pillStatus(frame)).toBe('Copied to clipboard.');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(TRANSCRIPT);
+  });
+}
+
 test('Minimal: the menu is unreachable', async () => {
   await seedStyle('minimal');
   const page = await openPage();
