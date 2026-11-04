@@ -840,6 +840,13 @@ describe('styles', () => {
     expect(CSS_TEXT).toMatch(/\.vt\[data-style='minimal'\] \.mini:is\(\[data-state='recording'\], \[data-state='processing'\]\) \{\s*display: flex;/);
   });
 
+  it('the indicator follows the status, so it paints over one in a short frame', () => {
+    const { pill } = makePill();
+    pill.mount();
+    const children = [...vt(pill).children];
+    expect(children.indexOf(mini(pill))).toBeGreaterThan(children.indexOf(statusEl(pill)));
+  });
+
   it('MINI_SIZE matches .mini in pill.css', () => {
     const rule = CSS_TEXT.match(/^\.mini \{[^}]*\}/m)[0];
     expect(MINI_SIZE).toEqual({ width: 92, height: 28 });

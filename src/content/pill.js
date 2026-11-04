@@ -550,7 +550,7 @@ export class Pill {
     const miniTime = el('span', 'mini-time', { 'aria-hidden': 'true' });
     mini.append(levels, this.#icon('dots', 'mini-dots'), miniTime);
 
-    wrap.append(pill, mini, status, menu);
+    wrap.append(pill, status, mini, menu);
 
     rec.addEventListener('click', () => this.#handlers.onRec());
     mode.addEventListener('click', () => this.#toggleMenu());
