@@ -70,10 +70,14 @@ export async function validateKey({ key, signal }) {
   return true;
 }
 
-/** Concatenate text parts of the first candidate, skipping thought parts. */
+/**
+ * Concatenate the text of the first candidate, skipping thought parts. A transcription model
+ * answers with `{ audioTranscription: { text } }` parts, a text model with `{ text }` parts.
+ */
 export function joinParts(data) {
   const parts = data?.candidates?.[0]?.content?.parts || [];
-  return parts.filter((p) => typeof p?.text === 'string' && !p.thought).map((p) => p.text).join('');
+  return parts.filter((p) => !p?.thought).map((p) => p?.text ?? p?.audioTranscription?.text)
+    .filter((text) => typeof text === 'string').join('');
 }
 
 /**

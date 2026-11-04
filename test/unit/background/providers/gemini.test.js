@@ -11,6 +11,18 @@ beforeEach(() => { fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock); });
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('transcribe', () => {
+  it('reads the transcript from the shape gemini-3.5-transcribe answers with', async () => {
+    // Recorded from the live API on 2026-11-04, with the transcript shortened.
+    fetchMock.mockResolvedValue(jsonResponse({
+      candidates: [{ content: { parts: [{ audioTranscription: { text: ' Hi Maria, can we move the meeting? ' } }], role: 'model' }, finishReason: 'STOP', index: 0 }],
+      usageMetadata: { promptTokenCount: 227, candidatesTokenCount: 27, totalTokenCount: 254, promptTokensDetails: [{ modality: 'AUDIO', tokenCount: 227 }], serviceTier: 'standard' },
+      modelVersion: 'gemini-3.5-transcribe',
+    }));
+    const result = await transcribe({ audioBase64: AUDIO, key: 'AQ.secret' });
+    expect(result.text).toBe('Hi Maria, can we move the meeting?');
+    expect(result.usage).toEqual({ kind: 'tokens', audioTokens: 227, textTokens: 0, outputTokens: 27 });
+  });
+
   it('posts inline audio with SMART mode, header auth and no key in the URL', async () => {
     fetchMock.mockResolvedValue(jsonResponse({
       candidates: [{ content: { parts: [{ text: 'Καλημέρα ' }, { text: 'κόσμε' }] } }],
@@ -143,6 +155,19 @@ describe('validateKey', () => {
 describe('helpers', () => {
   it('joinParts tolerates missing candidates', () => {
     expect(joinParts({})).toBe('');
+  });
+  it('joinParts reads a transcript part, skips thoughts and ignores unusable parts', () => {
+    const parts = [
+      { audioTranscription: { text: 'one ' } },
+      { audioTranscription: { text: 'hidden ' }, thought: true },
+      { text: 'hidden too ', thought: true },
+      { text: 'two' },
+      { audioTranscription: {} },
+      { audioTranscription: { text: 5 } },
+      { text: 5 },
+      null,
+    ];
+    expect(joinParts({ candidates: [{ content: { parts } }] })).toBe('one two');
   });
   it('normalizeSttUsage handles missing details', () => {
     expect(normalizeSttUsage(undefined)).toBeNull();
