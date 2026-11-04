@@ -2,6 +2,8 @@
 // service worker, which relays them to the recording tab.
 import { MSG } from '../shared/messages.js';
 import { createCapture } from './capture.js';
+import { createCuePlayer } from './cues.js';
+import { copyToClipboard } from './clipboard.js';
 
 const FFT_SIZE = 2048;
 const RESUME_TIMEOUT_MS = 1000;
@@ -71,6 +73,8 @@ const capture = createCapture({
   clearTimeout: (id) => clearTimeout(id),
 });
 
+const cues = createCuePlayer({ createContext: () => new AudioContext() });
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Content scripts broadcast to every extension context; only the service worker drives capture.
   if (sender.tab) return false;
@@ -81,6 +85,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.action === MSG.OFFSCREEN_STOP) {
     capture.stop({ discard: message.discard === true, captureId: message.captureId }).then(sendResponse);
     return true;
+  }
+  if (message?.action === MSG.OFFSCREEN_CUE) {
+    cues.play(message.cue).then(sendResponse);
+    return true;
+  }
+  if (message?.action === MSG.OFFSCREEN_COPY) {
+    sendResponse({ ok: copyToClipboard(message.text, document) });
+    return false;
   }
   return false;
 });

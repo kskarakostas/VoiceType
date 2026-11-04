@@ -1,4 +1,4 @@
-const JUSTIFICATION = 'Record dictation audio from the microphone.';
+const JUSTIFICATION = 'Record dictation audio, and play cues and copy results when those settings are on.';
 
 /**
  * The one offscreen document that records audio. Chrome allows a single offscreen document per
@@ -20,7 +20,7 @@ export function createOffscreenClient({ runtime, offscreen, path = 'offscreen.ht
     if (contexts.length > 0) return;
     if (!creating) {
       creating = offscreen
-        .createDocument({ url: runtime.getURL(path), reasons: ['USER_MEDIA'], justification: JUSTIFICATION })
+        .createDocument({ url: runtime.getURL(path), reasons: ['USER_MEDIA', 'CLIPBOARD'], justification: JUSTIFICATION })
         .catch((err) => {
           if (!/single offscreen document/i.test(String(err?.message ?? err))) throw err;
         })

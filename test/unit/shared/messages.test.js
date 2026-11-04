@@ -24,6 +24,8 @@ const CONTRACT = {
   PERMISSION_RESULT: 'permissionResult',
   SET_SITE_MODE: 'setSiteMode',
   SET_SITE_RULE: 'setSiteRule',
+  OFFSCREEN_CUE: 'offscreenCue',
+  OFFSCREEN_COPY: 'offscreenCopy',
 };
 
 describe('MSG', () => {

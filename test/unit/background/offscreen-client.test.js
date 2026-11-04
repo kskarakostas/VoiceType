@@ -18,15 +18,21 @@ function fakes({ contexts = [] } = {}) {
 }
 
 describe('createOffscreenClient', () => {
-  it('creates the USER_MEDIA document from the full extension URL', async () => {
+  it('creates the recording document from the full extension URL', async () => {
     const { runtime, offscreen, client } = fakes();
     await client.ensure();
     expect(runtime.getContexts).toHaveBeenCalledWith({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
     expect(offscreen.createDocument).toHaveBeenCalledWith({
       url: 'chrome-extension://abc/offscreen.html',
-      reasons: ['USER_MEDIA'],
-      justification: 'Record dictation audio from the microphone.',
+      reasons: ['USER_MEDIA', 'CLIPBOARD'],
+      justification: 'Record dictation audio, and play cues and copy results when those settings are on.',
     });
+  });
+
+  it('never asks for AUDIO_PLAYBACK: that reason closes a document after 30 s of silence', async () => {
+    const { offscreen, client } = fakes();
+    await client.ensure();
+    expect(offscreen.createDocument.mock.calls[0][0].reasons).not.toContain('AUDIO_PLAYBACK');
   });
 
   it('skips creation when an offscreen document already exists', async () => {

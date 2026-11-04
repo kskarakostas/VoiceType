@@ -161,7 +161,7 @@ describe('recording wiring', () => {
   it('starts a recording through the offscreen document and relays levels to the frame', async () => {
     expect(await send(fake.listeners, { action: MSG.START_RECORDING }, PAGE)).toEqual({ ok: true });
     expect(fake.chrome.offscreen.createDocument).toHaveBeenCalledWith(expect.objectContaining({
-      url: 'chrome-extension://abc/offscreen.html', reasons: ['USER_MEDIA'],
+      url: 'chrome-extension://abc/offscreen.html', reasons: ['USER_MEDIA', 'CLIPBOARD'],
     }));
     expect(fake.chrome.runtime.sendMessage).toHaveBeenCalledWith({ action: MSG.OFFSCREEN_START, maxSec: 120, silenceSec: 0, captureId: expect.any(String) });
     expect(JSON.stringify(fake.chrome.runtime.sendMessage.mock.calls)).not.toContain('sk-secret');

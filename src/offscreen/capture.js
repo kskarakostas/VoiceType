@@ -98,7 +98,7 @@ export function createCapture(deps) {
       if (cancelStart) {
         stopTracks(stream);
         await closeAnalyser(analyser);
-        return failure('micError', 'Recording cancelled.');
+        return { ...failure('micError', 'Recording cancelled.'), cancelled: true };
       }
       begin(stream, analyser, { maxSec, silenceSec, captureId });
       return { ok: true };

@@ -169,7 +169,7 @@ describe('start failures', () => {
     const starting = h.capture.start(OPTS);
     await h.capture.stop({ discard: true, captureId: 'c1' });
     gum.resolve(h.stream);
-    await expect(starting).resolves.toEqual({ ok: false, reason: 'micError', error: 'Recording cancelled.' });
+    await expect(starting).resolves.toEqual({ ok: false, reason: 'micError', error: 'Recording cancelled.', cancelled: true });
     expect(h.stream.track.stop).toHaveBeenCalledTimes(1);
     expect(h.capture.active).toBe(false);
 
@@ -190,7 +190,7 @@ describe('start failures', () => {
     expect(h.capture.active).toBe(true);
     await expect(h.capture.stop({ discard: true, captureId: 'c1' })).resolves.toEqual({ ok: true });
     gum.resolve(h.stream);
-    await expect(starting).resolves.toEqual({ ok: false, reason: 'micError', error: 'Recording cancelled.' });
+    await expect(starting).resolves.toEqual({ ok: false, reason: 'micError', error: 'Recording cancelled.', cancelled: true });
     expect(h.deps.createMediaRecorder).not.toHaveBeenCalled();
     expect(h.stream.track.stop).toHaveBeenCalledTimes(1);
     expect(h.sent).toEqual([]);

@@ -23,6 +23,8 @@ export const MSG = Object.freeze({
   PERMISSION_RESULT: 'permissionResult',
   SET_SITE_MODE: 'setSiteMode',
   SET_SITE_RULE: 'setSiteRule',
+  OFFSCREEN_CUE: 'offscreenCue',
+  OFFSCREEN_COPY: 'offscreenCopy',
 });
 
 /**
@@ -30,9 +32,11 @@ export const MSG = Object.freeze({
  * @typedef {{ ok: true } | { ok: false, reason: StartFailure, error: string }} StartResponse
  * @typedef {{ text: string, tone: 'info'|'success'|'warning'|'error' }} Notice
  * @typedef {{ state: 'idle'|'processing', reason?: 'maxTime'|'silence'|'ended'|'error'|'permission', notice?: Notice }} RecordingStatePayload
- * @typedef {{ success: true, text: string, raw: string, cost: number, warning: string|null }
+ * @typedef {{ success: true, text: string, raw: string, cost: number, warning: string|null, copied: boolean|null }
  *   | { success: false, error: string, tone: 'warning'|'error' }} DictationMessage
- * @typedef {{ ok: true } | { ok: false, reason: 'needsPermission'|'denied'|'micError', error: string }} OffscreenStartResponse
+ * `copied` is null when always-copy is off.
+ * @typedef {{ ok: true } | { ok: false, reason: 'needsPermission'|'denied', error: string }
+ *   | { ok: false, reason: 'micError', error: string, cancelled?: true }} OffscreenStartResponse
  * Offscreen messages carry the service worker's id for one capture: a stop names the capture it
  * stops, and every report names the capture it came from, so a late report never reaches a newer session.
  * @typedef {{ maxSec: number, silenceSec: number, captureId: string }} OffscreenStart
@@ -40,6 +44,10 @@ export const MSG = Object.freeze({
  * @typedef {{ level: number, captureId: string }} OffscreenLevel
  * @typedef {{ audioBase64: string, mimeType: string, durationSec: number, reason: 'user'|'maxTime'|'silence'|'ended', captureId: string }} OffscreenDone
  * @typedef {{ error: string, captureId: string }} OffscreenError
+ * @typedef {'start'|'stop'|'done'|'error'} CueName
+ * Both answer { ok: boolean }.
+ * @typedef {{ cue: CueName }} OffscreenCue
+ * @typedef {{ text: string }} OffscreenCopy
  * The rule of the top-level page. Content scripts get this one rule, never `siteRules`.
  * @typedef {{ hidePill: boolean, mode: string|null }} SiteState
  * @typedef {import('./defaults.js').PublicSettings & { site: SiteState }} ContentSettings
