@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { SPOKEN_LANGUAGES } from '../../../src/shared/dictionary.js';
-import { toggleLanguage, createInlineConfirm } from '../../../src/ui/form.js';
+import { toggleLanguage, createInlineConfirm, fillModeSelect } from '../../../src/ui/form.js';
 
 afterEach(() => { vi.useRealTimers(); });
 
@@ -133,5 +133,59 @@ describe('createInlineConfirm', () => {
     button.click();
     expect(onConfirm).not.toHaveBeenCalled();
     expect(button.textContent).toBe('Click again to confirm');
+  });
+});
+
+describe('fillModeSelect', () => {
+  const MODES = {
+    custom_1: { name: 'Standup', icon: '', prompt: 'Bullets.', builtIn: false },
+    email: { name: 'Email', icon: '📧', prompt: 'x', builtIn: true },
+    default: { name: 'Default', icon: '🎤', prompt: 'x', builtIn: true },
+  };
+
+  function select() {
+    document.body.innerHTML = '<select id="s"></select>';
+    return document.getElementById('s');
+  }
+  const rows = (el) => [...el.options].map((o) => [o.value, o.textContent]);
+
+  it('lists the modes in display order with their icons', () => {
+    const el = select();
+    fillModeSelect(el, MODES);
+    expect(rows(el)).toEqual([['default', '🎤 Default'], ['email', '📧 Email'], ['custom_1', '🎯 Standup']]);
+  });
+
+  it('puts Use active mode first on request', () => {
+    const el = select();
+    fillModeSelect(el, MODES, { useActive: true });
+    expect(rows(el)[0]).toEqual(['', 'Use active mode']);
+    expect(rows(el).slice(1).map(([value]) => value)).toEqual(['default', 'email', 'custom_1']);
+  });
+
+  it('keeps the options and the selection when nothing changed', () => {
+    const el = select();
+    fillModeSelect(el, MODES, { useActive: true });
+    el.value = 'email';
+    const [first] = el.options;
+    fillModeSelect(el, structuredClone(MODES), { useActive: true });
+    expect(el.options[0]).toBe(first);
+    expect(el.value).toBe('email');
+  });
+
+  it('rebuilds when a label or the list changed', () => {
+    const el = select();
+    fillModeSelect(el, MODES);
+    const renamed = { ...MODES, email: { ...MODES.email, name: 'Mail' } };
+    fillModeSelect(el, renamed);
+    expect(rows(el)[1]).toEqual(['email', '📧 Mail']);
+    fillModeSelect(el, { default: MODES.default });
+    expect(rows(el)).toEqual([['default', '🎤 Default']]);
+  });
+
+  it('writes a mode name as text', () => {
+    const el = select();
+    fillModeSelect(el, { default: { name: '<b>x</b>', icon: '🎤', prompt: 'x', builtIn: true } });
+    expect(el.options[0].textContent).toBe('🎤 <b>x</b>');
+    expect(el.querySelector('b')).toBeNull();
   });
 });

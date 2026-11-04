@@ -79,6 +79,16 @@ export function createSettingsClient({ chrome }) {
   }
 
   /**
+   * Replace one site's rule. Site rules never go through `save`.
+   * @param {{ host: string, hidePill: boolean, mode: string|null }} rule
+   * @returns {Promise<{ success: boolean, error?: string }>}
+   */
+  async function saveSiteRule({ host, hidePill, mode }) {
+    const reply = await send({ action: MSG.SET_SITE_RULE, host, hidePill, mode });
+    return reply?.success === true ? { success: true } : { success: false, error: reply?.error };
+  }
+
+  /**
    * Call `listener` whenever stored settings change (from any page, the pill or the worker).
    * @param {() => void} listener
    * @returns {() => void} unsubscribe
@@ -91,5 +101,5 @@ export function createSettingsClient({ chrome }) {
     return () => chrome.storage.onChanged.removeListener(onChanged);
   }
 
-  return { send, load, save, onExternalChange };
+  return { send, load, save, saveSiteRule, onExternalChange };
 }

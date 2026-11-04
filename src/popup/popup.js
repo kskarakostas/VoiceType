@@ -1,18 +1,19 @@
 // VoiceType popup: a quick panel over the settings page. A trusted extension page: it reads the
-// full settings, saves only the field an edit changed (provider or activeMode), and re-reads when
-// stored settings change. Everything else lives on the settings page, which it opens (V6).
+// full settings, saves only the field an edit changed (provider or activeMode) or the current
+// site's rule, and re-reads when stored settings change. Everything else lives on the settings
+// page, which it opens (V6).
 import { MSG } from '../shared/messages.js';
 import { formatCost } from '../shared/pricing.js';
-import { orderedModeKeys } from '../shared/defaults.js';
+import { fillModeSelect } from '../ui/form.js';
 import { createSettingsClient } from '../ui/settings-client.js';
 import { createSettingsState } from '../ui/settings-state.js';
 import { openSettings } from './open-settings.js';
+import { createSiteBlock } from './site-block.js';
 
 /** @typedef {import('../shared/defaults.js').Settings} Settings */
 
 const LOAD_ERROR = 'Could not load settings. Close and reopen the popup.';
 const OPEN_ERROR = 'Could not open settings.';
-const DEFAULT_MODE_ICON = '🎯';
 
 /**
  * Wire the quick panel, load settings and today's usage, and save the provider and active mode.
@@ -42,6 +43,7 @@ export async function initPopup({ chrome, document, window }) {
 
   const state = createSettingsState({ client, render, toast });
   const { commit } = state;
+  const block = createSiteBlock({ chrome, document, state, client, toast });
 
   function render() {
     const settings = state.settings();
@@ -50,28 +52,9 @@ export async function initPopup({ chrome, document, window }) {
     el.ready.hidden = !state.loaded() || !ready;
     el.addKey.hidden = !state.loaded() || ready;
     for (const radio of el.providerRadios) radio.checked = radio.value === settings.provider;
-    renderModes();
-  }
-
-  // The options are rebuilt only when the mode list or a label changed.
-  function renderModes() {
-    const settings = state.settings();
-    const options = orderedModeKeys(settings.modes).map((key) => {
-      const mode = settings.modes[key];
-      return [key, `${mode.icon || DEFAULT_MODE_ICON} ${mode.name}`];
-    });
-    const current = [...el.mode.options];
-    const same = current.length === options.length
-      && options.every(([key, text], i) => current[i].value === key && current[i].textContent === text);
-    if (!same) {
-      el.mode.replaceChildren(...options.map(([key, text]) => {
-        const option = document.createElement('option');
-        option.value = key;
-        option.textContent = text;
-        return option;
-      }));
-    }
+    fillModeSelect(el.mode, settings.modes);
     el.mode.value = settings.activeMode;
+    block.render();
   }
 
   for (const radio of el.providerRadios) {
@@ -113,6 +96,7 @@ export async function initPopup({ chrome, document, window }) {
     el.bannerText.textContent = LOAD_ERROR;
     el.banner.hidden = false;
   }
+  await block.start();
   await loadUsage();
 
   return {

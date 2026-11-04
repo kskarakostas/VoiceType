@@ -45,7 +45,12 @@
 
     <section class="card" id="site-block" aria-labelledby="h-site">
       <h2 id="h-site"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg>This site</h2>
-      <p class="hint">Site controls are coming in a later update.</p>
+      <p class="hint" id="site-unavailable" hidden>Not available on this page</p>
+      <div id="site-controls" hidden>
+        <p id="site-host"></p>
+        <label class="check"><input type="checkbox" id="site-hide">Hide pill</label>
+        <label class="field"><span class="field-label">Mode on this site</span><select id="site-mode"></select></label>
+      </div>
     </section>
 
     <section class="card" aria-labelledby="h-today">

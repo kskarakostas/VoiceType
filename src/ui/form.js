@@ -1,6 +1,9 @@
 // Pure form helpers shared by the extension pages. No chrome APIs, so every function is testable in isolation.
 
+import { orderedModeKeys } from '../shared/defaults.js';
 import { SPOKEN_LANGUAGES } from '../shared/dictionary.js';
+
+const DEFAULT_MODE_ICON = '🎯';
 
 /**
  * Apply one checkbox change to the spoken-language list. Checking 'auto' clears the list;
@@ -15,6 +18,29 @@ export function toggleLanguage(list, code, checked) {
   const chosen = new Set(list);
   if (checked) chosen.add(code); else chosen.delete(code);
   return SPOKEN_LANGUAGES.map((l) => l.code).filter((c) => chosen.has(c));
+}
+
+/**
+ * Fill a select with the modes in display order, after a `Use active mode` row of value `''` when
+ * `useActive` is set. The options are rebuilt only when the list or a label changed, so an
+ * unchanged select keeps its selection; after a rebuild the caller sets the value.
+ * @param {HTMLSelectElement} select
+ * @param {Record<string, { name: string, icon?: string }>} modes
+ * @param {{ useActive?: boolean }} [options]
+ */
+export function fillModeSelect(select, modes, { useActive = false } = {}) {
+  const rows = orderedModeKeys(modes).map((key) => [key, `${modes[key].icon || DEFAULT_MODE_ICON} ${modes[key].name}`]);
+  if (useActive) rows.unshift(['', 'Use active mode']);
+  const current = [...select.options];
+  const same = current.length === rows.length
+    && rows.every(([value, text], i) => current[i].value === value && current[i].textContent === text);
+  if (same) return;
+  select.replaceChildren(...rows.map(([value, text]) => {
+    const option = select.ownerDocument.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    return option;
+  }));
 }
 
 /** A confirming click this soon after arming is part of the same gesture (a double click). */

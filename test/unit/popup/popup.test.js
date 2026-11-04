@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { initPopup } from '../../../src/popup/popup.js';
 import { MSG } from '../../../src/shared/messages.js';
 import { freshSettings } from '../../../src/shared/defaults.js';
+import { withSiteRule } from '../../../src/shared/sites.js';
 
 // jsdom replaces the global URL, so resolve paths with node:path rather than new URL().
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/popup/popup.html'), 'utf8');
@@ -12,6 +13,7 @@ const LOAD_ERROR = 'Could not load settings. Close and reopen the popup.';
 const NOT_LOADED = 'Settings are not loaded. Nothing was saved.';
 const ORIGIN = 'chrome-extension://id';
 const SETTINGS_CHANGE = { settings: { newValue: {} } };
+const PAGE_URL = 'https://www.example.com/page';
 
 function bucket(sessions, cost) {
   return { sessions, audioSeconds: 30 * sessions, estimatedCost: cost, modes: {}, byProvider: {} };
@@ -21,6 +23,12 @@ const USAGE = { today: bucket(4, 0.0123), last7Days: bucket(9, 0.05), total: buc
 function storedSettings(keys = {}) {
   const s = freshSettings();
   s.keys = { openai: 'sk-proj-abcdefgh1234', gemini: '', ...keys };
+  return s;
+}
+
+function withRule(rule, host = 'example.com') {
+  const s = storedSettings();
+  s.siteRules = { [host]: rule };
   return s;
 }
 
@@ -40,11 +48,16 @@ function fakeChrome(stored = storedSettings(), contexts = []) {
       Object.assign(stored, structuredClone(message.settings));
       return { success: true };
     },
+    [MSG.SET_SITE_RULE]: ({ host, hidePill, mode }) => {
+      stored.siteRules = withSiteRule(stored.siteRules, host, { hidePill, mode });
+      return { success: true };
+    },
     [MSG.GET_USAGE]: () => structuredClone(USAGE),
   };
   return {
     sent,
     saves: () => sent.filter((m) => m.action === MSG.SAVE_SETTINGS).map((m) => m.settings),
+    siteWrites: () => sent.filter((m) => m.action === MSG.SET_SITE_RULE),
     script(action, ...responses) { queues.set(action, [...(queues.get(action) || []), ...responses]); },
     fire(changes, area) { for (const listener of [...changeListeners]) listener(changes, area); },
     runtime: {
@@ -57,7 +70,11 @@ function fakeChrome(stored = storedSettings(), contexts = []) {
       getURL: vi.fn((path) => `${ORIGIN}/${path}`),
       getContexts: vi.fn(async () => contexts),
     },
-    tabs: { create: vi.fn(async () => ({})), update: vi.fn(async () => ({})) },
+    tabs: {
+      create: vi.fn(async () => ({})),
+      update: vi.fn(async () => ({})),
+      query: vi.fn(async () => [{ url: PAGE_URL }]),
+    },
     windows: { update: vi.fn(async () => ({})) },
     storage: {
       onChanged: {
@@ -100,7 +117,7 @@ describe('popup quick panel', () => {
     expect($('open-settings').textContent.trim()).toBe('Open settings');
     expect($('banner').hidden).toBe(true);
     expect($('site-block').querySelector('h2').textContent.trim()).toBe('This site');
-    expect($('site-block').textContent).toContain('Site controls are coming in a later update.');
+    expect($('site-block').textContent).not.toContain('coming in a later update');
   });
 
   it('status is Ready with a key, and Add API key opens Settings, Provider', async () => {
@@ -273,5 +290,202 @@ describe('popup quick panel', () => {
     expect($('banner').hidden).toBe(false);
     expect($('status-ready').hidden).toBe(true);
     expect($('add-key').hidden).toBe(true);
+  });
+});
+
+describe('popup This site block', () => {
+  const blockVisible = () => !$('site-controls').hidden;
+
+  it('shows the host and the rule of the active tab', async () => {
+    const chrome = fakeChrome(withRule({ hidePill: true, mode: 'email' }));
+    await start(chrome);
+    expect(chrome.tabs.query).toHaveBeenCalledTimes(1);
+    expect(chrome.tabs.query).toHaveBeenCalledWith({ active: true, currentWindow: true });
+    expect(blockVisible()).toBe(true);
+    expect($('site-unavailable').hidden).toBe(true);
+    expect($('site-host').textContent).toBe('example.com');
+    expect($('site-hide').checked).toBe(true);
+    expect($('site-mode').value).toBe('email');
+    expect($('site-block').textContent).toContain('Hide pill');
+    expect($('site-block').textContent).toContain('Mode on this site');
+  });
+
+  it('Use active mode is listed first and selected without a mode rule', async () => {
+    await start(fakeChrome());
+    const select = $('site-mode');
+    expect([...select.options].map((o) => o.value)).toEqual(['', 'default', 'email', 'translate', 'instruct']);
+    expect(select.options[0].textContent).toBe('Use active mode');
+    expect(select.value).toBe('');
+    expect($('site-hide').checked).toBe(false);
+  });
+
+  it('a rule naming a missing mode shows Use active mode', async () => {
+    await start(fakeChrome(withRule({ hidePill: false, mode: 'custom_gone' })));
+    expect($('site-mode').value).toBe('');
+  });
+
+  it('Hide pill sends the whole rule', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    $('site-hide').click();
+    await flush();
+    expect(chrome.siteWrites()).toEqual([
+      { action: MSG.SET_SITE_RULE, host: 'example.com', hidePill: true, mode: null },
+    ]);
+    expect(chrome.saves()).toEqual([]);
+  });
+
+  it('choosing a mode sends it', async () => {
+    const chrome = fakeChrome(withRule({ hidePill: true, mode: null }));
+    await start(chrome);
+    change($('site-mode'), 'translate');
+    await flush();
+    expect(chrome.siteWrites()).toEqual([
+      { action: MSG.SET_SITE_RULE, host: 'example.com', hidePill: true, mode: 'translate' },
+    ]);
+    expect(chrome.saves()).toEqual([]);
+  });
+
+  it('Use active mode sends null', async () => {
+    const chrome = fakeChrome(withRule({ hidePill: false, mode: 'email' }));
+    await start(chrome);
+    change($('site-mode'), '');
+    await flush();
+    expect(chrome.siteWrites()).toEqual([
+      { action: MSG.SET_SITE_RULE, host: 'example.com', hidePill: false, mode: null },
+    ]);
+  });
+
+  it('a second quick edit keeps the first', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    $('site-hide').click();
+    change($('site-mode'), 'email');
+    await flush();
+    expect(chrome.siteWrites().map(({ hidePill, mode }) => ({ hidePill, mode }))).toEqual([
+      { hidePill: true, mode: null },
+      { hidePill: true, mode: 'email' },
+    ]);
+  });
+
+  it.each([
+    ['a chrome page', [{ url: 'chrome://extensions' }]],
+    ['a file page', [{ url: 'file:///x' }]],
+    ['the Web Store', [{ url: 'https://chromewebstore.google.com/detail/x' }]],
+    ['a tab without a URL', [{ url: undefined }]],
+    ['no tab', []],
+  ])('not available on %s', async (_name, tabs) => {
+    const chrome = fakeChrome();
+    chrome.tabs.query.mockResolvedValue(tabs);
+    await start(chrome);
+    expect($('site-unavailable').hidden).toBe(false);
+    expect($('site-unavailable').textContent).toBe('Not available on this page');
+    expect(blockVisible()).toBe(false);
+    $('site-hide').click();
+    change($('site-mode'), 'email');
+    await flush();
+    expect(chrome.siteWrites()).toEqual([]);
+  });
+
+  it('not available when the tab query rejects', async () => {
+    const chrome = fakeChrome();
+    chrome.tabs.query.mockRejectedValue(new Error('no window'));
+    await start(chrome);
+    expect($('site-unavailable').hidden).toBe(false);
+    expect(blockVisible()).toBe(false);
+    $('site-hide').click();
+    await flush();
+    expect(chrome.siteWrites()).toEqual([]);
+    expect($('today-sessions').textContent).toBe('4');
+  });
+
+  it('never writes a rule from unloaded settings', async () => {
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_SETTINGS, { error: 'nope' });
+    await start(chrome);
+    expect(blockVisible()).toBe(false);
+    expect($('site-unavailable').hidden).toBe(true);
+    $('site-hide').click();
+    change($('site-mode'), 'email');
+    await flush();
+    expect(chrome.siteWrites()).toEqual([]);
+  });
+
+  it('a change while the tab is queried waits for the tab', async () => {
+    const chrome = fakeChrome();
+    let answer;
+    chrome.tabs.query.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    const started = start(chrome);
+    await flush();
+    expect($('site-unavailable').hidden).toBe(true);
+    expect(blockVisible()).toBe(false);
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect($('site-unavailable').hidden).toBe(true);
+    answer([{ url: PAGE_URL }]);
+    await started;
+    expect(blockVisible()).toBe(true);
+  });
+
+  it('a refused save restores the controls and shows the error', async () => {
+    const chrome = fakeChrome(withRule({ hidePill: false, mode: 'email' }));
+    chrome.script(MSG.SET_SITE_RULE, { success: false, error: 'Storage is full.' }, null);
+    await start(chrome);
+
+    // A control keeps the focus through its own save, and the restore must still reach it.
+    $('site-mode').focus();
+    change($('site-mode'), 'translate');
+    await flush();
+    expect($('site-mode').value).toBe('email');
+    expect($('toast').textContent).toBe('Storage is full.');
+    expect($('toast').dataset.tone).toBe('error');
+
+    $('site-hide').focus();
+    $('site-hide').click();
+    await flush();
+    expect($('site-hide').checked).toBe(false);
+    expect($('toast').textContent).toBe('Could not save settings.');
+  });
+
+  it('an external change updates the block', async () => {
+    const stored = storedSettings();
+    const chrome = fakeChrome(stored);
+    await start(chrome);
+    stored.siteRules = { 'example.com': { hidePill: true, mode: 'instruct' } };
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect($('site-hide').checked).toBe(true);
+    expect($('site-mode').value).toBe('instruct');
+    expect(chrome.siteWrites()).toEqual([]);
+  });
+
+  it('an external change never writes a focused control', async () => {
+    const stored = storedSettings();
+    const chrome = fakeChrome(stored);
+    await start(chrome);
+    stored.siteRules = { 'example.com': { hidePill: true, mode: 'instruct' } };
+
+    $('site-mode').focus();
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect($('site-mode').value).toBe('');
+    expect($('site-hide').checked).toBe(true);
+
+    stored.siteRules = {};
+    $('site-hide').focus();
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect($('site-hide').checked).toBe(true);
+    expect($('site-mode').value).toBe('');
+  });
+
+  it('a mode renamed elsewhere updates its row', async () => {
+    const stored = storedSettings();
+    const chrome = fakeChrome(stored);
+    await start(chrome);
+    stored.modes.email.name = 'Mail';
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect([...$('site-mode').options].map((o) => o.textContent)).toContain('📧 Mail');
   });
 });

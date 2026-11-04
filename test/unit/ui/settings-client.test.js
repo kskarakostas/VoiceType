@@ -95,6 +95,23 @@ describe('createSettingsClient', () => {
     expect(await createSettingsClient({ chrome: thrown }).save({ pillStyle: 'dot' })).toEqual({ success: false, error: undefined });
   });
 
+  it('saveSiteRule sends the whole rule and reports the reply', async () => {
+    const rule = { host: 'example.com', hidePill: true, mode: null };
+    const ok = fakeChrome({ success: true });
+    expect(await createSettingsClient({ chrome: ok }).saveSiteRule(rule)).toEqual({ success: true });
+    expect(ok.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(ok.runtime.sendMessage).toHaveBeenCalledWith({ action: MSG.SET_SITE_RULE, ...rule });
+
+    const refused = fakeChrome({ success: false, error: 'x' });
+    expect(await createSettingsClient({ chrome: refused }).saveSiteRule(rule)).toEqual({ success: false, error: 'x' });
+
+    expect(await createSettingsClient({ chrome: fakeChrome(null) }).saveSiteRule(rule))
+      .toEqual({ success: false, error: undefined });
+
+    const thrown = fakeChrome(() => { throw new Error('no receiver'); });
+    expect(await createSettingsClient({ chrome: thrown }).saveSiteRule(rule)).toEqual({ success: false, error: undefined });
+  });
+
   it('send returns null when sendMessage throws', async () => {
     const chrome = fakeChrome(() => { throw new Error('no receiver'); });
     expect(await createSettingsClient({ chrome }).send({ action: MSG.GET_USAGE })).toBeNull();
