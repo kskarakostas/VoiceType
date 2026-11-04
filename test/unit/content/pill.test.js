@@ -1937,6 +1937,59 @@ describe('zoom on the page root', () => {
     expect(pxValue(q(pill, '.mini').style.top)).toBe(pxValue(top) - 100);
     pill.destroy();
   });
+
+  describe('a raise that finds the zoom changed', () => {
+    function recordingAtField(onZoom) {
+      const pill = new Pill({ ...handlers(), onZoom }, { shadowMode: 'open' });
+      pill.mount();
+      Object.assign(pill.host, { hidePopover: vi.fn(), showPopover: vi.fn() });
+      pill.setStyle('dot');
+      pill.show(FIELD);
+      pill.setState('recording');
+      return pill;
+    }
+
+    it('asks for the field box again when a raise finds the zoom changed', () => {
+      const onZoom = vi.fn();
+      const pill = recordingAtField(onZoom);
+      expect(onZoom).not.toHaveBeenCalled();
+      zoomed(pill, 2);
+      vi.advanceTimersByTime(RAISE_MS);
+      expect(onZoom).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(RAISE_MS * 2);
+      expect(onZoom).toHaveBeenCalledTimes(1);
+      pill.destroy();
+    });
+
+    it('does not ask when the zoom is the same', () => {
+      const onZoom = vi.fn();
+      const pill = recordingAtField(onZoom);
+      zoomed(pill, 1);
+      vi.advanceTimersByTime(RAISE_MS * 2);
+      expect(onZoom).not.toHaveBeenCalled();
+      pill.destroy();
+    });
+
+    it('places at the box the answer gives, not the old one', () => {
+      const moved = { ...FIELD, top: FIELD.top + 200 };
+      const pill = recordingAtField(() => pill.reposition(moved));
+      const top = pxValue(q(pill, '.pill').style.top);
+      zoomed(pill, 2);
+      vi.advanceTimersByTime(RAISE_MS);
+      expect(pxValue(q(pill, '.pill').style.top)).toBe(top + 200);
+      pill.destroy();
+    });
+
+    it('a pill with no onZoom, as the mirror is, still raises through a zoom change', () => {
+      const pill = recording('minimal');
+      pill.show(null);
+      pill.setState('recording');
+      zoomed(pill, 2);
+      expect(() => vi.advanceTimersByTime(RAISE_MS)).not.toThrow();
+      expect(wrapZoom(pill)).toBe('0.5');
+      pill.destroy();
+    });
+  });
 });
 
 describe('destroy', () => {

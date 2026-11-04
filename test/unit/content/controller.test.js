@@ -34,7 +34,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function setup({ replies = {}, insert = 'inserted', copy = true, activeElement = () => deepActiveElement(document) } = {}) {
+function setup({ replies = {}, insert = 'inserted', copy = true, activeElement = () => deepActiveElement(document), rectOf = (el) => (el?.isConnected ? { ...RECT } : null) } = {}) {
   const pill = fakePill();
   const sent = [];
   const table = {
@@ -57,7 +57,7 @@ function setup({ replies = {}, insert = 'inserted', copy = true, activeElement =
     copyText: vi.fn(async () => copy),
     isValidInput,
     deepActiveElement: activeElement,
-    rectOf: (el) => (el?.isConnected ? { ...RECT } : null),
+    rectOf,
     watchAnchor: vi.fn(() => unwatch),
     hasFocus: vi.fn(() => true),
     setTimeout: (fn, ms) => setTimeout(fn, ms),
@@ -712,9 +712,15 @@ describe('a press while a result is still landing', () => {
     return pending;
   }
 
+  /** A press and its release, both inside the landing. */
+  async function tap(t) {
+    await t.controller.press();
+    await t.controller.release({ held: false });
+  }
+
   /** Neither way in starts anything, and each says so. */
   async function expectRefused(t) {
-    for (const act of [() => t.controller.press(), () => t.controller.toggle()]) {
+    for (const act of [() => tap(t), () => t.controller.toggle()]) {
       t.pill.setStatus.mockClear();
       await act();
       expect(lastStatus(t.pill)).toEqual(STILL);
@@ -740,7 +746,7 @@ describe('a press while a result is still landing', () => {
   it('records on the next press once insertText is done', async () => {
     const t = setup();
     const pending = await landing(t, 'insertText');
-    await t.controller.press();
+    await tap(t);
     pending.resolve('inserted');
     await flush();
     await t.controller.press();
@@ -752,7 +758,7 @@ describe('a press while a result is still landing', () => {
   it('keeps a transcript that failed to insert: the next press copies that text', async () => {
     const t = setup();
     const pending = await landing(t, 'insertText');
-    await t.controller.press();
+    await tap(t);
     pending.resolve('failed');
     await flush();
     await t.controller.press();
@@ -774,7 +780,7 @@ describe('a press while a result is still landing', () => {
   it('a failed copyText in place leaves the click-to-copy over the refusal', async () => {
     const t = setup();
     const pending = await landing(t, 'copyText');
-    await t.controller.press();
+    await tap(t);
     pending.resolve(false);
     await flush();
     expect(lastStatus(t.pill)).toEqual(CLICK);
@@ -888,15 +894,147 @@ describe('a press while a result is still landing', () => {
     expect(t.controller.state).toBe('recording');
   });
 
-  it('a press refused while landing leaves no hold to stop the next recording', async () => {
+  it('a press dropped by its release leaves no hold to stop the next recording', async () => {
     const t = setup();
     const pending = await landing(t, 'insertText');
-    await t.controller.press();
+    await tap(t);
     pending.resolve('inserted');
     await flush();
     await t.controller.toggle();
     await t.controller.release({ held: true });
     expect(t.controller.state).toBe('recording');
+  });
+
+  it('a press during a landing starts when the landing ends with the chord down', async () => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.press();
+    expect(lastStatus(t.pill)).toEqual(STILL);
+    expect(t.send).not.toHaveBeenCalled();
+    pending.resolve('inserted');
+    await flush();
+    expect(t.send.mock.calls).toEqual([[{ action: MSG.START_RECORDING }]]);
+    expect(t.controller.state).toBe('recording');
+    expect(t.pill.setState).toHaveBeenLastCalledWith('recording');
+  });
+
+  it.each([[false], [true]])('a release during the landing drops it (held %s)', async (held) => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.press();
+    await t.controller.release({ held });
+    pending.resolve('inserted');
+    await flush();
+    expect(t.send).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('idle');
+  });
+
+  it('a kept press stops on release like any hold', async () => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.press();
+    pending.resolve('inserted');
+    await flush();
+    await t.controller.release({ held: true });
+    expect(t.controller.state).toBe('processing');
+    expect(t.send).toHaveBeenLastCalledWith({ action: MSG.STOP_RECORDING });
+  });
+
+  it('a kept press released as a tap keeps recording, like any tap', async () => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.press();
+    pending.resolve('inserted');
+    await flush();
+    await t.controller.release({ held: false });
+    expect(t.controller.state).toBe('recording');
+  });
+
+  it('a kept press on a pending click-to-copy copies, as any press', async () => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.press();
+    pending.resolve('failed');
+    await flush();
+    expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+    expect(lastStatus(t.pill)).toEqual(COPIED);
+    expect(t.send).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('idle');
+  });
+
+  it('a kept press binds the field focused when it starts, not the one the result landed in', async () => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.press();
+    $('b').focus();
+    pending.resolve('inserted');
+    await flush();
+    expect(t.controller.state).toBe('recording');
+    t.deps.insertText.mockClear();
+    await t.controller.release({ held: true });
+    t.controller.handleMessage(result('next'));
+    await flush();
+    expect(t.deps.insertText).toHaveBeenCalledWith($('b'), 'next');
+  });
+
+  it('a kept press waits for the last of two landings', async () => {
+    const t = setup({ insert: 'failed' });
+    await recordAndStop(t);
+    t.controller.handleMessage(result());
+    await flush();
+    t.send.mockClear();
+    const first = deferred();
+    const second = deferred();
+    t.deps.copyText.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
+    t.controller.copyLast();
+    t.controller.copyLast();
+    await flush();
+    await t.controller.press();
+    first.resolve(true);
+    await flush();
+    expect(t.send).not.toHaveBeenCalled();
+    second.resolve(true);
+    await flush();
+    expect(t.send.mock.calls).toEqual([[{ action: MSG.START_RECORDING }]]);
+  });
+
+  it('a REC click during a landing keeps nothing', async () => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.toggle();
+    pending.resolve('inserted');
+    await flush();
+    expect(t.send).not.toHaveBeenCalled();
+  });
+
+  it('a landing that ends with the state no longer idle drops the kept press', async () => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.press();
+    t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'processing' });
+    pending.resolve('inserted');
+    await flush();
+    expect(t.send).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('processing');
+    t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'idle' });
+    t.deps.insertText.mockResolvedValueOnce('inserted');
+    t.controller.handleMessage(result());
+    await flush();
+    expect(t.send).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['orphaned', (t) => t.controller.orphaned()],
+    ['torn down', (t) => t.controller.teardown()],
+  ])('a kept press does not start on a controller %s during the landing', async (_, end) => {
+    const t = setup();
+    const pending = await landing(t, 'insertText');
+    await t.controller.press();
+    end(t);
+    t.send.mockClear();
+    pending.resolve('inserted');
+    await flush();
+    expect(t.send).not.toHaveBeenCalled();
   });
 });
 
@@ -1180,6 +1318,27 @@ describe('delivery', () => {
     const t = setup();
     await t.controller.copyLast();
     expect(t.deps.copyText).not.toHaveBeenCalled();
+  });
+
+  it('refreshAnchor re-reads the field box', async () => {
+    const moved = { ...RECT, top: 300, left: 800 };
+    const rectOf = vi.fn(() => ({ ...RECT }));
+    const t = setup({ rectOf });
+    await recordAndStop(t, 'a');
+    rectOf.mockClear().mockReturnValue(moved);
+    t.controller.refreshAnchor();
+    expect(rectOf).toHaveBeenCalledWith($('a'));
+    expect(t.pill.reposition).toHaveBeenCalledWith(moved);
+  });
+
+  it('refreshAnchor does nothing with no field, or torn down', async () => {
+    const t = setup();
+    t.controller.refreshAnchor();
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    t.controller.teardown();
+    t.controller.refreshAnchor();
+    expect(t.pill.reposition).not.toHaveBeenCalled();
   });
 
   it('a sticky status stays at the corner when its field leaves the page', async () => {

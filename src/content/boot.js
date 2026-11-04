@@ -41,6 +41,7 @@ export function boot({
     onTargetLang: (lang) => { controller.choose({ translateTargetLang: lang }); },
     // The later raise paints on top, so no status hides the mirror.
     onRaised: () => { mirror.raise(); },
+    onZoom: () => { controller.refreshAnchor(); },
     ...(inSubframe && { onSight: (seen) => { send({ action: MSG.FRAME_SIGHT, seen }); } }),
   }, { statusAtField: inSubframe });
 
@@ -165,6 +166,8 @@ export function boot({
     if (!isTrusted(event)) return;
     // The worker's idle would reach the next document, and a restored page would show a false recording.
     mirror.destroy();
+    // Its keyup goes with the page, so a press kept through a landing must not start on a restored one.
+    controller.release({ held: false });
     if (controller.state !== 'starting' && controller.state !== 'recording') return;
     send({ action: MSG.CANCEL_RECORDING });
     // The page may come back from the back-forward cache; do not leave it showing a recording.

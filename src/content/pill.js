@@ -17,8 +17,9 @@ export { SIGHT_DELAY_MS } from './pill-sight.js';
  * @typedef {'idle'|'recording'|'processing'|'done'|'error'} PillState
  * @typedef {{ onRec: () => void, onStatusClick: () => void, onMenuOpen: () => void,
  *   onMode: (key: string) => void, onUseActive: () => void, onProvider: (id: string) => void,
- *   onTargetLang: (lang: string) => void, onSight?: (seen: boolean) => void, onRaised?: () => void }} PillHandlers
- * Without onSight the pill watches nothing.
+ *   onTargetLang: (lang: string) => void, onSight?: (seen: boolean) => void, onRaised?: () => void,
+ *   onZoom?: () => void }} PillHandlers
+ * Without onSight the pill watches nothing. onZoom: the zoom moved the field, and no watcher hears that.
  * @typedef {{ todayCost: number, todaySessions: number, totalCost: number }} PillUsage
  */
 
@@ -200,7 +201,10 @@ export class Pill {
     } catch {
       // A page can leave no root or refuse the show; z-index still holds against all but the top layer.
     }
-    if (this.#cancelZoom()) this.#replace();
+    if (this.#cancelZoom()) {
+      this.#handlers.onZoom?.();
+      this.#replace();
+    }
     this.#handlers.onRaised?.();
   }
 

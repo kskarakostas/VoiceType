@@ -66,6 +66,8 @@ export function createController(deps) {
   let stopQueued = false;
   /** The current hotkey press started this recording, so a held release stops it. */
   let pressStarted = false;
+  /** A press refused because a result is landing, kept while the chord stays down (V38). */
+  let pressQueued = false;
   let lastResult = null;
   /** A result for a field that kept this frame's focus while another frame or window had it. */
   let held = null;
@@ -333,12 +335,14 @@ export function createController(deps) {
       return start();
     }
     pressStarted = false;
+    pressQueued = state === 'idle';
     return toggle();
   }
 
   /** @param {{ held: boolean }} release */
   async function release({ held } = { held: false }) {
     if (inactive()) return;
+    pressQueued = false;
     const started = pressStarted;
     pressStarted = false;
     if (!started || !held) return;
@@ -428,7 +432,17 @@ export function createController(deps) {
       return await step();
     } finally {
       landing -= 1;
+      startKeptPress();
     }
+  }
+
+  /** The last landing is over with the chord still down: the kept press starts, as any press. */
+  function startKeptPress() {
+    if (landing > 0 || !pressQueued) return;
+    pressQueued = false;
+    if (inactive() || !canStart()) return;
+    pressStarted = true;
+    start();
   }
 
   /**
@@ -656,6 +670,7 @@ export function createController(deps) {
     choose,
     chooseMode,
     useActiveMode,
+    refreshAnchor: onAnchorChange,
     orphaned,
     teardown,
     get state() {

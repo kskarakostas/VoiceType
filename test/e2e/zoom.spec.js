@@ -21,6 +21,8 @@ const MENU_WIDTH = 248;
 const VIEWPORT = { width: 1280, height: 2000 };
 /** The field as wide as the pill's left side needs at either zoom, and near the top. */
 const PAGE_CSS = 'body { margin: 40px 0 0 300px; max-width: 300px; }';
+/** A field in px: a root zoom moves it without resizing it, so the anchor watcher hears nothing. */
+const PX_FIELD_CSS = '#ta { width: 240px; height: 60px; }';
 /** More than the corners of a stray pixel, less than Minimal's four level bars at a low level. */
 const MIN_RED = 40;
 /** A raise from a tick must be back within this long. */
@@ -215,6 +217,24 @@ for (const style of ['dot', 'minimal']) {
     await expectPlaced(page, style, field, RAISE_BACK_MS);
 
     await setZoom(page, 1);
+    await expectPlaced(page, style, field, RAISE_BACK_MS);
+  });
+}
+
+for (const style of ['dot', 'pill']) {
+  test(`a zoom change during a ${style} recording moves the pill to the field`, async () => {
+    await seedSettings(serviceWorker, DUMMY_KEY, { pillStyle: style });
+    const page = await openZoomed(1);
+    await page.addStyleTag({ content: PX_FIELD_CSS });
+    const field = page.locator('#ta');
+    await focusField(page, field);
+    await startWithHotkey(page, page, { indicator: recordingMark(style) });
+    await expectPlaced(page, style, field);
+    const before = await fieldBox(field);
+
+    await setZoom(page, 2);
+
+    expect((await fieldBox(field)).left).not.toBe(before.left);
     await expectPlaced(page, style, field, RAISE_BACK_MS);
   });
 }

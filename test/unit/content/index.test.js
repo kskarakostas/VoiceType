@@ -553,6 +553,23 @@ describe('a frame out of sight', () => {
     expect(statusText()).toBe(ORPHAN);
   });
 
+  it('pagehide drops a press kept through a landing: its keyup goes with the page', async () => {
+    let finishCopy;
+    vi.stubGlobal('navigator', { clipboard: { writeText: () => new Promise((resolve) => { finishCopy = resolve; }) } });
+    const t = installChrome();
+    const field = document.getElementById('field');
+    field.focus();
+    await loadInstance();
+    deliver(t, RESULT);
+    await flush();
+    field.dispatchEvent(hotkey('keydown'));
+    await flush();
+    window.dispatchEvent(new Event('pagehide'));
+    finishCopy();
+    await flush();
+    expect(t.sent()).not.toContain(MSG.START_RECORDING);
+  });
+
   it('pagehide removes the mirror, so the back-forward cache keeps no false recording', async () => {
     const t = installChrome();
     await loadInstance();
