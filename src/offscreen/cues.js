@@ -6,6 +6,12 @@ const RAMP_SEC = 0.005;
 const RESUME_TIMEOUT_MS = 1000;
 /** How long past its planned end a cue waits for `onended`. */
 const END_GRACE_MS = 500;
+/**
+ * How long a played cue keeps its context. `onended` runs on the render clock while the output
+ * buffer still holds the end of the cue, a Bluetooth output more of it, and `close()` drops what
+ * is buffered: the cue would stop short with a click.
+ */
+const CLOSE_TAIL_MS = 300;
 
 /** @typedef {{ freq: number, ms: number }} Note */
 /**
@@ -102,16 +108,19 @@ export function createCuePlayer({ createContext }) {
       if (!CUE_NAMES.includes(name)) return { ok: false };
       /** @type {AudioContextLike|undefined} */
       let ctx;
+      let played = false;
       try {
         ctx = createContext();
         await resumeWithin(ctx, RESUME_TIMEOUT_MS);
         if (ctx.state !== 'running') return { ok: false };
         await playNotes(ctx, CUES[name]);
+        played = true;
         return { ok: true };
       } catch {
         return { ok: false };
       } finally {
-        if (ctx) closeQuietly(ctx);
+        if (played) setTimeout(closeQuietly, CLOSE_TAIL_MS, ctx);
+        else if (ctx) closeQuietly(ctx);
       }
     },
   };

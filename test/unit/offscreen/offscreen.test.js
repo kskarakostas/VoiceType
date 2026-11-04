@@ -81,7 +81,8 @@ describe('offscreen listener', () => {
     expect(returned).toBe(true);
     await expect(reply).resolves.toEqual({ ok: true });
     expect(FakeAudioContext.created).toHaveLength(1);
-    expect(FakeAudioContext.created[0].close).toHaveBeenCalledTimes(1);
+    expect(FakeAudioContext.created[0].close).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(FakeAudioContext.created[0].close).toHaveBeenCalledTimes(1));
   });
 
   it('replies false to an unknown cue, with no context', async () => {

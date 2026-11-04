@@ -119,7 +119,7 @@ describe('cues', () => {
     await playing;
   });
 
-  it('closes the context only after the last note ended', async () => {
+  it('closes the context 300 ms after the last note ended, not at onended', async () => {
     const { ctx, createContext, player } = setup();
     const playing = player.play('start');
     await settle();
@@ -128,9 +128,28 @@ describe('cues', () => {
     await settle();
     expect(ctx.close).not.toHaveBeenCalled();
     ctx.oscillators[1].onended();
-    await expect(playing).resolves.toEqual({ ok: true });
+    await settle();
+    expect(ctx.close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(299);
+    expect(ctx.close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
     expect(ctx.close).toHaveBeenCalledTimes(1);
     expect(createContext).toHaveBeenCalledTimes(1);
+    await expect(playing).resolves.toEqual({ ok: true });
+  });
+
+  it('replies at the end of the cue, before the close', async () => {
+    const { ctx, player } = setup();
+    const outcome = vi.fn();
+    player.play('start').then(outcome);
+    await settle();
+    expect(outcome).not.toHaveBeenCalled();
+    ctx.oscillators[1].onended();
+    await settle();
+    expect(outcome).toHaveBeenCalledWith({ ok: true });
+    expect(ctx.close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(outcome.mock.invocationCallOrder[0]).toBeLessThan(ctx.close.mock.invocationCallOrder[0]);
   });
 
   it('uses a new context for every cue', async () => {
@@ -143,6 +162,7 @@ describe('cues', () => {
       await settle();
       ctx.oscillators[1].onended();
       await playing;
+      await vi.advanceTimersByTimeAsync(300);
       expect(ctx.close).toHaveBeenCalledTimes(1);
     }
     expect(createContext).toHaveBeenCalledTimes(2);
@@ -165,27 +185,33 @@ describe('cues', () => {
     expect(outcome).toHaveBeenCalledWith({ ok: false });
     expect(ctx.close).toHaveBeenCalledTimes(1);
     expect(ctx.oscillators).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('leaves no timer behind once resume settled', async () => {
+  it('leaves only the close timer behind at the reply, and none after it', async () => {
     const { ctx, player } = setup();
     const playing = player.play('start');
     await settle();
     ctx.oscillators[1].onended();
     await playing;
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(300);
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('closes at most 500 ms after the planned end when onended never fires', async () => {
+  it('replies 500 ms after the planned end and closes 300 ms later when onended never fires', async () => {
     const { ctx, player } = setup();
     const outcome = vi.fn();
     player.play('start').then(outcome);
     await settle();
     await vi.advanceTimersByTimeAsync(160 + 499);
+    expect(outcome).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(outcome).toHaveBeenCalledWith({ ok: true });
+    await vi.advanceTimersByTimeAsync(299);
     expect(ctx.close).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(ctx.close).toHaveBeenCalledTimes(1);
-    expect(outcome).toHaveBeenCalledWith({ ok: true });
   });
 
   it('answers false when the context cannot be created', async () => {
@@ -207,17 +233,31 @@ describe('cues', () => {
     await settle();
     await expect(playing).resolves.toEqual({ ok: false });
     expect(ctx.close).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('swallows a close rejection', async () => {
+  it('swallows a close rejection in the timer', async () => {
     const { ctx, player } = setup({ closeError: new Error('already closed') });
     const playing = player.play('start');
     await settle();
     ctx.oscillators[1].onended();
     await expect(playing).resolves.toEqual({ ok: true });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(ctx.close).toHaveBeenCalledTimes(1);
   });
 
-  it('swallows a close that throws', async () => {
+  it('swallows a close that throws in the timer', async () => {
+    const { ctx, player } = setup();
+    ctx.close = vi.fn(() => { throw new Error('already closed'); });
+    const playing = player.play('start');
+    await settle();
+    ctx.oscillators[1].onended();
+    await expect(playing).resolves.toEqual({ ok: true });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(ctx.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('swallows a close that throws on a failure path', async () => {
     const { ctx, player } = setup({ resumes: false });
     ctx.close = vi.fn(() => { throw new Error('already closed'); });
     const playing = player.play('start');
@@ -232,5 +272,7 @@ describe('cues', () => {
     await settle();
     ctx.oscillators[1].onended();
     await expect(playing).resolves.toEqual({ ok: true });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(ctx.close).toHaveBeenCalledTimes(1);
   });
 });
