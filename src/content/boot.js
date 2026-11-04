@@ -44,6 +44,7 @@ export function boot({
 
   const mirror = createMirror({
     makePill: () => new Pill({}),
+    onChange: (up) => { pill.reserveIndicator(up); },
     setTimeout: (fn, ms) => setTimeout(fn, ms),
     clearTimeout: (id) => clearTimeout(id),
   });

@@ -1006,6 +1006,70 @@ describe('styles', () => {
     expect(statusEl(pill).style.top).toBe('718px');
   });
 
+  describe('reserveIndicator', () => {
+    /** A Minimal pill at a field with a status up and no recording of its own. */
+    function withStatus() {
+      const { pill } = minimal();
+      pill.show(FIELD);
+      statusEl(pill).getBoundingClientRect = STATUS_200;
+      pill.setStatus('Busy', { tone: 'error', sticky: true });
+      return pill;
+    }
+
+    it('lifts a status above the indicator, and takes it back', () => {
+      const pill = withStatus();
+      expect(statusEl(pill).style.top).toBe('752px');
+      pill.reserveIndicator(true);
+      expect(statusEl(pill).dataset.side).toBe('above');
+      expect(statusEl(pill).style.left).toBe('412px');
+      expect(statusEl(pill).style.top).toBe('718px');
+      pill.reserveIndicator(false);
+      expect(statusEl(pill).style.top).toBe('752px');
+    });
+
+    it('applies to a status that comes later', () => {
+      const { pill } = minimal();
+      pill.reserveIndicator(true);
+      pill.show(FIELD);
+      statusEl(pill).getBoundingClientRect = STATUS_200;
+      pill.setStatus('Busy', { tone: 'error', sticky: true });
+      expect(statusEl(pill).style.top).toBe('718px');
+    });
+
+    it('draws no indicator of its own', () => {
+      const pill = withStatus();
+      pill.reserveIndicator(true);
+      expect(mini(pill).dataset.state).toBe('idle');
+    });
+
+    it('shows nothing with nothing to show', () => {
+      const { pill } = minimal();
+      pill.show(FIELD);
+      pill.reserveIndicator(true);
+      expect(vt(pill).hidden).toBe(true);
+      expect(pill.visible).toBe(false);
+    });
+
+    it.each(['pill', 'dot'])('leaves %s as it is', (style) => {
+      const place = (reserved) => {
+        const { pill } = makePill();
+        pill.setStyle(style);
+        pill.show(FIELD);
+        statusEl(pill).getBoundingClientRect = STATUS_200;
+        pill.setStatus('Busy', { tone: 'error', sticky: true });
+        pill.reserveIndicator(reserved);
+        return { pill: at(q(pill, '.pill')), status: at(statusEl(pill)), side: statusEl(pill).dataset.side };
+      };
+      expect(place(true)).toEqual(place(false));
+    });
+
+    it('is inert after destroy', () => {
+      const pill = withStatus();
+      pill.destroy();
+      expect(() => pill.reserveIndicator(true)).not.toThrow();
+    });
+  });
+
   it('minimal: a status too wide for a small viewport stays inside it', () => {
     const { innerWidth } = window;
     window.innerWidth = 150;

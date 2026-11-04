@@ -12,8 +12,9 @@ function setup() {
     pills.push(fakePill());
     return pills.at(-1);
   });
-  const mirror = createMirror({ makePill, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (id) => clearTimeout(id) });
-  return { mirror, makePill, pills };
+  const onChange = vi.fn();
+  const mirror = createMirror({ makePill, onChange, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (id) => clearTimeout(id) });
+  return { mirror, makePill, pills, onChange };
 }
 
 beforeEach(() => {
@@ -115,5 +116,61 @@ describe('mirror', () => {
     expect(vi.getTimerCount()).toBe(0);
     mirror.destroy();
     expect(pills[0].destroy).toHaveBeenCalledTimes(1);
+  });
+
+  describe('onChange', () => {
+    const calls = (onChange) => onChange.mock.calls.map(([up]) => up);
+
+    it('says up once for a pill, after it shows', () => {
+      const { mirror, pills, onChange } = setup();
+      mirror.update(message('recording'));
+      mirror.update(message('recording', 6000));
+      mirror.update(message('processing'));
+      mirror.level(0.4);
+      expect(calls(onChange)).toEqual([true]);
+      expect(onChange.mock.invocationCallOrder[0]).toBeGreaterThan(pills[0].show.mock.invocationCallOrder[0]);
+    });
+
+    it('says down once on idle, after the pill is gone', () => {
+      const { mirror, pills, onChange } = setup();
+      mirror.update(message('recording'));
+      mirror.update(message('idle'));
+      mirror.update(message('idle'));
+      expect(calls(onChange)).toEqual([true, false]);
+      expect(onChange.mock.invocationCallOrder[1]).toBeGreaterThan(pills[0].destroy.mock.invocationCallOrder[0]);
+    });
+
+    it('says down once on expiry', () => {
+      const { mirror, onChange } = setup();
+      mirror.update(message('recording'));
+      vi.advanceTimersByTime(PROCESSING_TIMEOUT_MS);
+      expect(calls(onChange)).toEqual([true, false]);
+      mirror.destroy();
+      expect(calls(onChange)).toEqual([true, false]);
+    });
+
+    it('says down once on destroy', () => {
+      const { mirror, onChange } = setup();
+      mirror.update(message('recording'));
+      mirror.destroy();
+      mirror.destroy();
+      expect(calls(onChange)).toEqual([true, false]);
+    });
+
+    it('says nothing with no pill', () => {
+      const { mirror, onChange } = setup();
+      mirror.update(message('idle'));
+      mirror.level(0.4);
+      mirror.destroy();
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('says up again for the next pill', () => {
+      const { mirror, onChange } = setup();
+      mirror.update(message('recording'));
+      mirror.update(message('idle'));
+      mirror.update(message('recording'));
+      expect(calls(onChange)).toEqual([true, false, true]);
+    });
   });
 });

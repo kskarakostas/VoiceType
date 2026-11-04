@@ -94,6 +94,8 @@ export class Pill {
   /** @type {(Box & { placement: string })|null} */
   #box = null;
   #gap = 8;
+  /** Another pill shows an indicator at this one's place: a Minimal status keeps clear of it. */
+  #indicatorReserved = false;
   #style = 'dot';
   #state = 'idle';
   #startedAt = 0;
@@ -201,6 +203,16 @@ export class Pill {
     if (style === 'minimal') this.closeMenu();
     this.#replace();
     this.#syncSight();
+  }
+
+  /**
+   * Hold the indicator's place for another pill, drawing nothing: only a Minimal status moves.
+   * @param {boolean} on
+   */
+  reserveIndicator(on) {
+    if (this.#destroyed) return;
+    this.#indicatorReserved = on;
+    this.#replace();
   }
 
   /**
@@ -494,8 +506,8 @@ export class Pill {
    * The status prefers the side opposite an open menu, else above for the above, corner and
    * minimal placements and below otherwise. Without room there it takes the other side, or past
    * the menu's far edge while the menu is open; failing that it is clamped into the viewport.
-   * On Minimal it is centred, and with no indicator showing it takes the indicator's place. A
-   * clamp there still keeps the bottom edge in a frame shorter than the status.
+   * On Minimal it is centred, and with no indicator showing or reserved it takes the indicator's
+   * place. A clamp there still keeps the bottom edge in a frame shorter than the status.
    */
   #placeStatus() {
     const box = this.#box;
@@ -505,7 +517,7 @@ export class Pill {
     const { width, height: measured } = status.getBoundingClientRect();
     const height = Math.max(measured, STATUS_ROOM);
     const minimal = box.placement === 'minimal';
-    const indicated = this.#state === 'recording' || this.#state === 'processing';
+    const indicated = this.#state === 'recording' || this.#state === 'processing' || this.#indicatorReserved;
     const tops = {
       below: box.top + box.height + STATUS_GAP,
       above: minimal && !indicated ? box.top + box.height - height : box.top - STATUS_GAP - height,

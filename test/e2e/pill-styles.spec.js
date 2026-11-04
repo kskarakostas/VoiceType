@@ -546,9 +546,6 @@ for (const [name, url, selector] of FRAMES) {
 
   for (const [site, siteRules] of [['a normal site', {}], ['a hidden site', { localhost: HIDE_ONLY }]]) {
     test(`mirror, ${name}: frame 0 status beside the mirror on ${site}`, async () => {
-      // Open defect: on Minimal the status takes the indicator's place, and frame 0's host mounts
-      // after the mirror's, so it paints over it. This flips to a failure once that is fixed.
-      test.fail(site === 'a hidden site', 'frame 0 status covers the mirror on Minimal');
       await seedSettings(serviceWorker, DUMMY_KEY, { siteRules });
       const style = site === 'a hidden site' ? 'minimal' : 'dot';
       const page = await openPage();
