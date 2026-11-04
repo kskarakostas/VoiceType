@@ -162,9 +162,9 @@ describe('toggle', () => {
     expect(t.pill.setState).toHaveBeenLastCalledWith('idle');
     expect(lastStatus(t.pill)).toEqual([permission, { tone: 'info', sticky: true, clickable: false }]);
 
-    reply = { ok: false, reason: 'noKey', error: 'Add an API key in the VoiceType popup.' };
+    reply = { ok: false, reason: 'noKey', error: 'Add an API key in VoiceType settings.' };
     await t.controller.toggle();
-    expect(lastStatus(t.pill)).toEqual(['Add an API key in the VoiceType popup.', { tone: 'error', sticky: false, clickable: false }]);
+    expect(lastStatus(t.pill)).toEqual(['Add an API key in VoiceType settings.', { tone: 'error', sticky: false, clickable: false }]);
 
     reply = { ok: false, reason: 'busy', error: 'VoiceType is busy in another tab. Try again in a moment.' };
     await t.controller.toggle();
@@ -552,6 +552,58 @@ describe('delivery', () => {
     expect(t.controller.state).toBe('idle');
   });
 
+  it('copied false appends Not copied to Done', async () => {
+    const t = setup();
+    await recordAndStop(t);
+    t.controller.handleMessage(result({ copied: false }));
+    await flush();
+    expect(lastStatus(t.pill)).toEqual(['Done $0.01 Not copied.', { tone: 'success', sticky: false, clickable: false }]);
+    expect(t.pill.setState).toHaveBeenLastCalledWith('done');
+  });
+
+  it('copied true and copied null add nothing', async () => {
+    for (const copied of [true, null]) {
+      const t = setup();
+      await recordAndStop(t);
+      t.controller.handleMessage(result({ copied }));
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(['Done $0.01', { tone: 'success', sticky: false, clickable: false }]);
+    }
+  });
+
+  it('a warning result with copied false keeps the warning and adds Not copied', async () => {
+    const t = setup();
+    await recordAndStop(t);
+    t.controller.handleMessage(result({ warning: 'Text model failed. Inserted the raw transcript.', copied: false }));
+    await flush();
+    expect(lastStatus(t.pill)).toEqual([
+      'Text model failed. Inserted the raw transcript. Not copied.',
+      { tone: 'warning', sticky: false, clickable: false },
+    ]);
+    expect(t.pill.setState).toHaveBeenLastCalledWith('done');
+  });
+
+  it.each([
+    ['unverified', 'Could not confirm the insert. The text is also on the clipboard.', { tone: 'warning', sticky: false, clickable: false }],
+    ['clipboard', 'Copied to clipboard. The field could not be edited.', { tone: 'warning', sticky: false, clickable: false }],
+    ['failed', CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true }],
+  ])('other outcomes never add it: %s', async (outcome, text, options) => {
+    const t = setup({ insert: outcome });
+    await recordAndStop(t);
+    t.controller.handleMessage(result({ copied: false }));
+    await flush();
+    expect(lastStatus(t.pill)).toEqual([text, options]);
+  });
+
+  it('other outcomes never add it: the field lost focus', async () => {
+    const t = setup();
+    await recordAndStop(t, 'a');
+    $('b').focus();
+    t.controller.handleMessage(result({ copied: false }));
+    await flush();
+    expect(lastStatus(t.pill)).toEqual(['The field lost focus. Text copied to clipboard.', { tone: 'warning', sticky: false, clickable: false }]);
+  });
+
   it('warning shown 6 s', async () => {
     const t = setup();
     await recordAndStop(t);
@@ -699,6 +751,19 @@ describe('another frame or window has focus', () => {
     vi.advanceTimersByTime(60000);
     expect(t.pill.hide).not.toHaveBeenCalled();
     expect(t.deps.insertText).not.toHaveBeenCalled();
+  });
+
+  it('a held result keeps copied', async () => {
+    const t = setup();
+    await recordAndStop(t);
+    t.deps.hasFocus.mockReturnValue(false);
+    t.controller.handleMessage({ ...RESULT, copied: false });
+    await flush();
+    expect(lastStatus(t.pill)).toEqual(HOLD);
+    t.deps.hasFocus.mockReturnValue(true);
+    await t.controller.onWindowFocus();
+    expect(t.deps.insertText).toHaveBeenCalledWith($('a'), 'hello');
+    expect(lastStatus(t.pill)).toEqual(['Done $0.01 Not copied.', { tone: 'success', sticky: false, clickable: false }]);
   });
 
   it('inserts on the next window focus, once', async () => {

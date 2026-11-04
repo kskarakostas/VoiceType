@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  insertText, copyText, readValue, normalizeForCompare, CLIPBOARD_ONLY_HOSTS,
+  insertText, copyText, readValue, normalizeForCompare, CLIPBOARD_ONLY_HOSTS, WRITE_LIMIT_MS,
 } from '../../../src/content/insert.js';
 
 // jsdom has no execCommand, DataTransfer or ClipboardEvent, and every event a script
@@ -837,6 +837,54 @@ describe('copyText', () => {
     expect(page).toHaveBeenCalledTimes(1);
     expect(later.defaultPrevented).toBe(false);
     document.removeEventListener('copy', page);
+  });
+
+  describe('the time limit on the write', () => {
+    /** With no user activation Chrome leaves writeText pending behind a permission prompt. */
+    const pendingWrite = () => new Promise(() => {});
+
+    it('a pending write gives way', async () => {
+      vi.useFakeTimers();
+      expect(WRITE_LIMIT_MS).toBe(1000);
+      const execCopy = vi.fn(() => true);
+      const settled = vi.fn();
+      copyText('hi', { writeClipboard: pendingWrite, execCopy }).then(settled);
+      await vi.advanceTimersByTimeAsync(WRITE_LIMIT_MS - 1);
+      expect(execCopy).not.toHaveBeenCalled();
+      expect(settled).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(execCopy).toHaveBeenCalledWith('hi');
+      expect(settled).toHaveBeenCalledWith(true);
+    });
+
+    it('a pending write with no exec path resolves false', async () => {
+      vi.useFakeTimers();
+      const settled = vi.fn();
+      copyText('hi', { writeClipboard: pendingWrite, execCopy: () => false }).then(settled);
+      await vi.advanceTimersByTimeAsync(WRITE_LIMIT_MS - 1);
+      expect(settled).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(settled).toHaveBeenCalledWith(false);
+    });
+
+    it('a fast write clears its timer', async () => {
+      vi.useFakeTimers();
+      expect(await copyText('hi', { writeClipboard: async () => {}, execCopy: () => false })).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(await copyText('hi', { writeClipboard: denied, execCopy: () => true })).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it.each([
+      [false, 'failed'],
+      [true, 'clipboard'],
+    ])('insertText on a clipboard-only host with a pending write: execCopy %s gives %s', async (works, outcome) => {
+      vi.useFakeTimers();
+      const [hostname] = CLIPBOARD_ONLY_HOSTS;
+      const pending = insertText(textarea(), 'text', deps({ hostname, writeClipboard: pendingWrite, execCopy: () => works }));
+      await vi.advanceTimersByTimeAsync(WRITE_LIMIT_MS);
+      expect(await pending).toBe(outcome);
+    });
   });
 
   it('insertText copies through the fallback when the page has no Clipboard API', async () => {

@@ -11,6 +11,8 @@ const FRAME_WAIT_MS = 50;
 const POLL_MS = 16;
 const SETTLE_MS = 100;
 const CONFIRM_MS = 100;
+/** How long a clipboard write may stay pending before the copy moves on. */
+export const WRITE_LIMIT_MS = 1000;
 
 /** @param {Event} event */
 const isTrustedEvent = (event) => event.isTrusted === true;
@@ -56,7 +58,8 @@ export function normalizeForCompare(s) {
 /**
  * Copies text. Uses the Clipboard API when the page has one; plain http pages do not, and a
  * frame without focus or without clipboard-write rejects it, so `execCommand('copy')` stands
- * in there. Neither path moves focus or the selection.
+ * in there; the `clipboardWrite` permission lets that command run without a user gesture.
+ * Neither path moves focus or the selection.
  * @param {string} text
  * @param {{
  *   writeClipboard?: (text: string) => Promise<void>,
@@ -68,11 +71,22 @@ export function normalizeForCompare(s) {
 export async function copyText(text, deps = {}) {
   const write = deps.writeClipboard ?? clipboardWriter();
   if (write) {
+    let timer;
     try {
-      await write(text);
+      // With no user activation Chrome can leave writeText pending behind a permission prompt,
+      // which would hold a paid transcript for as long as the prompt stays open.
+      await Promise.race([
+        write(text),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Clipboard write timed out.')), WRITE_LIMIT_MS);
+        }),
+      ]);
       return true;
     } catch {
-      // Refused (no clipboard-write in this frame): try the execCommand path before giving up.
+      // Refused (no clipboard-write in this frame) or still pending: try the execCommand path
+      // before giving up.
+    } finally {
+      clearTimeout(timer);
     }
   }
   try {
@@ -91,8 +105,8 @@ function clipboardWriter() {
 /**
  * `execCommand('copy')` with the text supplied by a one-shot `copy` listener instead of a
  * selection, so nothing is focused or selected: a frame without focus copies without pulling
- * keyboard focus out of the page the user is typing in. Chrome runs the command only during a
- * user gesture, such as the click on the pill.
+ * keyboard focus out of the page the user is typing in. The `clipboardWrite` permission lets
+ * the command run without a user gesture.
  * @param {string} text
  * @param {(event: Event) => boolean} isTrusted
  * @returns {boolean} true only when the command ran and the listener supplied the text

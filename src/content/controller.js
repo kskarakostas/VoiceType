@@ -37,6 +37,7 @@ const CLICK_TO_COPY = 'Could not insert. Click here to copy the text.';
 const HOLD_NOTICE = 'Return to the field to insert, or click here to copy.';
 const PASSWORD_NOTICE = 'VoiceType does not record in password fields.';
 const FOCUS_NOTICE = 'Click into the field you want to dictate into, then press REC.';
+const NOT_COPIED = ' Not copied.';
 const AUTO_STOP = Object.freeze({
   maxTime: { text: 'Max time reached', tone: 'info' },
   silence: { text: 'Stopped after silence', tone: 'info' },
@@ -384,7 +385,7 @@ export function createController(deps) {
     }
     const text = typeof message.text === 'string' ? message.text : '';
     lastResult = { text, raw: typeof message.raw === 'string' ? message.raw : text };
-    const result = { text, cost: finite(message.cost), warning: textOr(message.warning, null) };
+    const result = { text, cost: finite(message.cost), warning: textOr(message.warning, null), copied: message.copied };
 
     if (bound && bound.isConnected && ownsFrameFocus(bound) && !deps.hasFocus()) {
       // The field kept this frame's focus, but another frame or window has the page's focus.
@@ -401,9 +402,10 @@ export function createController(deps) {
    * D12: the text goes into the field bound at REC start only while that field has focus,
    * this frame included; otherwise to the clipboard.
    * @param {Element|null} bound
-   * @param {{ text: string, cost: number, warning: string|null }} result
+   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null }} result
+   *   copied: the worker's always-copy outcome, false when that copy failed
    */
-  async function place(bound, { text, cost, warning }) {
+  async function place(bound, { text, cost, warning, copied: alwaysCopied }) {
     if (bound && bound.isConnected && deepActiveElement() === bound && deps.hasFocus()) {
       let outcome;
       try {
@@ -415,8 +417,9 @@ export function createController(deps) {
       if (inactive()) return;
       if (outcome === 'inserted') {
         pill.setState('done');
-        if (warning) notify(warning, { tone: 'warning' });
-        else notify(`Done ${formatCost(cost)}`, { tone: 'success' });
+        const suffix = alwaysCopied === false ? NOT_COPIED : '';
+        if (warning) notify(`${warning}${suffix}`, { tone: 'warning' });
+        else notify(`Done ${formatCost(cost)}${suffix}`, { tone: 'success' });
       } else if (outcome === 'unverified') {
         pill.setState('done');
         notify('Could not confirm the insert. The text is also on the clipboard.', { tone: 'warning' });
