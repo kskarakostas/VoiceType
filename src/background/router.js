@@ -169,9 +169,12 @@ export function createRouter({ storage, validateKey, summarize, recorder, identi
         const next = request.settings;
         if (!isPlainObject(next)) return { success: false, error: 'Invalid settings.' };
         // Merge so a partial payload never drops custom modes or a key the popup did not send.
+        // Site rules change only through SET_SITE_MODE and SET_SITE_RULE, so an old tab cannot
+        // overwrite newer ones; migrateSettings still repairs them when a custom mode goes.
         await storage.updateSettings((current) => migrateSettings({
           ...current,
           ...pickSettingsFields(next),
+          siteRules: current.siteRules,
           settingsVersion: SETTINGS_VERSION,
           keys: { ...current.keys, ...pickKeys(next.keys) },
         }));

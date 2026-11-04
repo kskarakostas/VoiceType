@@ -216,6 +216,31 @@ describe('settings', () => {
       expect(area.store.settings.modes).not.toHaveProperty('custom_1');
       expect(area.store.settings.siteRules).toEqual({ 'a.com': { hidePill: true, mode: null } });
     });
+
+    it('a payload with siteRules leaves the stored rules alone and saves its other fields', async () => {
+      stored.siteRules = { 'new.com': { hidePill: true, mode: 'email' } };
+      const area = memoryArea({ settings: stored });
+      const save = routerOver(area);
+      const payload = { siteRules: { 'old.com': { hidePill: true, mode: null } }, pillStyle: 'dot', sounds: true };
+      expect(await save({ action: MSG.SAVE_SETTINGS, settings: payload }, POPUP)).toEqual({ success: true });
+      expect(area.store.settings.siteRules).toEqual({ 'new.com': { hidePill: true, mode: 'email' } });
+      expect(area.store.settings.pillStyle).toBe('dot');
+      expect(area.store.settings.sounds).toBe(true);
+    });
+
+    it('deleting a custom mode repairs the stored rules, not the rules in the payload', async () => {
+      stored.siteRules = {
+        'a.com': { hidePill: true, mode: 'custom_1' },
+        'b.com': { hidePill: false, mode: 'custom_1' },
+      };
+      const area = memoryArea({ settings: stored });
+      const save = routerOver(area);
+      const { custom_1: _removed, ...modes } = stored.modes;
+      const payload = { modes, siteRules: { 'old.com': { hidePill: true, mode: 'email' } } };
+      expect(await save({ action: MSG.SAVE_SETTINGS, settings: payload }, POPUP)).toEqual({ success: true });
+      expect(area.store.settings.modes).not.toHaveProperty('custom_1');
+      expect(area.store.settings.siteRules).toEqual({ 'a.com': { hidePill: true, mode: null } });
+    });
   });
 
   it('UPDATE_SETTINGS applies whitelisted fields from content', async () => {
