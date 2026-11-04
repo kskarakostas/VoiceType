@@ -31,15 +31,17 @@ async function keepBooks(writes) {
  * One dictation from recorded audio to the message the tab receives. Never throws.
  * @param {{
  *   storage: Pick<ReturnType<import('./storage.js').createStorage>, 'getSettings'|'updateUsageLog'>,
- *   history: Pick<ReturnType<import('./history.js').createHistory>, 'add'>,
+ *   history: Pick<ReturnType<import('./history.js').createHistory>, 'mark'|'add'>,
  *   runDictation: typeof import('./pipeline.js').runDictation,
  *   applyUsage: typeof import('./usage.js').applyUsage,
  *   userMessage: typeof import('./router.js').userMessage,
  * }} deps
- * @returns {(input: { audioBase64: string, mimeType: string, modeKey: string, durationSec: number, host: string|null }) => Promise<import('../shared/messages.js').DictationMessage>}
+ * @returns {(input: { audioBase64: string, mimeType: string, modeKey: string, durationSec: number, host: string|null, incognito: boolean }) => Promise<import('../shared/messages.js').DictationMessage>}
  */
 export function createDictate({ storage, history, runDictation, applyUsage, userMessage }) {
-  return async function dictate({ audioBase64, mimeType, modeKey, durationSec, host }) {
+  return async function dictate({ audioBase64, mimeType, modeKey, durationSec, host, incognito }) {
+    // Before the settings read: a clear after this point, even during that read, drops the entry (V27).
+    const mark = history.mark();
     let settings;
     let result;
     try {
@@ -57,10 +59,10 @@ export function createDictate({ storage, history, runDictation, applyUsage, user
         words: countWords(result.raw),
       })),
     }];
-    if (settings.keepHistory === true) {
+    if (settings.keepHistory === true && !incognito) {
       writes.push({
         warning: 'VoiceType: history write failed',
-        write: () => history.add({ raw: result.raw, text: result.text, mode: modeKey, host }),
+        write: () => history.add({ raw: result.raw, text: result.text, mode: modeKey, host }, mark),
       });
     }
     await keepBooks(writes);

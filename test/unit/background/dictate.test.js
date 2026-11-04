@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { BOOKKEEPING_LIMIT_MS, createDictate } from '../../../src/background/dictate.js';
 import { createStorage } from '../../../src/background/storage.js';
+import { createHistory } from '../../../src/background/history.js';
 import { applyUsage } from '../../../src/background/usage.js';
 import { userMessage } from '../../../src/background/router.js';
 import { freshSettings } from '../../../src/shared/defaults.js';
 import { ProviderError } from '../../../src/background/providers/errors.js';
 
-const input = { audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 12.4, host: 'example.com' };
+const input = { audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 12.4, host: 'example.com', incognito: false };
 const result = { raw: 'raw', text: 'final', provider: 'openai', sttModel: 'gpt-transcribe', textModel: 'gpt-6-luna', audioSeconds: 12, cost: 0.0009, warning: null };
 
 let settings, deps, dictate;
@@ -18,7 +19,7 @@ beforeEach(() => {
       getSettings: vi.fn(async () => settings),
       updateUsageLog: vi.fn(async (fn) => fn({ version: 2, daily: {}, total: {} })),
     },
-    history: { add: vi.fn(async () => {}) },
+    history: { mark: vi.fn(() => 5), add: vi.fn(async () => {}) },
     runDictation: vi.fn(async () => ({ ...result })),
     applyUsage: vi.fn((log, entry) => ({ ...log, lastEntry: entry })),
     userMessage,
@@ -31,7 +32,7 @@ describe('createDictate', () => {
   it('runs the pipeline with fresh settings, logs usage and returns the dictation', async () => {
     const message = await dictate(input);
     expect(message).toEqual({ success: true, text: 'final', raw: 'raw', cost: 0.0009, warning: null });
-    const { host: _host, ...pipelineInput } = input;
+    const { host: _host, incognito: _incognito, ...pipelineInput } = input;
     expect(deps.runDictation).toHaveBeenCalledWith({ ...pipelineInput, settings });
     expect(deps.storage.updateUsageLog).toHaveBeenCalledTimes(1);
     expect(deps.applyUsage).toHaveBeenCalledWith(expect.anything(), { provider: 'openai', audioSeconds: 12, cost: 0.0009, mode: 'email', words: 1 });
@@ -105,12 +106,12 @@ describe('createDictate', () => {
     it('adds an entry after a success, with raw, text, mode and host', async () => {
       await dictate(input);
       expect(deps.history.add).toHaveBeenCalledTimes(1);
-      expect(deps.history.add).toHaveBeenCalledWith({ raw: 'raw', text: 'final', mode: 'email', host: 'example.com' });
+      expect(deps.history.add).toHaveBeenCalledWith({ raw: 'raw', text: 'final', mode: 'email', host: 'example.com' }, 5);
     });
 
     it('adds a null host as it came', async () => {
       await dictate({ ...input, host: null });
-      expect(deps.history.add).toHaveBeenCalledWith(expect.objectContaining({ host: null }));
+      expect(deps.history.add).toHaveBeenCalledWith(expect.objectContaining({ host: null }), 5);
     });
 
     it('adds nothing on a failure', async () => {
@@ -126,6 +127,18 @@ describe('createDictate', () => {
       expect(message.success).toBe(true);
       expect(deps.history.add).not.toHaveBeenCalled();
       expect(deps.storage.updateUsageLog).toHaveBeenCalledTimes(1);
+    });
+
+    it('adds nothing for an incognito tab, and still logs usage', async () => {
+      const message = await dictate({ ...input, incognito: true });
+      expect(message.success).toBe(true);
+      expect(deps.history.add).not.toHaveBeenCalled();
+      expect(deps.storage.updateUsageLog).toHaveBeenCalledTimes(1);
+    });
+
+    it('takes the mark before it reads the settings', async () => {
+      await dictate(input);
+      expect(deps.history.mark.mock.invocationCallOrder[0]).toBeLessThan(deps.storage.getSettings.mock.invocationCallOrder[0]);
     });
 
     it('a failed history write still returns the result and logs usage, under its own text', async () => {
@@ -170,6 +183,66 @@ describe('createDictate', () => {
       await dictate(input);
       expect(warn).toHaveBeenCalledTimes(2);
       expect(JSON.stringify(warn.mock.calls.map((call) => call.map(String)))).not.toContain('private');
+    });
+  });
+
+  describe('a clear during the provider call (V27)', () => {
+    let history, finish, real;
+
+    /** The real store; the provider call waits for finish() so the test can act during it. */
+    beforeEach(() => {
+      const store = {};
+      history = createHistory({
+        area: {
+          get: async (key) => ({ [key]: structuredClone(store[key]) }),
+          set: async (items) => { Object.assign(store, structuredClone(items)); },
+        },
+      });
+      deps.runDictation.mockImplementation(() => new Promise((resolve) => { finish = () => resolve({ ...result }); }));
+      real = createDictate({ ...deps, history });
+    });
+
+    /** One dictation with `during` run while the provider is working. */
+    async function dictateWith(during) {
+      finish = null;
+      const pending = real(input);
+      await vi.waitFor(() => expect(finish).not.toBeNull());
+      await during();
+      finish();
+      return pending;
+    }
+
+    it('a dictation with no clear adds one', async () => {
+      await dictateWith(() => {});
+      expect(await history.list()).toEqual([expect.objectContaining({ raw: 'raw', text: 'final', mode: 'email', host: 'example.com' })]);
+    });
+
+    it('toggle off during the provider call adds nothing, and the result still goes out', async () => {
+      const message = await dictateWith(async () => {
+        settings.keepHistory = false;
+        await history.clear(); // what the worker does on the on-to-off change
+      });
+      expect(message.success).toBe(true);
+      expect(await history.list()).toEqual([]);
+    });
+
+    it('Clear during the provider call adds nothing, with the toggle still on', async () => {
+      const message = await dictateWith(() => history.clear());
+      expect(message.success).toBe(true);
+      expect(settings.keepHistory).toBe(true);
+      expect(await history.list()).toEqual([]);
+    });
+
+    it('the settings read does not hide a clear: one landing between the mark and the read drops it', async () => {
+      deps.storage.getSettings.mockImplementationOnce(async () => { await history.clear(); return settings; });
+      await dictateWith(() => {});
+      expect(await history.list()).toEqual([]);
+    });
+
+    it('the dictation after a clear is kept', async () => {
+      await dictateWith(() => history.clear());
+      await dictateWith(() => {});
+      expect(await history.list()).toHaveLength(1);
     });
   });
 

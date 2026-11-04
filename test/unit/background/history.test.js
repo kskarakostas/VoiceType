@@ -15,6 +15,8 @@ function fakeArea(seed = {}) {
 
 const entry = (text, host = 'example.com') => ({ raw: `raw ${text}`, text, mode: 'default', host });
 const texts = (entries) => entries.map(({ text }) => text);
+/** An add with nothing cleared since its mark. */
+const put = (history, added) => history.add(added, history.mark());
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -27,8 +29,8 @@ describe('createHistory', () => {
     vi.spyOn(Date, 'now').mockReturnValue(1234);
     const area = fakeArea();
     const history = createHistory({ area });
-    await history.add({ raw: 'raw', text: 'text', mode: 'email', host: null });
-    await history.add({ raw: 'raw', text: 'text', mode: 'email', host: null });
+    await put(history, { raw: 'raw', text: 'text', mode: 'email', host: null });
+    await put(history, { raw: 'raw', text: 'text', mode: 'email', host: null });
     const [second, first] = area.map.get('history');
     expect(first).toEqual({ id: expect.any(String), raw: 'raw', text: 'text', mode: 'email', host: null, ts: 1234 });
     expect(second.id).not.toBe(first.id);
@@ -36,14 +38,14 @@ describe('createHistory', () => {
 
   it('keeps the newest first', async () => {
     const history = createHistory({ area: fakeArea() });
-    await history.add(entry('one'));
-    await history.add(entry('two'));
+    await put(history, entry('one'));
+    await put(history, entry('two'));
     expect(texts(await history.list())).toEqual(['two', 'one']);
   });
 
   it('drops the oldest past MAX_HISTORY', async () => {
     const history = createHistory({ area: fakeArea() });
-    for (let i = 1; i <= MAX_HISTORY + 1; i++) await history.add(entry(`n${i}`));
+    for (let i = 1; i <= MAX_HISTORY + 1; i++) await put(history, entry(`n${i}`));
     const list = await history.list();
     expect(list).toHaveLength(MAX_HISTORY);
     expect(list[0].text).toBe(`n${MAX_HISTORY + 1}`);
@@ -52,13 +54,13 @@ describe('createHistory', () => {
 
   it('loses nothing when two adds overlap', async () => {
     const history = createHistory({ area: fakeArea() });
-    await Promise.all([history.add(entry('one')), history.add(entry('two'))]);
+    await Promise.all([put(history, entry('one')), put(history, entry('two'))]);
     expect(texts(await history.list())).toEqual(['two', 'one']);
   });
 
   it('holds the cap when more adds overlap than it allows', async () => {
     const history = createHistory({ area: fakeArea() });
-    await Promise.all(Array.from({ length: MAX_HISTORY + 5 }, (_, i) => history.add(entry(`n${i}`))));
+    await Promise.all(Array.from({ length: MAX_HISTORY + 5 }, (_, i) => put(history, entry(`n${i}`))));
     const list = await history.list();
     expect(list).toHaveLength(MAX_HISTORY);
     expect(list[0].text).toBe(`n${MAX_HISTORY + 4}`);
@@ -67,17 +69,17 @@ describe('createHistory', () => {
 
   it('reads the store each time: a new instance sees earlier entries', async () => {
     const area = fakeArea();
-    await createHistory({ area }).add(entry('before the restart'));
+    await put(createHistory({ area }), entry('before the restart'));
     const restarted = createHistory({ area });
     expect(texts(await restarted.list())).toEqual(['before the restart']);
-    await restarted.add(entry('after the restart'));
+    await put(restarted, entry('after the restart'));
     expect(texts(await restarted.list())).toEqual(['after the restart', 'before the restart']);
   });
 
   it('holds the cap across a restart', async () => {
     const area = fakeArea();
-    for (let i = 1; i <= MAX_HISTORY; i++) await createHistory({ area }).add(entry(`n${i}`));
-    await createHistory({ area }).add(entry('last'));
+    for (let i = 1; i <= MAX_HISTORY; i++) await put(createHistory({ area }), entry(`n${i}`));
+    await put(createHistory({ area }), entry('last'));
     expect(area.map.get('history')).toHaveLength(MAX_HISTORY);
   });
 
@@ -85,8 +87,8 @@ describe('createHistory', () => {
     const area = fakeArea();
     const history = createHistory({ area });
     area.set.mockRejectedValueOnce(new Error('quota'));
-    await expect(history.add(entry('lost'))).rejects.toThrow('quota');
-    await history.add(entry('kept'));
+    await expect(put(history, entry('lost'))).rejects.toThrow('quota');
+    await put(history, entry('kept'));
     expect(texts(await history.list())).toEqual(['kept']);
   });
 
@@ -94,16 +96,16 @@ describe('createHistory', () => {
     const area = fakeArea({ history: [{ ...entry('held'), id: 'a', ts: 1 }] });
     const history = createHistory({ area });
     area.set.mockReturnValueOnce(new Promise(() => {}));
-    history.add(entry('hung'));
+    put(history, entry('hung'));
     expect(texts(await history.list())).toEqual(['held']);
     expect((await history.lastFor('example.com')).text).toBe('held');
   });
 
   it('lastFor matches the host exactly, newest first', async () => {
     const history = createHistory({ area: fakeArea() });
-    await history.add(entry('old', 'example.com'));
-    await history.add(entry('new', 'example.com'));
-    await history.add(entry('sub', 'mail.example.com'));
+    await put(history, entry('old', 'example.com'));
+    await put(history, entry('new', 'example.com'));
+    await put(history, entry('sub', 'mail.example.com'));
     expect((await history.lastFor('example.com')).text).toBe('new');
     expect((await history.lastFor('mail.example.com')).text).toBe('sub');
     expect(await history.lastFor('other.example.com')).toBeNull();
@@ -112,7 +114,7 @@ describe('createHistory', () => {
 
   it('lastFor(null) is null even with a null-host entry', async () => {
     const history = createHistory({ area: fakeArea() });
-    await history.add(entry('no site', null));
+    await put(history, entry('no site', null));
     expect(await history.lastFor(null)).toBeNull();
   });
 
@@ -125,21 +127,62 @@ describe('createHistory', () => {
     const history = createHistory({ area });
     expect(await history.list()).toEqual([]);
     expect(await history.lastFor('example.com')).toBeNull();
-    await history.add(entry('fresh'));
+    await put(history, entry('fresh'));
     expect(texts(await history.list())).toEqual(['fresh']);
   });
 
   it('clear empties it', async () => {
     const history = createHistory({ area: fakeArea() });
-    await history.add(entry('one'));
+    await put(history, entry('one'));
     await history.clear();
     expect(await history.list()).toEqual([]);
     expect(await history.lastFor('example.com')).toBeNull();
   });
 
+  it('an add marked before a clear is dropped', async () => {
+    const history = createHistory({ area: fakeArea() });
+    const mark = history.mark();
+    await history.clear();
+    await history.add(entry('late'), mark);
+    expect(await history.list()).toEqual([]);
+  });
+
+  it('an add marked after the clear is kept', async () => {
+    const history = createHistory({ area: fakeArea() });
+    await history.clear();
+    await history.add(entry('next'), history.mark());
+    expect(texts(await history.list())).toEqual(['next']);
+  });
+
+  it('a clear counts from the call, so an add still queued behind a write is dropped', async () => {
+    const area = fakeArea();
+    const history = createHistory({ area });
+    const adds = [put(history, entry('first')), put(history, entry('second'))];
+    history.clear();
+    await Promise.all(adds);
+    expect(area.set).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(area.map.get('history')).toEqual([]));
+  });
+
+  it('a failed clear still counts: a marked add does not land after it', async () => {
+    const area = fakeArea();
+    const history = createHistory({ area });
+    const mark = history.mark();
+    area.set.mockRejectedValueOnce(new Error('down'));
+    await expect(history.clear()).rejects.toThrow('down');
+    await history.add(entry('late'), mark);
+    expect(await history.list()).toEqual([]);
+  });
+
+  it('an add with no mark adds nothing', async () => {
+    const history = createHistory({ area: fakeArea() });
+    await history.add(entry('unmarked'));
+    expect(await history.list()).toEqual([]);
+  });
+
   it('a clear waits its turn: an add queued before it does not survive it', async () => {
     const history = createHistory({ area: fakeArea() });
-    await Promise.all([history.add(entry('one')), history.clear()]);
+    await Promise.all([put(history, entry('one')), history.clear()]);
     expect(await history.list()).toEqual([]);
   });
 });

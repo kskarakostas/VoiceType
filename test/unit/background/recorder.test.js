@@ -70,30 +70,39 @@ async function dictation(t, over = {}) {
 }
 
 describe('the site of a recording', () => {
-  /** The host one dictation started on `tabUrl` hands to dictate. */
-  async function hostFor(tabUrl, endpoint = A) {
-    const t = setup();
-    await t.recorder.start(endpoint, tabUrl);
+  /** What one dictation hands to dictate, started with these `start` arguments from `endpoint`. */
+  async function inputFor(endpoint, ...args) {
+    const t = setup({ settings: { activeMode: 'default', siteRules: { 'top.com': { hidePill: false, mode: 'email' } } } });
+    await t.recorder.start(endpoint, ...args);
     await t.recorder.stop(endpoint);
     await t.recorder.onDone(done({ captureId: t.id() }));
-    return t.deps.dictate.mock.calls[0][0].host;
+    return t.deps.dictate.mock.calls[0][0];
   }
 
-  it('passes the site key of the recording tab to dictate', async () => {
-    expect(await hostFor('https://www.Example.com/inbox?x=1')).toBe('example.com');
+  it('passes the site the router worked out to dictate', async () => {
+    expect((await inputFor(A, 'https://top.com/', { host: 'top.com', incognito: false })).host).toBe('top.com');
   });
 
-  it('a subframe records under the top-level page it was given', async () => {
-    expect(await hostFor('https://top.example.com/', A_CHILD)).toBe('top.example.com');
+  it('never works the site out from the top-level URL: a third-party frame stays null', async () => {
+    expect((await inputFor(A_CHILD, 'https://top.com/', { host: null, incognito: false })).host).toBeNull();
   });
 
-  it.each([['no url', undefined], ['a file page', 'file:///home/a.html'], ['a chrome page', 'chrome://settings/']])('passes null for %s', async (_name, url) => {
-    expect(await hostFor(url)).toBeNull();
+  it('the site rule still comes from the top-level URL', async () => {
+    expect((await inputFor(A_CHILD, 'https://top.com/', { host: null, incognito: false })).modeKey).toBe('email');
   });
 
-  it('keeps the host out of the public session', async () => {
+  it('passes an incognito tab on to dictate', async () => {
+    expect((await inputFor(A, 'https://top.com/', { host: 'top.com', incognito: true })).incognito).toBe(true);
+    expect((await inputFor(A, 'https://top.com/', { host: 'top.com', incognito: false })).incognito).toBe(false);
+  });
+
+  it('a start with no site info is no site and not incognito', async () => {
+    expect(await inputFor(A)).toMatchObject({ host: null, incognito: false });
+  });
+
+  it('keeps the host and incognito out of the public session', async () => {
     const { recorder } = setup();
-    await recorder.start(A, 'https://example.com/');
+    await recorder.start(A, 'https://example.com/', { host: 'example.com', incognito: true });
     expect(recorder.session).toEqual({ endpoint: A, state: 'recording', modeKey: 'email', minSec: 1 });
   });
 });
@@ -743,7 +752,7 @@ describe('results', () => {
     let sessionAtDelivery = 'unset';
     deps.toTab.mockImplementation(async () => { sessionAtDelivery = recorder.session; return true; });
     await recorder.onDone(done({ captureId: id() }));
-    expect(deps.dictate).toHaveBeenCalledWith({ audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 4.2, host: null });
+    expect(deps.dictate).toHaveBeenCalledWith({ audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 4.2, host: null, incognito: false });
     expect(tabMessages()).toEqual([{ endpoint: A_CHILD, action: MSG.DICTATION_RESULT, ...RESULT }]);
     expect(sessionAtDelivery).toBeNull();
     expect(recorder.session).toBeNull();

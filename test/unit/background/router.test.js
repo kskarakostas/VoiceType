@@ -312,7 +312,9 @@ describe('keys and usage', () => {
 });
 
 describe('history', () => {
-  const pageOf = (url) => ({ kind: 'content', tab: { id: 7, url }, frameId: 3 });
+  /** A sender as Chrome reports it. `tab.url` is the top page whatever frame sends; `origin` and `url` are the frame's. */
+  const pageOf = (topUrl, { origin = topUrl && new URL(topUrl).origin, url = topUrl, incognito } = {}) => (
+    { kind: 'content', origin, url, tab: { id: 7, url: topUrl, ...(incognito === undefined ? {} : { incognito }) }, frameId: 3 });
 
   it('GET_LAST_DICTATION answers from the sender tab host only', async () => {
     expect(await handle({ action: MSG.GET_LAST_DICTATION, host: 'other.com' }, pageOf('https://www.example.com/page'))).toEqual({ entry: { raw: 'raw words', text: 'final words' } });
@@ -324,6 +326,65 @@ describe('history', () => {
   it.each([['a chrome page', 'chrome://settings/'], ['a file page', 'file:///home/a.html'], ['no url', undefined]])('GET_LAST_DICTATION is null with no host: %s', async (_name, url) => {
     expect(await handle({ action: MSG.GET_LAST_DICTATION }, pageOf(url))).toEqual({ entry: null });
     expect(deps.history.lastFor).toHaveBeenCalledWith(null);
+  });
+
+  describe('a frame reads its own site alone (V28)', () => {
+    const FIRST_PARTY = 'https://example.com/page';
+    const ANSWER = { entry: { raw: 'raw words', text: 'final words' } };
+    const rows = [
+      ['a same-site frame', pageOf(FIRST_PARTY, { url: 'https://example.com/frame' }), ANSWER],
+      ['www and bare host are one site', pageOf('https://www.example.com/', { origin: 'https://example.com' }), ANSWER],
+      ['http and https are one site', pageOf(FIRST_PARTY, { origin: 'http://example.com' }), ANSWER],
+      ['an about:blank frame inherits its creator', pageOf(FIRST_PARTY, { url: 'about:blank' }), ANSWER],
+      ['a third-party frame on the first party', pageOf(FIRST_PARTY, { origin: 'https://widget.com', url: 'https://widget.com/embed' }), { entry: null }],
+      ['a subdomain frame', pageOf(FIRST_PARTY, { origin: 'https://mail.example.com', url: 'https://mail.example.com/' }), { entry: null }],
+      ['an about:blank frame made by a third party', pageOf(FIRST_PARTY, { origin: 'https://widget.com', url: 'about:blank' }), { entry: null }],
+      ['the first party framed by another site', pageOf('https://widget.com/', { origin: 'https://example.com', url: FIRST_PARTY }), { entry: null }],
+      ['an opaque origin', pageOf(FIRST_PARTY, { origin: 'null', url: 'about:srcdoc' }), { entry: null }],
+      ['no origin', { kind: 'content', url: FIRST_PARTY, tab: { id: 7, url: FIRST_PARTY }, frameId: 3 }, { entry: null }],
+    ];
+    it.each(rows)('%s', async (_name, sender, reply) => {
+      expect(await handle({ action: MSG.GET_LAST_DICTATION }, sender)).toEqual(reply);
+    });
+
+    it('a third-party frame asks for no site at all', async () => {
+      await handle({ action: MSG.GET_LAST_DICTATION }, pageOf(FIRST_PARTY, { origin: 'https://widget.com' }));
+      expect(deps.history.lastFor).toHaveBeenCalledWith(null);
+    });
+
+    it('an opaque origin is no site even on a page whose host reads null', async () => {
+      await handle({ action: MSG.GET_LAST_DICTATION }, pageOf('http://null/', { origin: 'null' }));
+      expect(deps.history.lastFor).toHaveBeenCalledWith(null);
+    });
+  });
+
+  describe('START_RECORDING gives the recorder the frame site (V26)', () => {
+    const TOP = 'https://www.example.com/page';
+    const started = async (sender) => {
+      await handle({ action: MSG.START_RECORDING }, sender);
+      return deps.recorder.start.mock.calls[0];
+    };
+
+    it('a first-party frame records under its site', async () => {
+      expect(await started(pageOf(TOP))).toEqual([{ tabId: 7, frameId: 3 }, TOP, { host: 'example.com', incognito: false }]);
+    });
+
+    it('a third-party frame records under no site, and the rule still reads the top page', async () => {
+      const sender = pageOf(TOP, { origin: 'https://widget.com', url: 'https://widget.com/embed' });
+      expect(await started(sender)).toEqual([{ tabId: 7, frameId: 3 }, TOP, { host: null, incognito: false }]);
+    });
+
+    it('an about:blank editor records under the site that made it', async () => {
+      expect((await started(pageOf(TOP, { url: 'about:blank' })))[2].host).toBe('example.com');
+    });
+
+    it('reports an incognito tab', async () => {
+      expect((await started(pageOf(TOP, { incognito: true })))[2].incognito).toBe(true);
+    });
+
+    it('anything but true is not incognito', async () => {
+      expect((await started(pageOf(TOP, { incognito: 'yes' })))[2].incognito).toBe(false);
+    });
   });
 
   it('GET_LAST_DICTATION returns raw and text alone', async () => {
@@ -372,7 +433,7 @@ describe('recorder delegation', () => {
   it('recording actions go to the recorder with the sender frame as the endpoint', async () => {
     deps.recorder.start.mockResolvedValueOnce({ ok: false, reason: 'busy', error: 'VoiceType is busy in another tab. Try again in a moment.' });
     expect(await handle({ action: MSG.START_RECORDING }, CONTENT)).toEqual({ ok: false, reason: 'busy', error: 'VoiceType is busy in another tab. Try again in a moment.' });
-    expect(deps.recorder.start).toHaveBeenCalledWith({ tabId: 7, frameId: 3 }, undefined);
+    expect(deps.recorder.start).toHaveBeenCalledWith({ tabId: 7, frameId: 3 }, undefined, { host: null, incognito: false });
     expect(await handle({ action: MSG.STOP_RECORDING }, TOP_FRAME)).toEqual({ ok: true });
     expect(deps.recorder.stop).toHaveBeenCalledWith({ tabId: 7, frameId: 0 });
     expect(await handle({ action: MSG.CANCEL_RECORDING }, CONTENT)).toEqual({ ok: true });
@@ -620,7 +681,7 @@ describe('site rules', () => {
   it('START_RECORDING passes the tab URL to the recorder', async () => {
     const frame = { kind: 'content', url: 'https://frame.test/', tab: { id: 7, url: 'https://a.com/x' }, frameId: 3 };
     await handle({ action: MSG.START_RECORDING }, frame);
-    expect(deps.recorder.start).toHaveBeenCalledWith({ tabId: 7, frameId: 3 }, 'https://a.com/x');
+    expect(deps.recorder.start).toHaveBeenCalledWith({ tabId: 7, frameId: 3 }, 'https://a.com/x', expect.anything());
   });
 });
 

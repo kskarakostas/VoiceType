@@ -208,13 +208,31 @@ describe('history wiring', () => {
     expect(fake.session.history).toEqual([]);
   });
 
-  it('a dictation lands in chrome.storage.session under the site of its tab, nothing in storage.local', async () => {
+  /** One dictation from `sender` through the real worker, with the provider stubbed. */
+  async function dictateFrom(sender) {
     fake.session.history = [];
     fake.store.settings = { ...freshSettings(), keys: { openai: 'sk-secret-123456', gemini: '' } };
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ text: 'spoken words', usage: {} }), { status: 200 })));
-    await send(fake.listeners, { action: MSG.START_RECORDING }, AT_EXAMPLE);
+    await send(fake.listeners, { action: MSG.START_RECORDING }, sender);
     const [{ captureId }] = fake.chrome.runtime.sendMessage.mock.calls.map(([m]) => m).filter((m) => m.action === MSG.OFFSCREEN_START);
     await send(fake.listeners, { action: MSG.OFFSCREEN_DONE, audioBase64: 'QUJD', mimeType: 'audio/webm', durationSec: 2, reason: 'user', captureId }, OFFSCREEN);
+  }
+
+  it('a third-party frame files its dictation under no site, and cannot read the first party', async () => {
+    const WIDGET = { ...AT_EXAMPLE, origin: 'https://widget.com', url: 'https://widget.com/embed', frameId: 4 };
+    await dictateFrom(WIDGET);
+    expect(fake.session.history).toEqual([expect.objectContaining({ host: null })]);
+    fake.session.history = [ENTRY];
+    expect(await send(fake.listeners, { action: MSG.GET_LAST_DICTATION }, WIDGET)).toEqual({ entry: null });
+  });
+
+  it('an incognito tab keeps nothing', async () => {
+    await dictateFrom({ ...AT_EXAMPLE, tab: { ...AT_EXAMPLE.tab, incognito: true } });
+    expect(fake.session.history).toEqual([]);
+  });
+
+  it('a dictation lands in chrome.storage.session under the site of its tab, nothing in storage.local', async () => {
+    await dictateFrom(AT_EXAMPLE);
     expect(fake.session.history).toEqual([{ id: expect.any(String), raw: 'spoken words', text: 'spoken words', mode: 'default', host: 'example.com', ts: expect.any(Number) }]);
     expect(JSON.stringify(fake.store)).not.toContain('spoken words');
   });

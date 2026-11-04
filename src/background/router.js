@@ -9,7 +9,7 @@ import { ProviderError, redact } from './providers/errors.js';
  * @typedef {'offscreen'|'extension'|'content'|'unknown'} SenderKind
  * @typedef {{ tabId: number, frameId: number }} Endpoint
  * @typedef {{
- *   start: (endpoint: Endpoint, tabUrl?: string) => Promise<import('../shared/messages.js').StartResponse>,
+ *   start: (endpoint: Endpoint, tabUrl?: string, site?: { host?: string|null, incognito?: boolean }) => Promise<import('../shared/messages.js').StartResponse>,
  *   stop: (endpoint: Endpoint) => Promise<{ ok: boolean }>,
  *   cancel: (endpoint: Endpoint) => Promise<{ ok: boolean }>,
  *   onLevel: (level: number, captureId: string) => void,
@@ -127,6 +127,19 @@ function endpointOf(sender) {
 }
 
 /**
+ * The site of the frame that sent this (V26): the top page's site key when the frame's origin has
+ * that same key, else null. `tab.url` alone is the top page for every frame, and a third-party frame
+ * must not count as it. `origin`, not `url`: an about:blank editor inherits its creator's origin.
+ * @param {chrome.runtime.MessageSender} sender
+ * @returns {string|null}
+ */
+function frameSite(sender) {
+  const site = siteKey(sender.tab?.url);
+  // An opaque origin is the string 'null', which siteKey reads as a host.
+  return sender.origin !== 'null' && siteKey(sender.origin) === site ? site : null;
+}
+
+/**
  * Set one site's rule. Runs inside the settings queue, so the rule is built from the stored settings
  * and `mode` is checked against the stored modes.
  * @param {ReturnType<import('./storage.js').createStorage>} storage
@@ -236,8 +249,8 @@ export function createRouter({ storage, validateKey, summarize, recorder, histor
         return { success: true };
 
       case MSG.GET_LAST_DICTATION: {
-        // The site comes from the sender, never the request: a page reads its own site alone (V28).
-        const entry = await history.lastFor(siteKey(sender.tab?.url));
+        // The site comes from the sender, never the request: a frame reads its own site alone (V28).
+        const entry = await history.lastFor(frameSite(sender));
         return { entry: entry && { raw: entry.raw, text: entry.text } };
       }
 
@@ -249,7 +262,7 @@ export function createRouter({ storage, validateKey, summarize, recorder, histor
         return { success: true };
 
       case MSG.START_RECORDING:
-        return recorder.start(endpointOf(sender), sender.tab?.url);
+        return recorder.start(endpointOf(sender), sender.tab?.url, { host: frameSite(sender), incognito: sender.tab?.incognito === true });
 
       case MSG.STOP_RECORDING:
         return recorder.stop(endpointOf(sender));
