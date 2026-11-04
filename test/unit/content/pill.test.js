@@ -176,6 +176,130 @@ describe('placement', () => {
     pill.reposition(FIELD);
     expect(pill.visible).toBe(false);
   });
+
+  describe('field scrolled out of view', () => {
+    const OFFSCREEN = { top: -3000, left: 400, width: 300, height: 30 };
+    const CORNER = computePillPosition({ anchor: null, pill: PILL_SIZE, viewport: VIEWPORT, gap: 8 });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function expectAtCorner(pill) {
+      const el = q(pill, '.pill');
+      expect(pill.visible).toBe(true);
+      expect(q(pill, '.vt').hidden).toBe(false);
+      expect(el.dataset.placement).toBe('corner');
+      expect(el.style.top).toBe(`${CORNER.top}px`);
+      expect(el.style.left).toBe(`${CORNER.left}px`);
+    }
+
+    function expectHidden(pill) {
+      expect(pill.visible).toBe(false);
+      expect(q(pill, '.vt').hidden).toBe(true);
+    }
+
+    it('a recording that starts there shows at the corner at once', () => {
+      const { pill } = makePill();
+      pill.show(OFFSCREEN);
+      expectHidden(pill);
+      pill.setState('recording');
+      expectAtCorner(pill);
+    });
+
+    it.each(['processing', 'done', 'error'])('so does %s', (state) => {
+      const { pill } = makePill();
+      pill.show(OFFSCREEN);
+      pill.setState(state);
+      expectAtCorner(pill);
+    });
+
+    it('a field scrolled away during a recording leaves the pill at the corner', () => {
+      const { pill } = makePill();
+      pill.show(FIELD);
+      pill.setState('recording');
+      pill.reposition(OFFSCREEN);
+      expectAtCorner(pill);
+    });
+
+    it('an idle pill with no status stays hidden', () => {
+      const { pill } = makePill();
+      pill.show(OFFSCREEN);
+      pill.setState('idle');
+      expectHidden(pill);
+      pill.reposition({ ...OFFSCREEN, top: -2000 });
+      expectHidden(pill);
+    });
+
+    it('a recording that ends there hides again', () => {
+      const { pill } = makePill();
+      pill.show(OFFSCREEN);
+      pill.setState('recording');
+      pill.setState('idle');
+      expectHidden(pill);
+    });
+
+    it('a sticky status shows and stays clickable, and hides once it is cleared', () => {
+      const { pill, h } = makePill();
+      pill.show(OFFSCREEN);
+      pill.setStatus('Could not insert.', { tone: 'error', sticky: true, clickable: true });
+      expectAtCorner(pill);
+      statusEl(pill).click();
+      expect(h.onStatusClick).toHaveBeenCalledTimes(1);
+      pill.clearStatus();
+      expectHidden(pill);
+    });
+
+    it('a timed status hides again when it runs out', () => {
+      vi.useFakeTimers();
+      const { pill } = makePill();
+      pill.show(OFFSCREEN);
+      pill.setStatus('Saved', { tone: 'info' });
+      expectAtCorner(pill);
+      vi.advanceTimersByTime(STATUS_MS.info);
+      expectHidden(pill);
+    });
+
+    it('the status keeps the pill up while the state goes back to idle', () => {
+      const { pill } = makePill();
+      pill.show(OFFSCREEN);
+      pill.setState('done');
+      pill.setStatus('Could not insert.', { tone: 'error', sticky: true, clickable: true });
+      pill.setState('idle');
+      expectAtCorner(pill);
+    });
+
+    it('scrolling back returns the pill to the field', () => {
+      const { pill } = makePill();
+      pill.show(OFFSCREEN);
+      pill.setState('recording');
+      pill.reposition(FIELD);
+      const expected = computePillPosition({ anchor: FIELD, pill: PILL_SIZE, viewport: VIEWPORT, gap: 8 });
+      const el = q(pill, '.pill');
+      expect(pill.visible).toBe(true);
+      expect(el.dataset.placement).toBe(expected.placement);
+      expect(el.style.top).toBe(`${Math.round(expected.top)}px`);
+      expect(el.style.left).toBe(`${Math.round(expected.left)}px`);
+    });
+
+    it('a state change leaves a pill on screen where it is', () => {
+      const { pill } = makePill();
+      pill.show(FIELD);
+      const before = pillRect(pill);
+      pill.setState('recording');
+      expect(pillRect(pill)).toEqual(before);
+    });
+
+    it('a pill hidden by hide() stays hidden through a state or a status', () => {
+      const { pill } = makePill();
+      pill.show(OFFSCREEN);
+      pill.hide();
+      pill.setState('recording');
+      pill.setStatus('x', { sticky: true });
+      expect(pill.visible).toBe(false);
+      expect(q(pill, '.vt').hidden).toBe(true);
+    });
+  });
 });
 
 describe('state and level', () => {

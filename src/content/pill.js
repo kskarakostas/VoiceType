@@ -79,6 +79,11 @@ export class Pill {
   #destroyed = false;
   #shown = false;
   #offscreen = false;
+  /**
+   * The box last placed at (null: the corner), for a re-place when what the pill shows changes.
+   * @type {Box|null}
+   */
+  #anchor = null;
   /** @type {(Box & { placement: string })|null} */
   #box = null;
   #gap = 8;
@@ -181,6 +186,7 @@ export class Pill {
     const { pill, rec, recIcon, recLabel } = this.#els;
     pill.dataset.state = state;
     rec.setAttribute('aria-label', state === 'recording' ? 'Stop recording' : 'Start recording');
+    this.#replace();
     if (state === 'recording') {
       setIcon(recIcon, 'stop');
       if (previous !== 'recording') {
@@ -225,7 +231,7 @@ export class Pill {
     status.toggleAttribute('data-clickable', this.#statusClickable);
     if (terminal) this.#terminal = true;
     else if (!sticky) this.#statusTimer = setTimeout(() => this.#resetStatus(), STATUS_MS[safeTone]);
-    this.#placeStatus();
+    this.#replace();
   }
 
   clearStatus() {
@@ -329,10 +335,23 @@ export class Pill {
     };
   }
 
+  /** A recording or a status has to be seen, so a field out of view is no reason to hide it. */
+  #hasContent() {
+    return this.#state !== 'idle' || !this.#els.status.hasAttribute('data-empty');
+  }
+
+  /** What the pill shows changed: with its field out of view, that decides corner or hidden. */
+  #replace() {
+    if (this.#shown) this.#place(this.#anchor);
+  }
+
   /** @param {Box|null} anchor */
   #place(anchor) {
+    this.#anchor = anchor;
     const { wrap, pill } = this.#els;
-    const pos = computePillPosition({ anchor, pill: PILL_SIZE, viewport: this.#viewport(), gap: this.#gap });
+    const input = { pill: PILL_SIZE, viewport: this.#viewport(), gap: this.#gap };
+    let pos = computePillPosition({ ...input, anchor });
+    if (pos.placement === 'hidden' && this.#hasContent()) pos = computePillPosition({ ...input, anchor: null });
     if (pos.placement === 'hidden') {
       this.#offscreen = true;
       this.closeMenu();
@@ -421,6 +440,7 @@ export class Pill {
     status.setAttribute('data-empty', '');
     status.removeAttribute('data-clickable');
     this.#statusClickable = false;
+    this.#replace();
   }
 
   #build() {

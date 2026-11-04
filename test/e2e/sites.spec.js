@@ -180,6 +180,23 @@ test('the hotkey records on a hidden site with a visible indicator', async () =>
   await expect.poll(() => pillShown(page), { timeout: STATUS_GONE_MS }).toBe(false);
 });
 
+for (const [name, siteRules] of [['a hidden site', { localhost: HIDE_ONLY }], ['a normal site', {}]]) {
+  test(`a recording with its field scrolled out shows the pill on ${name}`, async () => {
+    await seedRules(siteRules);
+    const page = await openPage();
+    await page.locator('#ta').click();
+    await page.evaluate(() => {
+      document.body.style.paddingBottom = '8000px';
+      window.scrollTo(0, 6000);
+    });
+
+    await startWithHotkey(page, page);
+
+    expect(await page.evaluate(() => document.activeElement.id)).toBe('ta');
+    await waitForPill(page, STOP);
+  });
+}
+
 test('a site mode applies to a dictation started in a cross-origin iframe', async () => {
   await seedRules({ localhost: EMAIL_SITE });
   const page = await openPage();
