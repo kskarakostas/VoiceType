@@ -308,7 +308,7 @@ test('the Sites page adds, edits and removes a rule, and an open tab follows', a
   await expect.poll(() => pillQuery(fixture, 'button[aria-label^="Mode: Default."]')).not.toBeNull();
 });
 
-test('a content script cannot name another host', async () => {
+test('a mode pick changes only this site\'s rule', async () => {
   const other = { 'a.test': OTHER_HOST_RULE };
   await seedRules({ ...other, localhost: EMAIL_SITE });
   const page = await openFields(context);

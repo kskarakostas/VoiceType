@@ -66,9 +66,9 @@ describe('start', () => {
     });
 
     it('a hide-only rule leaves the active mode', async () => {
-      const { recorder } = setup({ settings: rule({ hidePill: true, mode: null }) });
+      const { recorder } = setup({ settings: { ...rule({ hidePill: true, mode: null }), activeMode: 'translate' } });
       await recorder.start(A, 'https://a.com/');
-      expect(recorder.session.modeKey).toBe('default');
+      expect(recorder.session.modeKey).toBe('translate');
     });
 
     it('a stale site mode falls back to the active mode', async () => {

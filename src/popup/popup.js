@@ -16,7 +16,8 @@ const LOAD_ERROR = 'Could not load settings. Close and reopen the popup.';
 const OPEN_ERROR = 'Could not open settings.';
 
 /**
- * Wire the quick panel, load settings and today's usage, and save the provider and active mode.
+ * Wire the quick panel, load settings and today's usage, and save the provider, the active mode
+ * and the current site's rule.
  * @param {{ chrome: typeof globalThis.chrome, document: Document, window: Window }} env
  * @returns {Promise<{ readonly settings: Settings, readonly loaded: boolean }>}
  */
