@@ -14,29 +14,32 @@ const DIST = fileURLToPath(new URL('../../dist', import.meta.url));
 export const PORT = Number(process.env.PORT) || 8765;
 const FIELDS_URL = `http://localhost:${PORT}/fields.html`;
 const TRANSCRIPTION_URL = 'https://api.openai.com/v1/audio/transcriptions';
+const REFINE_URL = 'https://api.openai.com/v1/responses';
 export const TRANSCRIPT = 'stubbed transcript';
 export const DUMMY_KEY = 'sk-e2e-dummy-key';
 export const START = 'button[aria-label="Start recording"]';
 export const STOP = 'button[aria-label="Stop recording"]';
 export const STATUS = '[role="status"]';
 /** Longer than minRecordingTime (1 s), so the recorder does not drop the clip as too short. */
-const RECORD_MS = 1500;
+export const RECORD_MS = 1500;
 
 const isExtensionWorker = (worker) => worker.url().startsWith('chrome-extension://');
 
 /**
  * Launches Chromium with the built extension, a fake microphone and the provider stubbed.
- * @param {{ transcriptDelayMs?: number, contextOptions?: object }} [options] how long the stub waits
- *   before it answers; extra launchPersistentContext options (color scheme, scale factor)
+ * @param {{ transcriptDelayMs?: number, contextOptions?: object, refineText?: string }} [options] how
+ *   long the stub waits before it answers; extra launchPersistentContext options (color scheme, scale
+ *   factor); what the text model answers (without it a refine call is aborted like any other https request)
  * @returns {Promise<{
  *   context: import('@playwright/test').BrowserContext,
  *   serviceWorker: import('@playwright/test').Worker,
  *   extensionId: string,
  *   providerCalls: { method: string, auth: string|null }[],
+ *   refineCalls: { instructions: string, input: string }[],
  *   close: () => Promise<void>,
  * }>}
  */
-export async function launchExtension({ transcriptDelayMs = 0, contextOptions = {} } = {}) {
+export async function launchExtension({ transcriptDelayMs = 0, contextOptions = {}, refineText } = {}) {
   const workDir = mkdtempSync(join(tmpdir(), 'voicetype-e2e-'));
   /** @type {import('@playwright/test').BrowserContext|undefined} */
   let context;
@@ -73,12 +76,26 @@ export async function launchExtension({ transcriptDelayMs = 0, contextOptions = 
         body: JSON.stringify({ text: TRANSCRIPT, usage: { type: 'duration', seconds: 2 } }),
       });
     });
+    const refineCalls = [];
+    if (refineText !== undefined) {
+      await context.route(REFINE_URL, async (route) => {
+        refineCalls.push(route.request().postDataJSON());
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            output: [{ type: 'message', content: [{ type: 'output_text', text: refineText }] }],
+            usage: { input_tokens: 10, output_tokens: 5 },
+          }),
+        });
+      });
+    }
     const serviceWorker = context.serviceWorkers().find(isExtensionWorker)
       ?? await context.waitForEvent('serviceworker', { predicate: isExtensionWorker });
     const extensionId = new URL(serviceWorker.url()).host;
     // onInstalled stores the default settings; a seed written before that lands is overwritten.
     await expect.poll(() => serviceWorker.evaluate(async () => Boolean((await chrome.storage.local.get('settings')).settings))).toBe(true);
-    return { context, serviceWorker, extensionId, providerCalls, close };
+    return { context, serviceWorker, extensionId, providerCalls, refineCalls, close };
   } catch (err) {
     await close();
     throw err;
@@ -90,8 +107,9 @@ export async function launchExtension({ transcriptDelayMs = 0, contextOptions = 
  * that nothing in it is missing or invalid.
  * @param {import('@playwright/test').Worker} serviceWorker
  * @param {string} openaiKey
+ * @param {Partial<import('../../src/shared/defaults.js').Settings>} [overrides] fields stored over the seed
  */
-export async function seedSettings(serviceWorker, openaiKey) {
+export async function seedSettings(serviceWorker, openaiKey, overrides = {}) {
   const settings = {
     ...freshSettings(),
     provider: 'openai',
@@ -101,6 +119,7 @@ export async function seedSettings(serviceWorker, openaiKey) {
     maxRecordingTime: 120,
     hotkey: { code: 'Space', ctrl: true, shift: true, alt: false, meta: false },
     autoStopSilenceSec: 0,
+    ...overrides,
   };
   expect(migrateSettings(settings)).toBe(settings);
   await serviceWorker.evaluate((s) => chrome.storage.local.set({ settings: s }), settings);
