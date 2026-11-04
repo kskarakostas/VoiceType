@@ -169,6 +169,10 @@ describe('helpers', () => {
     ];
     expect(joinParts({ candidates: [{ content: { parts } }] })).toBe('one two');
   });
+  it('joinParts passes over an empty text next to a transcript', () => {
+    const parts = [{ text: '', audioTranscription: { text: 'A' } }];
+    expect(joinParts({ candidates: [{ content: { parts } }] })).toBe('A');
+  });
   it('normalizeSttUsage handles missing details', () => {
     expect(normalizeSttUsage(undefined)).toBeNull();
     // No prompt count at all: null, so pricing falls back to the recording length.

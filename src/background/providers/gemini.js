@@ -76,7 +76,7 @@ export async function validateKey({ key, signal }) {
  */
 export function joinParts(data) {
   const parts = data?.candidates?.[0]?.content?.parts || [];
-  return parts.filter((p) => !p?.thought).map((p) => p?.text ?? p?.audioTranscription?.text)
+  return parts.filter((p) => !p?.thought).map((p) => p?.text || p?.audioTranscription?.text)
     .filter((text) => typeof text === 'string').join('');
 }
 
