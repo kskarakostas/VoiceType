@@ -1298,6 +1298,104 @@ describe('cues', () => {
   });
 });
 
+describe('a result with no receiver', () => {
+  /** A dictation whose result finds no frame. */
+  async function undelivered(over) {
+    const t = setup(over);
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    t.deps.toTab.mockResolvedValue(false);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    return t;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is copied, once, with always-copy off', async () => {
+    const t = await undelivered();
+    expect(t.copies()).toEqual([{ action: MSG.OFFSCREEN_COPY, text: 'final' }]);
+    expect(t.result()).toMatchObject({ success: true, copied: null });
+    expect(t.recorder.session).toBeNull();
+  });
+
+  it('is copied only after delivery failed', async () => {
+    const t = await undelivered();
+    const copyAt = t.offscreenMessages().findIndex((m) => m.action === MSG.OFFSCREEN_COPY);
+    const deliveryAt = t.deps.toTab.mock.calls.findIndex(([, m]) => m.action === MSG.DICTATION_RESULT);
+    expect(t.deps.toTab.mock.invocationCallOrder[deliveryAt]).toBeLessThan(t.deps.toOffscreen.mock.invocationCallOrder[copyAt]);
+  });
+
+  it('a receiver gets it and nothing is copied', async () => {
+    const t = setup();
+    await dictation(t);
+    expect(t.copies()).toEqual([]);
+  });
+
+  it('always-copy already copied it: no second copy', async () => {
+    const t = await undelivered({ settings: { alwaysCopy: true } });
+    expect(t.copies()).toHaveLength(1);
+  });
+
+  it('an always-copy that failed is tried again', async () => {
+    const t = setup({ settings: { alwaysCopy: true } });
+    answer(t.deps, MSG.OFFSCREEN_COPY, async () => (t.copies().length === 1 ? { ok: false } : { ok: true }));
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    t.deps.toTab.mockResolvedValue(false);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.copies()).toHaveLength(2);
+  });
+
+  it('a failed result copies nothing', async () => {
+    const t = setup();
+    t.deps.dictate.mockResolvedValueOnce({ success: false, error: 'No speech detected.', tone: 'warning' });
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    t.deps.toTab.mockResolvedValue(false);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.copies()).toEqual([]);
+  });
+
+  it('a too-short clip copies nothing', async () => {
+    const t = setup();
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    t.deps.toTab.mockResolvedValue(false);
+    await t.recorder.onDone(done({ durationSec: 0.1, captureId: t.id() }));
+    expect(t.copies()).toEqual([]);
+  });
+
+  it('a stuck copy gives up after COPY_TIMEOUT_MS', async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    answer(t.deps, MSG.OFFSCREEN_COPY, () => new Promise(() => {}));
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    t.deps.toTab.mockResolvedValue(false);
+    const finished = t.recorder.onDone(done({ captureId: t.id() }));
+    await vi.advanceTimersByTimeAsync(COPY_TIMEOUT_MS);
+    await finished;
+    expect(t.copies()).toHaveLength(1);
+  });
+
+  it('a tab closed during processing gets its copy with always-copy off', async () => {
+    const t = setup();
+    const pending = deferred();
+    t.deps.dictate.mockImplementationOnce(() => pending.promise);
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    const finished = t.recorder.onDone(done({ captureId: t.id() }));
+    await vi.waitFor(() => expect(t.deps.dictate).toHaveBeenCalled());
+    await t.recorder.onTabRemoved(A.tabId);
+    t.deps.toTab.mockResolvedValue(false);
+    pending.resolve({ ...DICTATION });
+    await finished;
+    expect(t.copies()).toEqual([{ action: MSG.OFFSCREEN_COPY, text: 'final' }]);
+  });
+});
+
 describe('always-copy', () => {
   const COPY = { settings: { alwaysCopy: true } };
 

@@ -3,8 +3,8 @@
 /** Tabs whose content scripts are orphaned by an install or update and can take the new one. */
 export const REINJECT_URLS = Object.freeze(['http://*/*', 'https://*/*', 'file:///*']);
 
-/** Errors that mean nobody is listening in that frame (it navigated, closed or never had us). */
-const NO_RECEIVER = /Receiving end does not exist|No tab with id/i;
+/** Errors that mean nobody is listening in that frame (it navigated, closed, went into the back-forward cache or never had us). */
+const NO_RECEIVER = /Receiving end does not exist|No tab with id|back\/forward cache/i;
 
 /**
  * Send every frame of every tab the message built for that tab. Tabs without a receiver are

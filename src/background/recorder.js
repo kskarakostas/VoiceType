@@ -299,7 +299,9 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
         }
       }
       free(s);
-      await toTab(s.endpoint, { action: MSG.DICTATION_RESULT, ...message });
+      const delivered = await toTab(s.endpoint, { action: MSG.DICTATION_RESULT, ...message });
+      // The tab closed or left for a page without us: the clipboard is what is left for a paid transcript.
+      if (!delivered && message.success && !message.copied) await copyResult(message.text);
     },
 
     /** @param {import('../shared/messages.js').OffscreenError} payload */
@@ -331,7 +333,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     async onTabRemoved(tabId) {
       if (pendingPermission?.tabId === tabId) pendingPermission = null;
       const s = session;
-      // A processing session finishes; its result is simply undeliverable.
+      // A processing session finishes: with no frame left, onDone copies its result.
       if (s && s.endpoint.tabId === tabId && s.state !== 'processing') await drop(s);
     },
 

@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { broadcast, sendToFrame, reinject, REINJECT_URLS } from '../../../src/background/tabs.js';
 
 const NO_RECEIVER = 'Could not establish connection. Receiving end does not exist.';
+/** As Chromium 153 words it (probed: a send that crossed the page leaving for a cached navigation). */
+const BACK_FORWARD = 'The page keeping the extension port is moved into back/forward cache, so the message channel is closed.';
 
 describe('broadcast', () => {
   it('sends each tab the message built for it, all frames', async () => {
@@ -58,6 +60,11 @@ describe('sendToFrame', () => {
     const tabsApi = { sendMessage: vi.fn(async () => { throw new Error(NO_RECEIVER); }) };
     expect(await sendToFrame(tabsApi, { tabId: 4, frameId: 0 }, { action: 'x' })).toBe(false);
     tabsApi.sendMessage.mockRejectedValueOnce(new Error('No tab with id: 4.'));
+    expect(await sendToFrame(tabsApi, { tabId: 4, frameId: 0 }, { action: 'x' })).toBe(false);
+  });
+
+  it('reports false when the page went into the back-forward cache', async () => {
+    const tabsApi = { sendMessage: vi.fn(async () => { throw new Error(BACK_FORWARD); }) };
     expect(await sendToFrame(tabsApi, { tabId: 4, frameId: 0 }, { action: 'x' })).toBe(false);
   });
 
