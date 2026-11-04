@@ -325,6 +325,15 @@ describe('recorder delegation', () => {
     expect(deps.recorder.onOffscreenError).toHaveBeenCalledWith({ error: 'Recording failed.', captureId: 'c1' });
   });
 
+  it('an empty capture report keeps its flag and duration, unchecked', async () => {
+    const report = { error: 'Recording failed.', captureId: 'c1', empty: true, durationSec: 0.05 };
+    expect(await handle({ action: MSG.OFFSCREEN_ERROR, ...report }, OFFSCREEN)).toEqual({ ok: true });
+    expect(deps.recorder.onOffscreenError).toHaveBeenLastCalledWith(report);
+    const odd = { error: 'x', captureId: 'c1', empty: 'yes', durationSec: '0.05' };
+    await handle({ action: MSG.OFFSCREEN_ERROR, ...odd }, OFFSCREEN);
+    expect(deps.recorder.onOffscreenError).toHaveBeenLastCalledWith(odd);
+  });
+
   it('the permission page result goes to the recorder as a boolean', async () => {
     expect(await handle({ action: MSG.PERMISSION_RESULT, granted: true }, POPUP)).toEqual({ ok: true });
     expect(deps.recorder.onPermissionResult).toHaveBeenLastCalledWith({ granted: true });

@@ -11,6 +11,7 @@ const DENIED = 'Microphone blocked for VoiceType. Allow it at chrome://settings/
 const MIC_ERROR = 'Could not start the microphone.';
 const CANCELLED = 'Recording cancelled.';
 const FAILED_NOTICE = Object.freeze({ text: 'Recording failed. Try again.', tone: 'error' });
+const TOO_SHORT = Object.freeze({ success: false, error: 'Too short, ignored', tone: 'warning' });
 export const COPY_TIMEOUT_MS = 1000;
 
 /**
@@ -242,7 +243,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       /** @type {import('../shared/messages.js').DictationMessage} */
       let message;
       if (durationSec < s.minSec) {
-        message = { success: false, error: 'Too short, ignored', tone: 'warning' };
+        message = TOO_SHORT;
       } else {
         cue(s, 'stop');
         try {
@@ -260,10 +261,18 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       await toTab(s.endpoint, { action: MSG.DICTATION_RESULT, ...message });
     },
 
-    /** @param {{ error?: string, captureId?: string }} payload */
+    /** @param {import('../shared/messages.js').OffscreenError} payload */
     async onOffscreenError(payload) {
       const s = reporter(payload?.captureId);
-      if (s) await failSession(s);
+      if (!s) return;
+      // A stop before the first chunk, a double tap for one, is too short and no failure. Only a
+      // user stop qualifies: an auto-stop leaves the frame recording, and it would drop this result.
+      if (payload.empty === true && s.state === 'processing' && Number(payload.durationSec) < s.minSec) {
+        session = null;
+        await toTab(s.endpoint, { action: MSG.DICTATION_RESULT, ...TOO_SHORT });
+        return;
+      }
+      await failSession(s);
     },
 
     /** @param {{ granted: boolean }} payload */

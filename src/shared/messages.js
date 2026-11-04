@@ -43,7 +43,8 @@ export const MSG = Object.freeze({
  * @typedef {{ discard: boolean, captureId: string }} OffscreenStop
  * @typedef {{ level: number, captureId: string }} OffscreenLevel
  * @typedef {{ audioBase64: string, mimeType: string, durationSec: number, reason: 'user'|'maxTime'|'silence'|'ended', captureId: string }} OffscreenDone
- * @typedef {{ error: string, captureId: string }} OffscreenError
+ * `empty` marks a capture that ended with no audio and no recorder error; it comes with the duration.
+ * @typedef {{ error: string, captureId: string, empty?: true, durationSec?: number }} OffscreenError
  * @typedef {'start'|'stop'|'done'|'error'} CueName
  * Both answer { ok: boolean }.
  * @typedef {{ cue: CueName }} OffscreenCue

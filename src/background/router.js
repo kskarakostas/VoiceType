@@ -241,7 +241,7 @@ export function createRouter({ storage, validateKey, summarize, recorder, identi
       }
 
       case MSG.OFFSCREEN_ERROR:
-        await recorder.onOffscreenError({ error: request.error, captureId: request.captureId });
+        await recorder.onOffscreenError({ error: request.error, captureId: request.captureId, empty: request.empty, durationSec: request.durationSec });
         return { ok: true };
 
       case MSG.PERMISSION_RESULT:

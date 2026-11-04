@@ -605,6 +605,9 @@ describe('permission and tabs', () => {
 
 describe('cues', () => {
   const SOUNDS = { settings: { sounds: true } };
+  const FAILED_STATE = {
+    endpoint: A, action: MSG.RECORDING_STATE, state: 'idle', reason: 'error', notice: { text: 'Recording failed. Try again.', tone: 'error' },
+  };
   const NEEDS = { ok: false, reason: 'needsPermission', error: 'Microphone permission needed.' };
 
   it('cue row 1: another frame, or processing: busy', async () => {
@@ -858,6 +861,53 @@ describe('cues', () => {
     expect(t.cues()).toEqual(['start', 'error']);
   });
 
+  it('cue row 23: an empty capture at or past the minimum', async () => {
+    for (const durationSec of [1, 2.5]) {
+      const t = setup(SOUNDS);
+      await t.recorder.start(A);
+      await t.recorder.stop(A);
+      await t.recorder.onOffscreenError({ error: 'Recording failed.', captureId: t.id(), empty: true, durationSec });
+      await flush();
+      expect(t.recorder.session).toBeNull();
+      expect(t.cues()).toEqual(['start', 'error']);
+      expect(t.tabMessages()).toEqual([FAILED_STATE]);
+    }
+  });
+
+  it('cue row 23: an empty report with no usable duration', async () => {
+    const t = setup(SOUNDS);
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    await t.recorder.onOffscreenError({ error: 'Recording failed.', captureId: t.id(), empty: true });
+    await flush();
+    expect(t.cues()).toEqual(['start', 'error']);
+    expect(t.tabMessages()).toEqual([FAILED_STATE]);
+  });
+
+  it('cue row 23: an empty capture the user did not stop', async () => {
+    // The frame still records, so it would drop a DICTATION_RESULT and keep showing a recording.
+    const t = setup(SOUNDS);
+    await t.recorder.start(A);
+    await t.recorder.onOffscreenError({ error: 'Recording failed.', captureId: t.id(), empty: true, durationSec: 0.05 });
+    await flush();
+    expect(t.recorder.session).toBeNull();
+    expect(t.cues()).toEqual(['start', 'error']);
+    expect(t.tabMessages()).toEqual([FAILED_STATE]);
+  });
+
+  it('cue row 25: empty capture under the minimum', async () => {
+    const t = setup(SOUNDS);
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    await t.recorder.onOffscreenError({ error: 'Recording failed.', captureId: t.id(), empty: true, durationSec: 0.05 });
+    await flush();
+    expect(t.recorder.session).toBeNull();
+    expect(t.cues()).toEqual(['start']);
+    expect(t.tabMessages()).toEqual([{ endpoint: A, action: MSG.DICTATION_RESULT, success: false, error: 'Too short, ignored', tone: 'warning' }]);
+    expect(t.deps.dictate).not.toHaveBeenCalled();
+    expect(await t.recorder.start(A)).toEqual({ ok: true });
+  });
+
   it('cue row 24: permission result', async () => {
     const t = setup({ ...SOUNDS, startReply: NEEDS });
     await t.recorder.start(A);
@@ -876,9 +926,13 @@ describe('cues', () => {
     await dictation(t, { durationSec: 0.4 });
     await t.recorder.start(A);
     await t.recorder.onOffscreenError({ error: 'Recording failed.', captureId: t.id() });
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    await t.recorder.onOffscreenError({ error: 'Recording failed.', captureId: t.id(), empty: true, durationSec: 0.05 });
     await flush();
-    expect(t.ids()).toHaveLength(4);
-    expect(t.tabMessages()).toHaveLength(4);
+    expect(t.ids()).toHaveLength(5);
+    expect(t.tabMessages()).toHaveLength(5);
+    expect(t.tabMessages().at(-1).error).toBe('Too short, ignored');
     expect(t.cues()).toEqual([]);
   });
 

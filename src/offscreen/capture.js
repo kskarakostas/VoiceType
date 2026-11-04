@@ -203,8 +203,12 @@ export function createCapture(deps) {
       await closeAnalyser(s.analyser);
       if (s.discard) return;
       const { captureId } = s;
-      if (s.errored || s.chunks.length === 0) {
+      if (s.errored) {
         send({ action: MSG.OFFSCREEN_ERROR, error: FAILED, captureId });
+        return;
+      }
+      if (s.chunks.length === 0) {
+        send({ action: MSG.OFFSCREEN_ERROR, error: FAILED, captureId, empty: true, durationSec });
         return;
       }
       try {

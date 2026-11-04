@@ -634,6 +634,33 @@ describe('delivery', () => {
     expect(t.controller.state).toBe('idle');
   });
 
+  it('a stop queued while starting ends idle with the too short status, before the stop reply', async () => {
+    for (const queue of [(t) => t.controller.toggle(), (t) => t.controller.release({ held: true })]) {
+      const start = deferred();
+      const stopped = deferred();
+      const t = setup({ replies: { [MSG.START_RECORDING]: () => start.promise, [MSG.STOP_RECORDING]: () => stopped.promise } });
+      $('a').focus();
+      t.controller.focusIn($('a'));
+      const pending = t.controller.press();
+      await queue(t);
+      start.resolve({ ok: true });
+      await flush();
+      expect(t.actions()).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING]);
+      expect(t.controller.state).toBe('processing');
+      t.controller.handleMessage({ action: MSG.DICTATION_RESULT, success: false, error: 'Too short, ignored', tone: 'warning' });
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(['Too short, ignored', { tone: 'warning', sticky: false, clickable: false }]);
+      expect(t.controller.state).toBe('idle');
+      stopped.resolve({ ok: true });
+      await pending;
+      await flush();
+      expect(t.controller.state).toBe('idle');
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(STATUS_MS.warning);
+      expect(t.pill.setState).toHaveBeenLastCalledWith('idle');
+    }
+  });
+
   it('focus moved: clipboard, not the focused field', async () => {
     const t = setup();
     await recordAndStop(t, 'a');

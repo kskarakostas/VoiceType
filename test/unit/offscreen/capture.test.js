@@ -382,14 +382,26 @@ describe('finishing', () => {
     expect(h.capture.active).toBe(false);
   });
 
-  it('a recording without any audio data is an error', async () => {
+  it('a stop with no audio data reports an empty capture and its duration', async () => {
     const h = setup();
     await h.capture.start(OPTS);
+    await vi.advanceTimersByTimeAsync(300);
     h.recorder().stopsItself = false;
     const stopping = h.capture.stop({ discard: false, captureId: 'c1' });
     await vi.advanceTimersByTimeAsync(STOP_TIMEOUT_MS);
     await stopping;
     expect(h.of(MSG.OFFSCREEN_DONE)).toEqual([]);
+    expect(h.of(MSG.OFFSCREEN_ERROR)).toEqual([{
+      action: MSG.OFFSCREEN_ERROR, error: 'Recording failed.', captureId: 'c1', empty: true, durationSec: 0.3,
+    }]);
+  });
+
+  it('a recorder error with no audio data is not an empty capture', async () => {
+    const h = setup();
+    await h.capture.start(OPTS);
+    h.recorder().stopsItself = false;
+    h.recorder().fail();
+    await h.until(MSG.OFFSCREEN_ERROR);
     expect(h.of(MSG.OFFSCREEN_ERROR)).toEqual([{ action: MSG.OFFSCREEN_ERROR, error: 'Recording failed.', captureId: 'c1' }]);
   });
 

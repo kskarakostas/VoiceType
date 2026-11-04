@@ -7,6 +7,7 @@ import { MSG } from '../../src/shared/messages.js';
 import { launchExtension, seedSettings, openFields, pillStatus, focusField, dictate, PORT, TRANSCRIPT, DUMMY_KEY } from './helpers.js';
 
 const SENTINEL = 'clipboard before the dictation';
+const HOTKEY = 'Control+Shift+Space';
 const REFINED = 'Καλημέρα σας,\nδεύτερη γραμμή με ελληνικά.';
 const CROSS_ORIGIN_FRAME = `http://127.0.0.1:${PORT}/frame.html`;
 const COPY = { action: MSG.OFFSCREEN_COPY };
@@ -129,6 +130,22 @@ test('sounds on fires each cue once', async () => {
   const calls = await offscreenCalls();
   expect(calls).toEqual(['start', 'stop', 'done'].map((cue) => ({ action: MSG.OFFSCREEN_CUE, cue })));
   expect(await readClipboard(page)).toBe(SENTINEL);
+});
+
+test('a double tap while the microphone opens is too short, with no error cue', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY, { sounds: true });
+  const page = await openFields(context);
+  const field = page.locator('#ta');
+  await focusField(page, field);
+  await installSpy();
+
+  await page.keyboard.press(HOTKEY);
+  await page.keyboard.press(HOTKEY);
+
+  await expect.poll(() => pillStatus(page)).toBe('Too short, ignored');
+  await page.waitForTimeout(SETTLE_MS);
+  expect(await offscreenCalls()).toEqual([{ action: MSG.OFFSCREEN_CUE, cue: 'start' }]);
+  await expect(field).toHaveValue('');
 });
 
 test('always copy after an insert into a textarea', async () => {
