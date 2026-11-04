@@ -634,24 +634,37 @@ describe('a pending click-to-copy status', () => {
       expect(lastStatus(t.pill)).toEqual(ORPHAN_STATUS);
     });
 
-    it('a second click running when the first one copied leaves the notice', async () => {
+    it.each([
+      ['copied', true],
+      ['failed', false],
+    ])('on the real pill the notice stands when a second click running behind the first %s', async (_name, secondCopied) => {
       const t = setup({ insert: 'failed' });
-      await strandResult(t);
-      t.controller.orphaned();
-      const first = deferred();
-      const second = deferred();
-      t.deps.copyText.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
-      const clicks = [t.controller.copyLast(), t.controller.copyLast()];
-      await flush();
-      first.resolve(true);
-      await clicks[0];
-      expect(lastStatus(t.pill)).toEqual(ORPHAN_STATUS);
-      const statuses = t.pill.setStatus.mock.calls.length;
-      second.resolve(false);
-      await clicks[1];
-      expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
-      vi.advanceTimersByTime(60000);
-      expect(t.pill.hide).not.toHaveBeenCalled();
+      const pill = new Pill({}, { shadowMode: 'open' });
+      const controller = createController({ ...t.deps, pill });
+      const status = () => pill.root.querySelector('[role="status"]');
+      try {
+        await recordAndStop({ controller });
+        controller.handleMessage({ action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null });
+        await flush();
+        controller.orphaned();
+        expect(status().textContent).toBe(CLICK_TO_COPY);
+        const first = deferred();
+        const second = deferred();
+        t.deps.copyText.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
+        const clicks = [controller.copyLast(), controller.copyLast()];
+        await flush();
+        first.resolve(true);
+        await clicks[0];
+        expect(status().textContent).toBe(ORPHAN);
+        second.resolve(secondCopied);
+        await clicks[1];
+        vi.advanceTimersByTime(60000);
+        await flush();
+        expect(status().textContent).toBe(ORPHAN);
+        expect(status().hasAttribute('data-clickable')).toBe(false);
+      } finally {
+        pill.destroy();
+      }
     });
 
     it('nothing else works: a press, a REC click or a menu choice starts nothing', async () => {
@@ -668,17 +681,13 @@ describe('a pending click-to-copy status', () => {
       expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
     });
 
-    it('a result already placed gives the notice at once, and copyLast does not replace it', async () => {
+    it('a result already placed gives the notice at once', async () => {
       const t = setup();
       await recordAndStop(t);
       t.controller.handleMessage({ action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null });
       await flush();
       t.controller.orphaned();
       expect(lastStatus(t.pill)).toEqual(ORPHAN_STATUS);
-      const statuses = t.pill.setStatus.mock.calls.length;
-      expect(await t.controller.copyLast()).toBe(false);
-      expect(t.deps.copyText).not.toHaveBeenCalled();
-      expect(t.pill.setStatus).toHaveBeenCalledTimes(statuses);
     });
   });
 });

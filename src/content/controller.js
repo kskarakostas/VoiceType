@@ -88,8 +88,6 @@ export function createController(deps) {
   let dead = false;
 
   const inactive = () => orphan || dead;
-  /** A click can still copy: everything else stops at inactive(), but a click-to-copy outlives the orphaning. */
-  const canCopy = () => !dead && (!orphan || orphanNoticeOwed);
   const gap = () => (Number.isFinite(settings?.pillGap) && settings.pillGap >= 0 ? settings.pillGap : DEFAULT_GAP);
   /** The stored style, or Minimal where this site's rule hides the pill. */
   const presentation = () => (settings?.site?.hidePill === true ? 'minimal' : settings?.pillStyle ?? 'dot');
@@ -548,10 +546,11 @@ export function createController(deps) {
   }
 
   async function copyResult() {
-    if (!canCopy() || !lastResult) return false;
+    // Only dead: an orphaned page's kept status lands here. The terminal notice takes no clicks.
+    if (dead || !lastResult) return false;
     held = null;
     const copied = await copyText(lastResult.text);
-    if (!canCopy()) return false;
+    if (dead) return false;
     if (copied) {
       pressCopyFailed = false;
       pill.setState('idle');
@@ -603,6 +602,8 @@ export function createController(deps) {
   /**
    * The extension was turned off, reloaded or updated under this page: say so, then do nothing
    * more. A click-to-copy status stays first: lastResult holds its text, held included (V35).
+   * That lasts on a turned-off extension or a page that refuses injection. After a reload or
+   * update the re-injected copy tears this one down, status and text with it.
    */
   function orphaned() {
     if (inactive()) return;
