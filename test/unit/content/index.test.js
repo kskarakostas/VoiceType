@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { MSG } from '../../../src/shared/messages.js';
+import { FOCUS_OUT_MS } from '../../../src/content/controller.js';
 
 // A path, not a URL literal: jsdom replaces the global URL, and the web transform rewrites
 // `new URL('<literal>', import.meta.url)` into a dev-server address.
@@ -432,6 +433,122 @@ describe('wiring', () => {
       { action: MSG.UPDATE_SETTINGS, patch: { provider: 'gemini' } },
       { action: MSG.UPDATE_SETTINGS, patch: { activeMode: 'email' } },
     ]);
+  });
+});
+
+describe('first settings answer', () => {
+  const site = (hidePill, mode = null) => ({ ...structuredClone(SETTINGS), site: { hidePill, mode } });
+  const field = () => document.getElementById('field');
+  const other = () => document.getElementById('other');
+  const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+  /** A service worker whose first GET_SETTINGS stays unanswered until `answer` runs. */
+  function holdSettings() {
+    let answer;
+    let fail;
+    const held = new Promise((resolve, reject) => {
+      answer = resolve;
+      fail = reject;
+    });
+    const t = installChrome((message) => (message.action === MSG.GET_SETTINGS ? held : reply(message)));
+    return { t, answer: (value) => answer(value), fail: (error) => fail(error) };
+  }
+
+  it('no pill before the first settings answer', async () => {
+    const { answer } = holdSettings();
+    field().focus();
+    await loadInstance();
+    other().focus();
+    await flush();
+    expect(hosts()).toHaveLength(0);
+    answer(site(true));
+    await flush();
+    expect(hosts()).toHaveLength(0);
+  });
+
+  it('a focus change or a window blur during the wait shows no pill', async () => {
+    const { answer } = holdSettings();
+    field().focus();
+    await loadInstance();
+    other().focus();
+    window.dispatchEvent(new Event('blur'));
+    await sleep(FOCUS_OUT_MS + 20);
+    expect(hosts()).toHaveLength(0);
+    answer(site(true));
+    await flush();
+    expect(hosts()).toHaveLength(0);
+  });
+
+  it('the focused field gets the pill after the answer', async () => {
+    const { answer } = holdSettings();
+    field().focus();
+    await loadInstance();
+    other().focus();
+    await flush();
+    expect(hosts()).toHaveLength(0);
+    answer(site(false));
+    await flush();
+    expect(hosts()).toHaveLength(1);
+    expect(shadow().querySelector('.vt').hidden).toBe(false);
+  });
+
+  it('a failed first read shows the pill', async () => {
+    const { fail } = holdSettings();
+    field().focus();
+    await loadInstance();
+    fail(new Error('Could not establish connection. Receiving end does not exist.'));
+    await flush();
+    expect(hosts()).toHaveLength(1);
+    expect(shadow().querySelector('.vt').hidden).toBe(false);
+  });
+
+  it('the hotkey during the wait records with the pill, whatever the answer says', async () => {
+    const { t, answer } = holdSettings();
+    field().focus();
+    await loadInstance();
+    field().dispatchEvent(hotkey('keydown'));
+    await flush();
+    expect(t.sent()).toContain(MSG.START_RECORDING);
+    expect(shadow().querySelector('.vt').hidden).toBe(false);
+    answer(site(true));
+    await flush();
+    expect(shadow().querySelector('.vt').hidden).toBe(false);
+    expect(shadow().querySelector('.rec').getAttribute('aria-label')).toBe('Stop recording');
+  });
+});
+
+describe('menu on a site with a mode rule', () => {
+  function withRule() {
+    return installChrome((message) => {
+      if (message.action === MSG.GET_SETTINGS) return { ...structuredClone(SETTINGS), site: { hidePill: false, mode: 'email' } };
+      if (message.action === MSG.SET_SITE_MODE) return { success: true };
+      return reply(message);
+    });
+  }
+
+  const siteModes = (t) => t.chrome.runtime.sendMessage.mock.calls.map(([m]) => m).filter((m) => m.action === MSG.SET_SITE_MODE);
+
+  it('a mode choice in the menu reaches chooseMode', async () => {
+    const t = withRule();
+    document.getElementById('field').focus();
+    await loadInstance();
+    shadow().querySelector('.more').click();
+    await flush();
+    shadow().querySelector('[data-mode="default"]').click();
+    await flush();
+    expect(siteModes(t)).toEqual([{ action: MSG.SET_SITE_MODE, mode: 'default' }]);
+    expect(t.sent()).not.toContain(MSG.UPDATE_SETTINGS);
+  });
+
+  it('Use active mode in the menu reaches useActiveMode', async () => {
+    const t = withRule();
+    document.getElementById('field').focus();
+    await loadInstance();
+    shadow().querySelector('.more').click();
+    await flush();
+    shadow().querySelector('[data-use-active]').click();
+    await flush();
+    expect(siteModes(t)).toEqual([{ action: MSG.SET_SITE_MODE, mode: null }]);
   });
 });
 

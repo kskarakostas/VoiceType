@@ -17,7 +17,7 @@ const HOSTILE = '<img src=x onerror=alert(1)>';
 function handlers() {
   return {
     onRec: vi.fn(), onStatusClick: vi.fn(), onMenuOpen: vi.fn(),
-    onMode: vi.fn(), onProvider: vi.fn(), onTargetLang: vi.fn(),
+    onMode: vi.fn(), onUseActive: vi.fn(), onProvider: vi.fn(), onTargetLang: vi.fn(),
   };
 }
 
@@ -450,6 +450,85 @@ describe('menu', () => {
     expect(chips.find((el) => el.getAttribute('aria-checked') === 'true').dataset.lang).toBe('Greek');
     chips[3].click();
     expect(h.onTargetLang).toHaveBeenCalledWith('French');
+  });
+
+  describe('site mode', () => {
+    const modes = {
+      default: { name: 'Default', icon: '🎤', prompt: '', builtIn: true },
+      email: { name: 'Email', icon: '📧', prompt: 'e', builtIn: true },
+      translate: { name: 'Translate', icon: '🌐', prompt: 'x', builtIn: true, hasLanguageOption: true },
+    };
+    const rendered = (overrides) => {
+      const made = makePill();
+      made.pill.renderMenu(settings({ modes, activeMode: 'default', ...overrides }), null);
+      made.pill.show(FIELD);
+      return made;
+    };
+    const item = (pill, key) => q(pill, `[data-mode="${key}"]`);
+
+    it('marks the site mode', () => {
+      const { pill } = rendered({ site: { hidePill: false, mode: 'email' } });
+      expect(item(pill, 'email').getAttribute('aria-checked')).toBe('true');
+      expect(item(pill, 'default').getAttribute('aria-checked')).toBe('false');
+      expect(item(pill, 'email').querySelector('.item-tag').textContent).toBe('This site');
+      expect(pill.root.querySelectorAll('.item-tag')).toHaveLength(1);
+      const first = q(pill, '.item');
+      expect(first.querySelector('.item-name').textContent).toBe('Use active mode');
+      expect(first.getAttribute('aria-checked')).toBe('false');
+      expect(first.getAttribute('role')).toBe('radio');
+      expect(first.getAttribute('type')).toBe('button');
+      expect(q(pill, '.mode-icon').textContent).toBe('📧');
+      expect(q(pill, '.mode').getAttribute('aria-label')).toBe('Mode: Email, this site. Open the VoiceType menu');
+    });
+
+    it.each([
+      ['site absent', {}],
+      ['a hide-only rule', { site: { hidePill: true, mode: null } }],
+      ['a mode not in modes', { site: { hidePill: false, mode: 'gone' } }],
+      ['an inherited key', { site: { hidePill: false, mode: 'constructor' } }],
+    ])('no marking without a mode rule: %s', (_, overrides) => {
+      const { pill } = rendered({ activeMode: 'email', ...overrides });
+      expect(q(pill, '.item-tag')).toBeNull();
+      expect(q(pill, '[data-use-active]')).toBeNull();
+      expect(item(pill, 'email').getAttribute('aria-checked')).toBe('true');
+      expect(q(pill, '.mode').getAttribute('aria-label')).toBe('Mode: Email. Open the VoiceType menu');
+    });
+
+    it('Use active mode calls onUseActive and not onMode', () => {
+      const { pill, h } = rendered({ site: { hidePill: false, mode: 'email' } });
+      q(pill, '[data-use-active]').click();
+      expect(h.onUseActive).toHaveBeenCalledTimes(1);
+      expect(h.onMode).not.toHaveBeenCalled();
+      item(pill, 'default').click();
+      expect(h.onMode).toHaveBeenCalledWith('default');
+      expect(h.onUseActive).toHaveBeenCalledTimes(1);
+    });
+
+    it('the Translate section follows the site mode', () => {
+      const { pill } = rendered({ site: { hidePill: false, mode: 'translate' } });
+      expect(pill.root.querySelectorAll('[data-lang]')).toHaveLength(TARGET_LANGUAGES.length);
+      const other = rendered({ activeMode: 'translate', site: { hidePill: false, mode: 'email' } });
+      expect(other.pill.root.querySelectorAll('[data-lang]')).toHaveLength(0);
+    });
+
+    it('a hostile mode name stays text', () => {
+      const { pill } = rendered({
+        modes: { ...modes, evil: { name: HOSTILE, icon: '<b>x</b>', prompt: 'p', builtIn: false } },
+        site: { hidePill: false, mode: 'evil' },
+      });
+      const marked = item(pill, 'evil');
+      expect(marked.querySelector('.item-name').textContent).toBe(HOSTILE);
+      expect(marked.querySelector('.item-tag').textContent).toBe('This site');
+      expect(q(pill, '.mode').getAttribute('aria-label')).toBe(`Mode: ${HOSTILE}, this site. Open the VoiceType menu`);
+      expect(pill.root.querySelector('img')).toBeNull();
+      expect(pill.root.querySelector('b')).toBeNull();
+    });
+
+    it('the tag has a style of at least 12 px', () => {
+      const rule = CSS_TEXT.match(/\.item-tag \{[^}]*\}/)?.[0];
+      expect(rule).toBeDefined();
+      expect(pxValue(rule.match(/font-size: (\d+)px/)[1])).toBeGreaterThanOrEqual(12);
+    });
   });
 
   it('shows "no key" on a provider without a key and reports clicks', () => {

@@ -33,7 +33,8 @@ export function boot({
     onRec: () => { controller.toggle(); },
     onStatusClick: () => { controller.copyLast(); },
     onMenuOpen: () => { loadSettings({ withUsage: true }); },
-    onMode: (key) => { controller.choose({ activeMode: key }); },
+    onMode: (key) => { controller.chooseMode(key); },
+    onUseActive: () => { controller.useActiveMode(); },
     onProvider: (id) => { controller.choose({ provider: id }); },
     onTargetLang: (lang) => { controller.choose({ translateTargetLang: lang }); },
   });
@@ -55,6 +56,8 @@ export function boot({
   const tracker = createChordTracker({ getChord: () => chord });
   /** The extension is gone under this page: only the terminal notice is left, and keys go to the page. */
   let orphan = false;
+  /** The first settings read has settled. Until then focus shows no idle pill: this may be a hidden site. */
+  let booted = false;
 
   function becomeOrphan() {
     orphan = true;
@@ -101,12 +104,12 @@ export function boot({
   }
 
   function onFocusIn(event) {
-    if (!isTrusted(event)) return;
+    if (!isTrusted(event) || !booted) return;
     controller.focusIn(event.composedPath()[0] ?? null);
   }
 
   function onFocusOut(event) {
-    if (!isTrusted(event)) return;
+    if (!isTrusted(event) || !booted) return;
     controller.focusOut();
   }
 
@@ -135,7 +138,7 @@ export function boot({
     const released = tracker.blur();
     if (released) controller.release(released);
     // Focus left this frame for another frame or window: settle so an idle pill hides (spec 6.4).
-    controller.focusOut();
+    if (booted) controller.focusOut();
   }
 
   function onWindowFocus(event) {
@@ -184,7 +187,9 @@ export function boot({
   window.addEventListener('pagehide', onPageHide);
   chrome.runtime.onMessage.addListener(onMessage);
 
-  loadSettings();
-  // Injected after an update, or at document_idle after the user already clicked into a field.
-  controller.focusIn(deepActiveElement(document));
+  loadSettings().then(() => {
+    booted = true;
+    // Injected after an update, or at document_idle after the user already clicked into a field.
+    controller.focusIn(deepActiveElement(document));
+  });
 }

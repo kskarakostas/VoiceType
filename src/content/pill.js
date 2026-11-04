@@ -9,10 +9,11 @@ import { orderedModeKeys } from '../shared/defaults.js';
 
 /**
  * @typedef {import('./position.js').Box} Box
- * @typedef {import('../shared/defaults.js').PublicSettings} PublicSettings
+ * @typedef {import('../shared/messages.js').ContentSettings} ContentSettings
  * @typedef {'idle'|'recording'|'processing'|'done'|'error'} PillState
  * @typedef {{ onRec: () => void, onStatusClick: () => void, onMenuOpen: () => void,
- *   onMode: (key: string) => void, onProvider: (id: string) => void, onTargetLang: (lang: string) => void }} PillHandlers
+ *   onMode: (key: string) => void, onUseActive: () => void, onProvider: (id: string) => void,
+ *   onTargetLang: (lang: string) => void }} PillHandlers
  * @typedef {{ todayCost: number, todaySessions: number, totalCost: number }} PillUsage
  */
 
@@ -233,21 +234,23 @@ export class Pill {
   }
 
   /**
-   * @param {PublicSettings} settings
+   * @param {ContentSettings} settings
    * @param {PillUsage|null} usage
    */
   renderMenu(settings, usage) {
     if (this.#destroyed || !settings || typeof settings !== 'object') return;
     const modes = settings.modes && typeof settings.modes === 'object' ? settings.modes : {};
-    const active = Object.hasOwn(modes, settings.activeMode) ? settings.activeMode : 'default';
+    const wanted = settings.site?.mode;
+    const siteMode = typeof wanted === 'string' && Object.hasOwn(modes, wanted) ? wanted : null;
+    const active = siteMode ?? (Object.hasOwn(modes, settings.activeMode) ? settings.activeMode : 'default');
     const activeMode = Object.hasOwn(modes, active) && modes[active] && typeof modes[active] === 'object' ? modes[active] : null;
     const { mode, modeIcon, menu } = this.#els;
     const modeName = typeof activeMode?.name === 'string' ? activeMode.name : active;
     modeIcon.textContent = typeof activeMode?.icon === 'string' ? activeMode.icon : '';
     mode.title = modeName;
-    mode.setAttribute('aria-label', `Mode: ${modeName}. Open the VoiceType menu`);
+    mode.setAttribute('aria-label', `Mode: ${modeName}${siteMode === null ? '' : ', this site'}. Open the VoiceType menu`);
 
-    const sections = [this.#modesSection(modes, active)];
+    const sections = [this.#modesSection(modes, active, siteMode !== null)];
     if (activeMode?.hasLanguageOption) sections.push(this.#translateSection(settings.translateTargetLang));
     sections.push(this.#providerSection(settings), this.#footerSection(settings, usage));
     menu.replaceChildren(...sections);
@@ -465,8 +468,9 @@ export class Pill {
     menu.addEventListener('click', (event) => {
       const button = event.target?.closest?.('button');
       if (!button || !menu.contains(button)) return;
-      const { mode: modeKey, provider, lang } = button.dataset;
-      if (modeKey !== undefined) this.#handlers.onMode(modeKey);
+      const { useActive, mode: modeKey, provider, lang } = button.dataset;
+      if (useActive !== undefined) this.#handlers.onUseActive();
+      else if (modeKey !== undefined) this.#handlers.onMode(modeKey);
       else if (provider !== undefined) this.#handlers.onProvider(provider);
       else if (lang !== undefined) this.#handlers.onTargetLang(lang);
     });
@@ -474,9 +478,15 @@ export class Pill {
     return { wrap, pill, mode, modeIcon, rec, recIcon, recLabel, more, status, statusIcon, statusText, menu };
   }
 
-  #modesSection(modes, active) {
+  /**
+   * @param {Record<string, any>} modes
+   * @param {string} active the mode dictation uses here
+   * @param {boolean} marked active comes from this site's rule
+   */
+  #modesSection(modes, active, marked) {
     const section = this.#section('Mode');
     const list = this.#el('div', 'list', { role: 'radiogroup', 'aria-label': 'Mode' });
+    if (marked) list.append(this.#useActiveItem());
     for (const key of orderedModeKeys(modes)) {
       const mode = modes[key];
       if (!mode || typeof mode !== 'object') continue;
@@ -486,11 +496,25 @@ export class Pill {
       icon.textContent = typeof mode.icon === 'string' ? mode.icon : '';
       const name = this.#el('span', 'item-name');
       name.textContent = typeof mode.name === 'string' ? mode.name : key;
-      item.append(icon, name, this.#icon('check', 'item-check'));
+      item.append(icon, name);
+      if (marked && key === active) {
+        const tag = this.#el('span', 'item-tag');
+        tag.textContent = 'This site';
+        item.append(tag);
+      }
+      item.append(this.#icon('check', 'item-check'));
       list.append(item);
     }
     section.append(list);
     return section;
+  }
+
+  #useActiveItem() {
+    const item = this.#el('button', 'item', { type: 'button', role: 'radio', 'aria-checked': 'false', 'data-use-active': '' });
+    const name = this.#el('span', 'item-name');
+    name.textContent = 'Use active mode';
+    item.append(this.#el('span', 'item-icon', { 'aria-hidden': 'true' }), name);
+    return item;
   }
 
   #translateSection(current) {

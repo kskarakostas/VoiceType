@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createController, FOCUS_OUT_MS, PROCESSING_TIMEOUT_MS } from '../../../src/content/controller.js';
 import { isValidInput, deepActiveElement } from '../../../src/content/fields.js';
 import { MSG } from '../../../src/shared/messages.js';
+import { STATUS_MS } from '../../../src/content/pill.js';
 
 const RECT = { top: 100, left: 400, width: 300, height: 30 };
 const ORPHAN = 'VoiceType was turned off or updated. Reload this page.';
@@ -1065,7 +1066,227 @@ describe('focus', () => {
   });
 });
 
+describe('hidden site', () => {
+  const hidden = () => settings({ site: { hidePill: true, mode: null } });
+  const shown = () => settings({ site: { hidePill: false, mode: null } });
+  const RESULT = { action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0, warning: null };
+
+  function hiddenSetup(options) {
+    const t = setup(options);
+    t.controller.setSettings(hidden());
+    return t;
+  }
+
+  it('no idle pill on focus', () => {
+    const t = hiddenSetup();
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    t.controller.focusOut();
+    vi.advanceTimersByTime(FOCUS_OUT_MS);
+    expect(t.pill.show).not.toHaveBeenCalled();
+  });
+
+  it('the hotkey still records with the pill shown', async () => {
+    const t = hiddenSetup();
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    await t.controller.press();
+    expect(t.pill.show).toHaveBeenCalledWith(RECT, { gap: 12 });
+    expect(t.pill.visible).toBe(true);
+    expect(t.pill.setState).toHaveBeenCalledWith('recording');
+  });
+
+  it('records from a page with no field, at the corner', async () => {
+    const t = hiddenSetup();
+    await t.controller.press();
+    expect(t.pill.show).toHaveBeenCalledWith(null, { gap: 12 });
+    expect(t.pill.setState).toHaveBeenCalledWith('recording');
+  });
+
+  it('a focus change while recording keeps the pill', async () => {
+    const t = hiddenSetup();
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    await t.controller.press();
+    $('plain').focus();
+    t.controller.focusOut();
+    vi.advanceTimersByTime(FOCUS_OUT_MS);
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    expect(t.pill.visible).toBe(true);
+  });
+
+  it('the pill goes away after the result', async () => {
+    const t = hiddenSetup();
+    await recordAndStop(t);
+    t.controller.handleMessage(RESULT);
+    await flush();
+    expect(lastStatus(t.pill)[0]).toBe('Done $0.00');
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(STATUS_MS.success);
+    expect(t.pill.hide).toHaveBeenCalled();
+    expect(t.pill.visible).toBe(false);
+    expect(document.activeElement).toBe($('a'));
+  });
+
+  it('statuses still show', async () => {
+    const t = hiddenSetup();
+    document.body.insertAdjacentHTML('beforeend', '<input id="secret" type="password">');
+    $('secret').focus();
+    await t.controller.press();
+    expect(t.pill.show).toHaveBeenCalled();
+    expect(lastStatus(t.pill)[0]).toBe('VoiceType does not record in password fields.');
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(STATUS_MS.info);
+    expect(t.pill.hide).toHaveBeenCalled();
+    expect(t.pill.visible).toBe(false);
+  });
+
+  it('a sticky click-to-copy stays', async () => {
+    const t = hiddenSetup({ insert: 'failed' });
+    await recordAndStop(t);
+    t.controller.handleMessage(RESULT);
+    await flush();
+    expect(lastStatus(t.pill)[0]).toBe(CLICK_TO_COPY);
+    t.controller.focusOut();
+    vi.advanceTimersByTime(PROCESSING_TIMEOUT_MS);
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    await t.controller.copyLast();
+    vi.advanceTimersByTime(STATUS_MS.success);
+    expect(t.pill.hide).toHaveBeenCalled();
+  });
+
+  it('hiding while the idle pill shows removes it', () => {
+    const t = setup();
+    t.controller.setSettings(shown());
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    expect(t.pill.visible).toBe(true);
+    t.controller.handleMessage({ action: MSG.SETTINGS_CHANGED, settings: hidden() });
+    expect(t.pill.hide).toHaveBeenCalled();
+    expect(t.pill.visible).toBe(false);
+  });
+
+  it('unhiding shows the pill at the focused field', () => {
+    const t = hiddenSetup();
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    t.controller.handleMessage({ action: MSG.SETTINGS_CHANGED, settings: shown() });
+    expect(t.pill.show).toHaveBeenCalledWith(RECT, { gap: 12 });
+    expect(t.deps.watchAnchor).toHaveBeenCalledWith($('a'), expect.any(Function));
+  });
+
+  it('a change that leaves the rule as it is does nothing', () => {
+    const t = setup();
+    t.controller.setSettings(shown());
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    t.pill.show.mockClear();
+    $('plain').focus();
+    t.controller.handleMessage({ action: MSG.SETTINGS_CHANGED, settings: shown() });
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    expect(t.pill.show).not.toHaveBeenCalled();
+  });
+
+  it('a change while recording waits', async () => {
+    const t = setup();
+    t.controller.setSettings(shown());
+    await recordAndStop(t);
+    t.controller.handleMessage({ action: MSG.SETTINGS_CHANGED, settings: hidden() });
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    t.controller.handleMessage(RESULT);
+    await flush();
+    expect(t.pill.hide).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(STATUS_MS.success);
+    expect(t.pill.hide).toHaveBeenCalled();
+  });
+
+  it('a status moves with focus on a hidden site', async () => {
+    const t = hiddenSetup();
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    t.deps.hasFocus.mockReturnValue(false);
+    await t.controller.press();
+    t.deps.hasFocus.mockReturnValue(true);
+    expect(t.deps.watchAnchor).toHaveBeenCalledWith($('a'), expect.any(Function));
+    $('b').focus();
+    t.controller.focusIn($('b'));
+    expect(t.deps.watchAnchor).toHaveBeenCalledWith($('b'), expect.any(Function));
+  });
+
+  it('keeps the field focused last for delivery across frames', async () => {
+    const t = hiddenSetup();
+    $('a').focus();
+    t.controller.focusIn($('a'));
+    await t.controller.press();
+    await t.controller.toggle();
+    // Chromium blanks a frame's activeElement when another frame takes the focus.
+    $('a').blur();
+    t.deps.hasFocus.mockReturnValue(false);
+    t.controller.handleMessage(RESULT);
+    await flush();
+    expect(lastStatus(t.pill)[0]).toBe('Return to the field to insert, or click here to copy.');
+  });
+});
+
 describe('menu choices', () => {
+  const siteRule = (site) => settings({ site });
+  const SAVED = { [MSG.SET_SITE_MODE]: { success: true } };
+
+  it('chooseMode changes the active mode with no site', async () => {
+    const t = setup();
+    t.controller.setSettings(settings());
+    await t.controller.chooseMode('email');
+    expect(t.sent).toEqual([{ action: MSG.UPDATE_SETTINGS, patch: { activeMode: 'email' } }]);
+  });
+
+  it('chooseMode changes the active mode with a hide-only rule (V9)', async () => {
+    const t = setup();
+    t.controller.setSettings(siteRule({ hidePill: true, mode: null }));
+    await t.controller.chooseMode('email');
+    expect(t.sent).toEqual([{ action: MSG.UPDATE_SETTINGS, patch: { activeMode: 'email' } }]);
+  });
+
+  it('chooseMode updates the rule on a site with a mode rule', async () => {
+    const t = setup({ replies: SAVED });
+    t.controller.setSettings(siteRule({ hidePill: false, mode: 'email' }));
+    await t.controller.chooseMode('default');
+    expect(t.sent).toEqual([{ action: MSG.SET_SITE_MODE, mode: 'default' }]);
+    expect(t.pill.setStatus).not.toHaveBeenCalled();
+  });
+
+  it('useActiveMode clears the rule mode', async () => {
+    const t = setup({ replies: SAVED });
+    t.controller.setSettings(siteRule({ hidePill: false, mode: 'email' }));
+    await t.controller.useActiveMode();
+    expect(t.sent).toEqual([{ action: MSG.SET_SITE_MODE, mode: null }]);
+  });
+
+  it('a refused site mode shows the error', async () => {
+    const t = setup({ replies: { [MSG.SET_SITE_MODE]: { success: false, error: 'Not available on this page.' } } });
+    t.controller.setSettings(siteRule({ hidePill: false, mode: 'email' }));
+    await t.controller.chooseMode('default');
+    expect(lastStatus(t.pill)).toEqual(['Not available on this page.', { tone: 'error', sticky: false, clickable: false }]);
+    t.pill.setStatus.mockClear();
+    await t.controller.useActiveMode();
+    expect(lastStatus(t.pill)[0]).toBe('Not available on this page.');
+  });
+
+  it('a site mode with no reply says so', async () => {
+    const t = setup();
+    t.controller.setSettings(siteRule({ hidePill: false, mode: 'email' }));
+    await t.controller.useActiveMode();
+    expect(lastStatus(t.pill)).toEqual(['VoiceType could not reach its background service. Try again.', { tone: 'error', sticky: false, clickable: false }]);
+  });
+
+  it('an orphaned or removed instance sends nothing', async () => {
+    const t = setup();
+    t.controller.setSettings(siteRule({ hidePill: false, mode: 'email' }));
+    t.controller.orphaned();
+    await t.controller.chooseMode('default');
+    await t.controller.useActiveMode();
+    expect(t.sent).toEqual([]);
+  });
+
   it('sends a whitelisted patch and shows a refusal', async () => {
     const t = setup({ replies: { [MSG.UPDATE_SETTINGS]: { success: false, error: 'Invalid settings.' } } });
     await t.controller.choose({ activeMode: 'email' });

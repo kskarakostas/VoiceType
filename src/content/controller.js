@@ -82,6 +82,8 @@ export function createController(deps) {
 
   const inactive = () => orphan || dead;
   const gap = () => (Number.isFinite(settings?.pillGap) && settings.pillGap >= 0 ? settings.pillGap : DEFAULT_GAP);
+  /** This site's rule hides the idle pill. Recording, processing and statuses still show it (V10). */
+  const hiddenSite = () => settings?.site?.hidePill === true;
 
   /** Show the pill at el (null: the corner) and follow it. */
   function anchorTo(el) {
@@ -112,6 +114,10 @@ export function createController(deps) {
   /** After focus or a status changes: follow the focused field, or hide an idle pill with nothing to show. */
   function settle() {
     if (inactive() || state !== 'idle' || statusBusy) return;
+    if (hiddenSite()) {
+      if (pill.visible) hide();
+      return;
+    }
     // Another frame or window has the focus. This frame keeps its active field, but only the
     // frame the user is in shows an idle pill (spec 6.4); focusIn shows it again.
     if (!deps.hasFocus()) {
@@ -186,11 +192,13 @@ export function createController(deps) {
   function setSettings(next) {
     if (inactive()) return;
     if (!next || typeof next !== 'object' || !next.modes || typeof next.modes !== 'object') return;
+    const wasHidden = hiddenSite();
     settings = next;
     render();
+    if (hiddenSite() !== wasHidden) settle();
   }
 
-  /** @param {unknown} stats the GET_USAGE reply ({ today, last7Days, total }) */
+  /** @param {unknown} stats the GET_USAGE reply ({ today, last7Days, thisWeek, total, week }) */
   function setUsage(stats) {
     if (inactive() || !stats || typeof stats !== 'object') return;
     const { today, total } = /** @type {any} */ (stats);
@@ -203,7 +211,7 @@ export function createController(deps) {
   function focusIn(el) {
     if (inactive() || !isValidInput(el)) return;
     lastField = el;
-    if (state === 'idle') anchorTo(el);
+    if (state === 'idle' && (statusBusy || !hiddenSite())) anchorTo(el);
   }
 
   function focusOut() {
@@ -497,15 +505,33 @@ export function createController(deps) {
   }
 
   /**
-   * A menu choice. The menu re-renders from the SETTINGS_CHANGED push that follows a save.
-   * @param {{ activeMode?: string, provider?: string, translateTargetLang?: string }} patch
+   * Send a menu choice. The menu re-renders from the SETTINGS_CHANGED push that follows a save.
+   * @param {object} message
    */
-  async function choose(patch) {
+  async function save(message) {
     if (inactive()) return;
-    const reply = await send({ action: MSG.UPDATE_SETTINGS, patch });
+    const reply = await send(message);
     if (inactive()) return;
     if (!reply) notify(NO_REPLY, { tone: 'error' });
     else if (reply.success !== true) notify(textOr(reply.error, 'Could not save the setting.'), { tone: 'error' });
+  }
+
+  /** @param {{ activeMode?: string, provider?: string, translateTargetLang?: string }} patch */
+  function choose(patch) {
+    return save({ action: MSG.UPDATE_SETTINGS, patch });
+  }
+
+  /**
+   * A mode picked in the menu: it updates this site's rule only on a site with a mode rule (V9).
+   * @param {string} key
+   */
+  function chooseMode(key) {
+    return settings?.site?.mode ? save({ action: MSG.SET_SITE_MODE, mode: key }) : choose({ activeMode: key });
+  }
+
+  /** Clear this site's mode, so the active mode applies here again. */
+  function useActiveMode() {
+    return save({ action: MSG.SET_SITE_MODE, mode: null });
   }
 
   /** The extension was turned off, reloaded or updated under this page: say so, then do nothing more. */
@@ -558,6 +584,8 @@ export function createController(deps) {
     copyLast,
     onWindowFocus,
     choose,
+    chooseMode,
+    useActiveMode,
     orphaned,
     teardown,
     get state() {
