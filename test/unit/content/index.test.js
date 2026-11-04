@@ -602,6 +602,7 @@ describe('a frame out of sight', () => {
     document.getElementById('field').dispatchEvent(hotkey('keydown'));
     await flush();
 
+    expect(shown).toContain(hosts()[0]);
     expect(shown[shown.indexOf(hosts()[0]) + 1]).toBe(hosts()[1]);
   });
 });

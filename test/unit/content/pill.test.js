@@ -1743,6 +1743,53 @@ describe('top layer', () => {
     expect(show.mock.invocationCallOrder[1]).toBeLessThan(h.onRaised.mock.invocationCallOrder[1]);
   });
 
+  it('calls onRaised when showPopover throws', () => {
+    const h = { ...handlers(), onRaised: vi.fn() };
+    const { pill, show } = withPopover(new Pill(h, { shadowMode: 'open' }));
+    show.mockImplementation(() => { throw new DOMException('Not connected', 'InvalidStateError'); });
+    pill.show(FIELD);
+    pill.setState('recording');
+    expect(h.onRaised).toHaveBeenCalledTimes(1);
+  });
+
+  it('a page listener that re-enters the placement during the first raise leaks no timer', () => {
+    const { pill, show } = withPopover();
+    const clock = 1;
+    show.mockImplementationOnce(() => pill.reposition(FIELD));
+    pill.show(FIELD);
+    pill.setState('recording');
+    expect(vi.getTimerCount()).toBe(clock + 1);
+    pill.setState('idle');
+    expect(vi.getTimerCount()).toBe(0);
+    show.mockClear();
+    vi.advanceTimersByTime(RAISE_MS * 4);
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it('a page listener that destroys the pill during the first raise leaves no timer', () => {
+    const recording = withPopover();
+    recording.show.mockImplementationOnce(() => recording.pill.destroy());
+    recording.pill.show(FIELD);
+    recording.pill.setState('recording');
+    expect(vi.getTimerCount()).toBe(0);
+
+    const status = withPopover();
+    status.show.mockImplementationOnce(() => status.pill.destroy());
+    status.pill.show(FIELD);
+    status.pill.setStatus('Note', { tone: 'info' });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('a destroyed pill does not raise', () => {
+    const h = { ...handlers(), onRaised: vi.fn() };
+    const { pill, hide, show } = withPopover(new Pill(h, { shadowMode: 'open' }));
+    pill.destroy();
+    pill.raise();
+    expect(hide).not.toHaveBeenCalled();
+    expect(show).not.toHaveBeenCalled();
+    expect(h.onRaised).not.toHaveBeenCalled();
+  });
+
   it('a Minimal pill with an empty handler object raises', () => {
     const { pill, show } = withPopover(new Pill({}, { shadowMode: 'open' }));
     pill.setStyle('minimal');

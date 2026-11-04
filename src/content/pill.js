@@ -209,7 +209,7 @@ export class Pill {
 
   /** Back on top of everything the page opened since: the last one into the top layer paints on top. */
   raise() {
-    if (!this.#host) return;
+    if (!this.#host || this.#destroyed) return;
     try {
       this.#host.hidePopover();
       this.#host.showPopover();
@@ -253,6 +253,8 @@ export class Pill {
     mini.setAttribute('aria-label', state === 'processing' ? 'VoiceType is processing' : 'VoiceType is recording');
     rec.setAttribute('aria-label', state === 'recording' ? 'Stop recording' : 'Start recording');
     this.#replace();
+    // A page listener on the raise can end this pill: no clock or observer starts after that.
+    if (this.#destroyed) return;
     this.#syncSight();
     if (state === 'recording') {
       setIcon(recIcon, 'stop');
@@ -394,8 +396,9 @@ export class Pill {
     const wanted = this.#shown && this.#hasContent();
     if (wanted === (this.#raiseTimer !== null)) return;
     if (wanted) {
-      this.raise();
+      // Timer first: showPopover() runs page listeners, and one that comes back here must find it set.
       this.#raiseTimer = setInterval(() => this.raise(), RAISE_MS);
+      this.raise();
       return;
     }
     clearInterval(this.#raiseTimer);
