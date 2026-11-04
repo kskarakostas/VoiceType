@@ -75,7 +75,7 @@
   font-size: 12px;
 }
 
-.links { display: flex; gap: 16px; margin-top: 4px; }
+.links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; }
 .links a { color: var(--accent); font-weight: 600; text-decoration: none; }
 .links a:hover { text-decoration: underline; }
 
@@ -121,6 +121,13 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .days li[data-state="dictated"] { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .days li[data-state="upcoming"] { border: 1px dashed var(--border-strong); color: var(--muted); }
 .days li[aria-current="date"] { outline: 2px solid var(--text); outline-offset: 2px; }
+
+/* Welcome */
+
+.welcome-steps { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.welcome-steps .card-actions:has(> [hidden]) { display: none; }
+.welcome-line { color: var(--text-2); font-size: 13px; }
+.welcome-line kbd { color: var(--text); font: inherit; font-weight: 700; }
 
 /* Dictionary */
 

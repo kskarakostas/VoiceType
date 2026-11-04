@@ -46,10 +46,14 @@ const handle = createRouter({
   identify: (sender) => senderKind(sender, { extensionId: chrome.runtime.id, extensionOrigin, offscreenUrl }),
 });
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   storage.getSettings().catch(() => {});
   // Content scripts already in open tabs belong to the old version; give every frame the new one.
   reinject(chrome.tabs, chrome.scripting);
+  // Only a first install: an update or a browser update opens nothing.
+  if (details.reason === 'install') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('options.html#welcome') }).catch(() => {});
+  }
 });
 chrome.runtime.onStartup.addListener(() => { storage.getSettings().catch(() => {}); });
 

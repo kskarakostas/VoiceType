@@ -15,6 +15,7 @@ import { createAppearanceSection } from './sections/appearance.js';
 import { createSoundSection } from './sections/sound.js';
 import { createUsageSection } from './sections/usage.js';
 import { createHomeSection } from './sections/home.js';
+import { createWelcomeSection } from './sections/welcome.js';
 
 /** @typedef {import('../shared/defaults.js').Settings} Settings */
 /**
@@ -49,7 +50,7 @@ const LOAD_ERROR = 'Could not load settings. Reload this page.';
 const SECTIONS = Object.freeze([
   createHomeSection, createProviderSection, createRecordingSection, createSpeechSection, createModesSection,
   createDictionarySection, createHistorySection, createSitesSection, createAppearanceSection, createSoundSection,
-  createUsageSection,
+  createUsageSection, createWelcomeSection,
 ]);
 
 /**

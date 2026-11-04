@@ -16,9 +16,14 @@ export const ROUTES = Object.freeze([
   { id: 'settings/usage', title: 'Usage and data' },
 ].map((route) => Object.freeze(route)));
 
+/** Pages with a hash but no sidebar entry; Welcome is linked from the sidebar footer. */
+export const HIDDEN_ROUTES = Object.freeze([
+  { id: 'welcome', title: 'Welcome' },
+].map((route) => Object.freeze(route)));
+
 export const DEFAULT_ROUTE = 'home';
 
-const ROUTE_IDS = new Set(ROUTES.map((route) => route.id));
+const ROUTE_IDS = new Set([...ROUTES, ...HIDDEN_ROUTES].map((route) => route.id));
 
 /**
  * The route a location hash opens. Route ids are ASCII, so the hash is compared as is and never

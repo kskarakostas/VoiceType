@@ -42,6 +42,7 @@
         <p><span id="version">Version</span></p>
         <p>by K. S. Karakostas</p>
         <p class="links">
+          <a href="#welcome">Welcome</a>
           <a href="https://github.com/kskarakostas/VoiceType" target="_blank" rel="noopener">GitHub</a>
           <a href="https://github.com/kskarakostas/VoiceType/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy</a>
         </p>
@@ -343,6 +344,33 @@
             <button type="button" class="btn btn-danger btn-block" id="reset" aria-describedby="reset-hint">Reset to defaults</button>
             <p class="hint" id="reset-hint">Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the hotkey, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.</p>
           </div>
+        </section>
+
+        <section data-route="welcome" aria-labelledby="h-welcome" hidden>
+          <h1 id="h-welcome" tabindex="-1">Welcome</h1>
+          <ol class="welcome-steps">
+            <li class="card">
+              <div class="card-head">
+                <h2>Your key</h2>
+                <p class="status" id="welcome-key-status" data-ready="false"><span class="status-dot" aria-hidden="true"></span><span id="welcome-key-state"></span></p>
+              </div>
+              <p class="hint">Add it and test it on the <a href="#settings/provider">Provider</a> page.</p>
+            </li>
+            <li class="card">
+              <div class="card-head">
+                <h2>Microphone</h2>
+                <p class="status" id="welcome-mic-status" data-ready="false"><span class="status-dot" aria-hidden="true"></span><span id="welcome-mic-state"></span></p>
+              </div>
+              <p class="hint">Chrome asks once, for VoiceType itself, in a new tab.</p>
+              <div class="card-actions">
+                <button type="button" class="btn" id="welcome-allow-mic">Allow microphone</button>
+              </div>
+            </li>
+            <li class="card">
+              <h2>Start dictating</h2>
+              <p class="welcome-line"><kbd id="welcome-hotkey"></kbd>: click into any text field on a web page and press it.</p>
+            </li>
+          </ol>
         </section>
       </main>
 

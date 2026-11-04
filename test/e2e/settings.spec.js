@@ -1,7 +1,7 @@
 // End-to-end coverage for the settings page and the quick-panel popup in the built extension:
 // route opening with tab reuse, saves that survive closing the tab, a mouse press on the
 // Dictionary's buttons, the pill following a change made on the page, Reset to defaults, Home
-// counting a dictation, and History and Copy last over a real dictation. Run with
+// counting a dictation, History and Copy last over a real dictation, and the first-install page. Run with
 // `npm run test:e2e`, which builds dist/ first.
 import { test, expect } from '@playwright/test';
 import { migrateSettings } from '../../src/shared/defaults.js';
@@ -110,6 +110,52 @@ test('the popup opens a route and reuses the settings tab', async () => {
   expect(await settingsPage.evaluate(() => window.__marker)).toBe(1);
   await expect(settingsPage.locator('section[data-route="settings/provider"]')).toBeVisible();
   await expect.poll(settingsTabsActive).toEqual([true]);
+});
+
+test('a fresh install opens Welcome once', async () => {
+  // A default launch has already closed its welcome tab.
+  expect(settingsPages()).toEqual([]);
+
+  const fresh = await launchExtension({ keepWelcome: true });
+  try {
+    const url = `chrome-extension://${fresh.extensionId}/options.html#welcome`;
+    const welcomePages = () => fresh.context.pages().filter((page) => page.url() === url);
+    await expect.poll(() => welcomePages().length).toBe(1);
+    const [page] = welcomePages();
+    await expect(page.locator('section[data-route="welcome"]')).toBeVisible();
+    await expect(page.locator('#welcome-key-state')).toHaveText(/key/);
+    await expect(page.locator('#welcome-hotkey')).toHaveText('Ctrl+Shift+Space');
+
+    // A worker that wakes again does not open a second one.
+    const cdp = await fresh.context.newCDPSession(page);
+    const statuses = [];
+    cdp.on('ServiceWorker.workerVersionUpdated', ({ versions }) => statuses.push(...versions.map((v) => v.runningStatus)));
+    await cdp.send('ServiceWorker.enable');
+    await cdp.send('ServiceWorker.stopAllWorkers');
+    await expect.poll(() => statuses.at(-1)).toBe('stopped');
+    await page.reload();
+    await expect(page.locator('#welcome-hotkey')).toHaveText('Ctrl+Shift+Space');
+    expect(welcomePages()).toHaveLength(1);
+  } finally {
+    await fresh.close();
+  }
+});
+
+test('Open settings reuses an open welcome tab', async () => {
+  await seedSettings(serviceWorker, '');
+  const welcome = await openSettingsPage('welcome');
+  await welcome.evaluate(() => { window.__marker = 1; });
+
+  const popup = await openPopup();
+  // The new popup tab is in front, so the focus check below is not vacuous.
+  await expect.poll(settingsTabsActive).toEqual([false]);
+  await popup.getByRole('button', { name: 'Open settings' }).click();
+
+  await expect.poll(settingsTabsActive).toEqual([true]);
+  expect(settingsPages()).toEqual([welcome]);
+  await expect(welcome).toHaveURL(extensionUrl('options.html#welcome'));
+  await expect(welcome.locator('section[data-route="welcome"]')).toBeVisible();
+  expect(await welcome.evaluate(() => window.__marker)).toBe(1);
 });
 
 test('a value typed on the settings page survives closing the tab one second later', async () => {

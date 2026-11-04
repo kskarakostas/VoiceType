@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { ROUTES, DEFAULT_ROUTE, parseRoute } from '../../../src/options/routes.js';
+import { ROUTES, HIDDEN_ROUTES, DEFAULT_ROUTE, parseRoute } from '../../../src/options/routes.js';
 
 describe('settings page routes', () => {
   it('known routes resolve to themselves', () => {
     for (const { id } of ROUTES) expect(parseRoute(`#${id}`)).toBe(id);
+  });
+
+  it('Welcome is a known route outside the sidebar list', () => {
+    expect(HIDDEN_ROUTES).toEqual([{ id: 'welcome', title: 'Welcome' }]);
+    expect(Object.isFrozen(HIDDEN_ROUTES)).toBe(true);
+    expect(parseRoute('#welcome')).toBe('welcome');
+    expect(ROUTES.map((r) => r.id)).not.toContain('welcome');
   });
 
   it('a bare #settings opens Provider', () => {

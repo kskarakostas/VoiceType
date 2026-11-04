@@ -131,7 +131,7 @@ describe('settings page shell', () => {
       expect(document.querySelectorAll(`nav a[href="#${id}"]`), id).toHaveLength(1);
       expect(navLink(id).textContent.trim()).toBe(title);
     }
-    const order = [...document.querySelectorAll('nav a[href^="#"]')].map((a) => a.getAttribute('href').slice(1));
+    const order = [...document.querySelectorAll('nav .nav-list a[href^="#"]')].map((a) => a.getAttribute('href').slice(1));
     expect(order).toEqual(ROUTES.map((r) => r.id));
     const group = document.querySelector('nav [data-group="settings"]');
     expect(group.querySelector('.nav-group-label').textContent.trim()).toBe('Settings');
@@ -150,6 +150,20 @@ describe('settings page shell', () => {
     expect(navLink('history').closest('[data-group]')).toBeNull();
   });
 
+  it('Welcome opens from the sidebar footer, outside the sidebar lists', async () => {
+    window.history.replaceState(null, '', '#welcome');
+    const page = await start(fakeChrome());
+    const link = navLink('welcome');
+    expect(page.route).toBe('welcome');
+    expect(visible()).toEqual(['welcome']);
+    expect(document.querySelector('section[data-route="welcome"] h1').textContent.trim()).toBe('Welcome');
+    expect(link.closest('.sidebar-footer .links')).not.toBeNull();
+    expect(link.closest('.nav-list')).toBeNull();
+    expect(link.hasAttribute('target')).toBe(false);
+    expect(link.getAttribute('aria-current')).toBe('page');
+    expect(document.querySelectorAll('nav [aria-current]')).toHaveLength(1);
+  });
+
   it('no page shows a placeholder', async () => {
     await start(fakeChrome());
     expect(document.querySelector('.placeholder')).toBeNull();
@@ -163,10 +177,11 @@ describe('settings page shell', () => {
     expect(footer.textContent).toContain('by K. S. Karakostas');
     const links = [...footer.querySelectorAll('a')];
     expect(links.map((a) => a.getAttribute('href'))).toEqual([
+      '#welcome',
       'https://github.com/kskarakostas/VoiceType',
       'https://github.com/kskarakostas/VoiceType/blob/main/PRIVACY.md',
     ]);
-    for (const a of links) {
+    for (const a of links.slice(1)) {
       expect(a.getAttribute('target')).toBe('_blank');
       expect(a.getAttribute('rel')).toBe('noopener');
     }

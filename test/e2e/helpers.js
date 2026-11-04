@@ -33,14 +33,17 @@ export const RECORD_MS = 1500;
 const PRESS_LANDS_MS = 1000;
 /** The protocol's answers for a node, or what it resolved to, gone from the document. */
 const NODE_GONE = /Could not find node|No node with given id|Node with given id|Could not find object|Cannot find context/;
+/** The install tab is on its way when the settings poll ends; a launch without one within this long fails. */
+const WELCOME_TAB_MS = 10_000;
 
 const isExtensionWorker = (worker) => worker.url().startsWith('chrome-extension://');
 
 /**
  * Launches Chromium with the built extension, a fake microphone and the provider stubbed.
- * @param {{ transcriptDelayMs?: number, contextOptions?: object, refineText?: string }} [options] how
+ * @param {{ transcriptDelayMs?: number, contextOptions?: object, refineText?: string, keepWelcome?: boolean }} [options] how
  *   long the stub waits before it answers; extra launchPersistentContext options (color scheme, scale
- *   factor); what the text model answers (without it a refine call is aborted like any other https request)
+ *   factor); what the text model answers (without it a refine call is aborted like any other https request);
+ *   whether the tab a fresh install opens stays open (by default it is closed, so tests that count tabs hold)
  * @returns {Promise<{
  *   context: import('@playwright/test').BrowserContext,
  *   serviceWorker: import('@playwright/test').Worker,
@@ -50,7 +53,7 @@ const isExtensionWorker = (worker) => worker.url().startsWith('chrome-extension:
  *   close: () => Promise<void>,
  * }>}
  */
-export async function launchExtension({ transcriptDelayMs = 0, contextOptions = {}, refineText } = {}) {
+export async function launchExtension({ transcriptDelayMs = 0, contextOptions = {}, refineText, keepWelcome = false } = {}) {
   const workDir = mkdtempSync(join(tmpdir(), 'voicetype-e2e-'));
   /** @type {import('@playwright/test').BrowserContext|undefined} */
   let context;
@@ -106,6 +109,13 @@ export async function launchExtension({ transcriptDelayMs = 0, contextOptions = 
     const extensionId = new URL(serviceWorker.url()).host;
     // onInstalled stores the default settings; a seed written before that lands is overwritten.
     await expect.poll(() => serviceWorker.evaluate(async () => Boolean((await chrome.storage.local.get('settings')).settings))).toBe(true);
+    if (!keepWelcome) {
+      const welcomeUrl = `chrome-extension://${extensionId}/options.html#welcome`;
+      const welcomePages = () => context.pages().filter((page) => page.url() === welcomeUrl);
+      // Wait for the tab rather than close what is there: one opening late would outlive this launch.
+      await expect.poll(() => welcomePages().length, { timeout: WELCOME_TAB_MS }).toBe(1);
+      await welcomePages()[0].close();
+    }
     return { context, serviceWorker, extensionId, providerCalls, refineCalls, close };
   } catch (err) {
     await close();

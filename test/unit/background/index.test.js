@@ -238,6 +238,48 @@ describe('history wiring', () => {
   });
 });
 
+describe('first install', () => {
+  it('opens #welcome on install', async () => {
+    fake.listeners.installed({ reason: 'install' });
+    await flush();
+    expect(fake.chrome.tabs.create).toHaveBeenCalledTimes(1);
+    expect(fake.chrome.tabs.create).toHaveBeenCalledWith({ url: 'chrome-extension://abc/options.html#welcome' });
+  });
+
+  it('opens nothing on update or browser update', async () => {
+    for (const reason of ['update', 'chrome_update', 'shared_module_update']) {
+      fake.listeners.installed({ reason });
+      await flush();
+    }
+    fake.listeners.startup();
+    await flush();
+    expect(fake.chrome.tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('a failed tab open is ignored', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    // A plain function: a vi.fn watches its promise, which would hide an unhandled rejection.
+    let opened = 0;
+    fake.chrome.tabs.create = () => {
+      opened += 1;
+      return Promise.reject(new Error('no window'));
+    };
+    try {
+      fake.listeners.installed({ reason: 'install' });
+      await flush();
+      await flush();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+    expect(opened).toBe(1);
+    expect(unhandled).not.toHaveBeenCalled();
+    // onInstalled keeps its other work.
+    expect(fake.store.settings).toBeDefined();
+    expect(fake.chrome.scripting.executeScript).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('recording wiring', () => {
   beforeEach(() => {
     fake.store.settings = { ...freshSettings(), keys: { openai: 'sk-secret-123456', gemini: '' } };
