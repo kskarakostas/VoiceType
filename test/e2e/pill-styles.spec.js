@@ -478,6 +478,34 @@ test('the Appearance page has no sideways scroll at 380 px', async () => {
   expect(scroll).toBeLessThanOrEqual(client);
 });
 
+test('forced colors show the selected card, and a focused one keeps its focus ring', async () => {
+  await seedStyle('dot');
+  const page = await context.newPage();
+  await page.emulateMedia({ forcedColors: 'active' });
+  await page.goto(`chrome-extension://${extensionId}/options.html#settings/appearance`);
+  const radio = (value) => page.locator(`input[name="pill-style"][value="${value}"]`);
+  const outline = (value) => page.locator('.style-card', { has: radio(value) }).evaluate((card) => {
+    const { outlineStyle, outlineOffset, borderTopColor } = getComputedStyle(card);
+    return { outlineStyle, outlineOffset, borderTopColor };
+  });
+  await expect(radio('dot')).toBeChecked();
+  const highlight = await page.evaluate(() => {
+    const probe = document.body.appendChild(document.createElement('i'));
+    probe.style.color = 'Highlight';
+    return getComputedStyle(probe).color;
+  });
+
+  expect(await outline('dot')).toEqual({ outlineStyle: 'solid', outlineOffset: '-2px', borderTopColor: highlight });
+  expect((await outline('pill')).outlineStyle).toBe('none');
+
+  await radio('dot').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(radio('minimal')).toBeChecked();
+
+  expect(await outline('minimal')).toEqual({ outlineStyle: 'solid', outlineOffset: '2px', borderTopColor: highlight });
+  expect((await outline('dot')).outlineStyle).toBe('none');
+});
+
 /** Scroll 0: every frame of fields.html is below the short viewport's fold. */
 const scrollFramesOut = (page) => page.evaluate(() => window.scrollTo(0, 0));
 

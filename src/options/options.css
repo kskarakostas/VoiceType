@@ -218,11 +218,21 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
   cursor: pointer;
 }
 
-/* The wider border keeps the choice readable without its colour. */
+/* The ring on the border keeps the choice readable without its colour. */
 .style-card:has(input:checked) {
   border-color: var(--accent);
   background: var(--accent-soft);
   box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Forced colors drop the ring and the background. Ahead of the focus rule: on a focused
+   card that rule takes the outline, and the border still marks the choice. */
+@media (forced-colors: active) {
+  .style-card:has(input:checked) {
+    border-color: Highlight;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 
 .style-card:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
