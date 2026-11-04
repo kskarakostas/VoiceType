@@ -101,6 +101,8 @@ export class Pill {
   /** Another pill shows an indicator at this one's place: a Minimal status keeps clear of it. */
   #indicatorReserved = false;
   #style = 'dot';
+  /** The page zoom cancelled on `.vt`. */
+  #zoom = 1;
   #state = 'idle';
   #startedAt = 0;
   #timerId = null;
@@ -216,6 +218,7 @@ export class Pill {
     } catch {
       // A page can take the host out or refuse the show; z-index still holds against all but the top layer.
     }
+    if (this.#cancelZoom()) this.#replace();
     this.#handlers.onRaised?.();
   }
 
@@ -484,6 +487,20 @@ export class Pill {
     return this.#state !== 'idle' || !this.#els.status.hasAttribute('data-empty');
   }
 
+  /**
+   * Zoom multiplies down the tree, so `all: initial` on the host does not stop one on the page root,
+   * and it would scale every px here. Cancelled on `.vt`, they are viewport px, like the field's box
+   * and #viewport(), which the root's zoom leaves as they are.
+   * @returns {boolean} the page's zoom changed
+   */
+  #cancelZoom() {
+    const zoom = this.#host.currentCSSZoom ?? 1;
+    if (zoom === this.#zoom) return false;
+    this.#zoom = zoom;
+    this.#els.wrap.style.zoom = String(1 / zoom);
+    return true;
+  }
+
   /** What the pill shows changed: with its field out of view, that decides corner or hidden. */
   #replace() {
     if (this.#shown) this.#place(this.#anchor, { keepMenu: true });
@@ -495,6 +512,7 @@ export class Pill {
    */
   #place(anchor, { keepMenu = false } = {}) {
     this.#anchor = anchor;
+    this.#cancelZoom();
     this.#syncRaising();
     if (this.#style === 'minimal') {
       this.#placeIndicator();

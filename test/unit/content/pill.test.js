@@ -1807,6 +1807,80 @@ describe('top layer', () => {
   });
 });
 
+describe('zoom on the page root', () => {
+  const zoomed = (pill, value) => Object.defineProperty(pill.host, 'currentCSSZoom', { value, configurable: true });
+  const wrapZoom = (pill) => q(pill, '.vt').style.zoom;
+
+  function recording(style) {
+    const { pill } = makePill();
+    pill.mount();
+    Object.assign(pill.host, { hidePopover: vi.fn(), showPopover: vi.fn() });
+    pill.setStyle(style);
+    return pill;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.stubGlobal('innerHeight', VIEWPORT.height);
+  });
+
+  it.each([[2, '0.5'], [0.5, '2'], [1.25, '0.8']])('cancels a zoom of %d on .vt, so shadow px are viewport px', (zoom, cancel) => {
+    const { pill } = makePill();
+    pill.mount();
+    zoomed(pill, zoom);
+    pill.show(FIELD);
+    expect(wrapZoom(pill)).toBe(cancel);
+  });
+
+  it('writes nothing with no zoom, or where the browser cannot tell', () => {
+    const { pill } = makePill();
+    pill.mount();
+    pill.show(FIELD);
+    expect(wrapZoom(pill)).toBeFalsy();
+    zoomed(pill, 1);
+    pill.reposition(FIELD);
+    expect(wrapZoom(pill)).toBeFalsy();
+  });
+
+  it('takes the cancel off again with the zoom', () => {
+    const { pill } = makePill();
+    pill.mount();
+    zoomed(pill, 2);
+    pill.show(FIELD);
+    zoomed(pill, 1);
+    pill.reposition(FIELD);
+    expect(wrapZoom(pill)).toBe('1');
+  });
+
+  it('places from viewport px: the zoom moves nothing', () => {
+    const { pill } = makePill();
+    pill.mount();
+    pill.show(FIELD);
+    const plain = pillRect(pill);
+    zoomed(pill, 2);
+    pill.reposition(FIELD);
+    expect(pillRect(pill)).toEqual(plain);
+  });
+
+  it('a raise tick that sees another zoom cancels it and places again', () => {
+    const pill = recording('minimal');
+    pill.show(null);
+    pill.setState('recording');
+    const top = q(pill, '.mini').style.top;
+    vi.stubGlobal('innerHeight', VIEWPORT.height - 100);
+    vi.advanceTimersByTime(RAISE_MS);
+    expect(q(pill, '.mini').style.top).toBe(top);
+    zoomed(pill, 2);
+    vi.advanceTimersByTime(RAISE_MS);
+    expect(wrapZoom(pill)).toBe('0.5');
+    expect(pxValue(q(pill, '.mini').style.top)).toBe(pxValue(top) - 100);
+    pill.destroy();
+  });
+});
+
 describe('destroy', () => {
   it('clears every timer, removes the host and turns later calls into no-ops', () => {
     vi.useFakeTimers();
