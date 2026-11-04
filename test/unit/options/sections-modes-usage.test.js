@@ -251,7 +251,7 @@ describe('settings page reset (V21)', () => {
       provider: 'gemini', activeMode: 'custom_1', minRecordingTime: 2, maxRecordingTime: 300,
       translateTargetLang: 'German', languages: ['el'], dictionary: { any: ['x'] }, pillGap: 16,
       hotkey: { code: 'KeyD', ctrl: false, shift: false, alt: true, meta: false }, autoStopSilenceSec: 3,
-      siteRules: { 'a.com': { hidePill: true, mode: 'custom_1' } }, pillStyle: 'dot', sounds: true, alwaysCopy: true,
+      siteRules: { 'a.com': { hidePill: true, mode: 'custom_1' } }, pillStyle: 'minimal', sounds: true, alwaysCopy: true,
     });
     const fresh = freshSettings();
     for (const field of Object.keys(fresh)) {
@@ -279,7 +279,7 @@ describe('settings page reset (V21)', () => {
       expect(Object.hasOwn(patch, kept), kept).toBe(false);
     }
     expect(patch.modes).toEqual(freshSettings().modes);
-    expect(patch).toMatchObject({ activeMode: 'default', pillStyle: 'pill', sounds: false, alwaysCopy: false });
+    expect(patch).toMatchObject({ activeMode: 'default', pillStyle: 'dot', sounds: false, alwaysCopy: false });
     const { settingsVersion, keys, provider, languages, dictionary, siteRules, ...reset } = freshSettings();
     expect(patch).toEqual(reset);
 

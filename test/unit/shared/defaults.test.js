@@ -67,14 +67,14 @@ function fullV3Settings() {
     settingsVersion: 3,
     dictionary: { any: ['Palowise', 'Karakostas'], el: ['Νόησις'] },
     siteRules: { 'mail.google.com': { hidePill: false, mode: 'email' }, 'example.com': { hidePill: true, mode: null } },
-    pillStyle: 'dot',
+    pillStyle: 'pill',
     sounds: true,
     alwaysCopy: true,
   };
 }
 
 /** The v3 fields a v2 record gains when it migrates. */
-const V3_DEFAULTS = { siteRules: {}, pillStyle: 'pill', sounds: false, alwaysCopy: false };
+const V3_DEFAULTS = { siteRules: {}, pillStyle: 'dot', sounds: false, alwaysCopy: false };
 
 describe('defaults', () => {
   it('default mode has no prompt and all built-ins are flagged', () => {
@@ -349,8 +349,8 @@ describe('migrateSettings', () => {
 
   it('v3 validation repairs only what is wrong', () => {
     const cases = [
-      ['pillStyle', 'huge', 'pill'],
-      ['pillStyle', undefined, 'pill'],
+      ['pillStyle', 'huge', 'dot'],
+      ['pillStyle', undefined, 'dot'],
       ['sounds', 'yes', false],
       ['alwaysCopy', 1, false],
       ['dictionary', [], {}],
@@ -506,7 +506,7 @@ describe('toPublicSettings', () => {
   it('public settings carry no keys, site rules or dictionary', () => {
     const pub = toPublicSettings(fullV3Settings());
     for (const field of ['keys', 'siteRules', 'dictionary', 'keywords']) expect(pub, field).not.toHaveProperty(field);
-    expect(pub).toMatchObject({ pillStyle: 'dot', sounds: true, alwaysCopy: true, hasKey: { openai: true, gemini: true } });
+    expect(pub).toMatchObject({ pillStyle: 'pill', sounds: true, alwaysCopy: true, hasKey: { openai: true, gemini: true } });
   });
 
   it('drops an unknown field and still carries every known field plus hasKey', () => {

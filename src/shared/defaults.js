@@ -89,7 +89,7 @@ export const DEFAULT_SETTINGS = deepFreeze({
   autoStopSilenceSec: 0,
   modes: BUILTIN_MODES,
   siteRules: {},
-  pillStyle: 'pill',
+  pillStyle: 'dot',
   sounds: false,
   alwaysCopy: false,
 });
@@ -263,7 +263,7 @@ function v2ToV3(v2) {
     ...structuredClone(rest),
     dictionary: keywords.length ? { any: [...keywords] } : {},
     siteRules: {},
-    pillStyle: 'pill',
+    pillStyle: DEFAULT_SETTINGS.pillStyle,
     sounds: false,
     alwaysCopy: false,
     settingsVersion: 3,

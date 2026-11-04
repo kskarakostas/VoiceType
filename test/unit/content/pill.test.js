@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Pill, PILL_SIZE, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
+import { Pill, PILL_SIZE, MINI_SIZE, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
 import { computePillPosition, EDGE } from '../../../src/content/position.js';
 
 // A path, not a URL literal: jsdom replaces the global URL, and the web transform rewrites
@@ -784,6 +784,330 @@ describe('menu', () => {
     pill.hide();
     expect(pill.menuOpen).toBe(false);
     expect(h.onMenuOpen).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('styles', () => {
+  const INDICATOR = { top: '724px', left: '466px' }; // bottom centre of jsdom's 1024 x 768
+  const STATUS_200 = rect(200, 40);
+  const vt = (pill) => q(pill, '.vt');
+  const mini = (pill) => q(pill, '.mini');
+  const at = (el) => ({ top: el.style.top, left: el.style.left });
+  /** The CSS rule holding a declaration, selector included. */
+  const ruleWith = (declaration) => CSS_TEXT.match(new RegExp(`[^{}]*\\{[^{}]*${declaration}[^{}]*\\}`))?.[0];
+
+  function minimal() {
+    const made = makePill();
+    made.pill.setStyle('minimal');
+    return made;
+  }
+
+  it('starts as dot', () => {
+    const { pill } = makePill();
+    pill.mount();
+    expect(vt(pill).dataset.style).toBe('dot');
+    const dot = q(pill, '.dot');
+    expect(dot.getAttribute('aria-hidden')).toBe('true');
+    expect(dot.querySelector('button')).toBeNull();
+  });
+
+  it('setStyle ignores an unknown value', () => {
+    const { pill } = makePill();
+    pill.mount();
+    pill.setStyle('pill');
+    for (const value of ['huge', undefined, null, 'constructor']) pill.setStyle(value);
+    expect(vt(pill).dataset.style).toBe('pill');
+  });
+
+  it('setStyle does nothing after destroy', () => {
+    const { pill } = makePill();
+    pill.show(FIELD);
+    pill.destroy();
+    pill.setStyle('minimal');
+    expect(vt(pill).dataset.style).toBe('dot');
+    expect(pill.visible).toBe(false);
+  });
+
+  it('CSS: pill expands at idle', () => {
+    expect(ruleWith('padding: 0 3px')).toContain(".vt[data-style='pill'] .body");
+    expect(ruleWith('width: 0;\\s+opacity: 0')).toContain(".vt[data-style='pill'] .dot");
+    expect(ruleWith('max-width: 134px')).toContain(".vt[data-style='pill'] .bar");
+  });
+
+  it('CSS: minimal has no pill, and the indicator shows only while recording or processing', () => {
+    expect(CSS_TEXT).toMatch(/\.vt\[data-style='minimal'\] \.pill \{\s*display: none;\s*\}/);
+    expect(CSS_TEXT.match(/^\.mini \{[^}]*\}/m)[0]).toMatch(/\bdisplay: none;/);
+    expect(CSS_TEXT).toMatch(/\.vt\[data-style='minimal'\] \.mini:is\(\[data-state='recording'\], \[data-state='processing'\]\) \{\s*display: flex;/);
+  });
+
+  it('MINI_SIZE matches .mini in pill.css', () => {
+    const rule = CSS_TEXT.match(/^\.mini \{[^}]*\}/m)[0];
+    expect(MINI_SIZE).toEqual({ width: 92, height: 28 });
+    expect(rule).toContain(`width: ${MINI_SIZE.width}px;`);
+    expect(rule).toContain(`height: ${MINI_SIZE.height}px;`);
+  });
+
+  it('minimal: show with nothing to show stays hidden', () => {
+    const { pill } = minimal();
+    pill.show(FIELD);
+    expect(vt(pill).hidden).toBe(true);
+    expect(pill.visible).toBe(false);
+  });
+
+  it.each([['a field', FIELD], ['a field at the bottom', BOTTOM_FIELD], ['no field', null], ['a field out of view', { ...FIELD, top: -3000 }]])(
+    'minimal: recording shows the indicator at the bottom centre with %s',
+    (_, anchor) => {
+      const { pill } = minimal();
+      pill.show(anchor);
+      pill.setState('recording');
+      expect(pill.visible).toBe(true);
+      expect(vt(pill).hidden).toBe(false);
+      expect(at(mini(pill))).toEqual(INDICATOR);
+    },
+  );
+
+  it('minimal: reposition ignores the field', () => {
+    const { pill } = minimal();
+    pill.show(FIELD);
+    pill.setState('recording');
+    pill.reposition(BOTTOM_FIELD);
+    expect(at(mini(pill))).toEqual(INDICATOR);
+    pill.reposition(null);
+    expect(at(mini(pill))).toEqual(INDICATOR);
+  });
+
+  it('minimal: a recording that ends hides again', () => {
+    const { pill } = minimal();
+    pill.show(FIELD);
+    pill.setState('recording');
+    pill.setState('idle');
+    expect(vt(pill).hidden).toBe(true);
+    expect(pill.visible).toBe(false);
+  });
+
+  it('leaving minimal goes back to the stored field', () => {
+    const { pill } = minimal();
+    pill.show(FIELD);
+    pill.setState('recording');
+    pill.reposition(BOTTOM_FIELD);
+    pill.setStyle('dot');
+    const expected = computePillPosition({ anchor: BOTTOM_FIELD, pill: PILL_SIZE, viewport: VIEWPORT, gap: 8 });
+    expect(pillRect(pill)).toMatchObject({ top: Math.round(expected.top), left: Math.round(expected.left) });
+    expect(q(pill, '.pill').dataset.placement).toBe(expected.placement);
+    expect(pill.visible).toBe(true);
+  });
+
+  it('leaving minimal shows the idle pill that had nothing to show there', () => {
+    const { pill } = minimal();
+    pill.show(FIELD);
+    expect(pill.visible).toBe(false);
+    pill.setStyle('pill');
+    expect(pill.visible).toBe(true);
+    expect(vt(pill).hidden).toBe(false);
+  });
+
+  it('entering minimal hides an idle pill', () => {
+    const { pill } = makePill();
+    pill.show(FIELD);
+    pill.setStyle('minimal');
+    expect(pill.visible).toBe(false);
+    expect(vt(pill).hidden).toBe(true);
+  });
+
+  it('minimal: processing swaps bars for dots', () => {
+    const { pill } = minimal();
+    pill.show(FIELD);
+    pill.setState('recording');
+    expect(mini(pill).dataset.state).toBe('recording');
+    expect(mini(pill).getAttribute('role')).toBe('img');
+    expect(mini(pill).getAttribute('aria-label')).toBe('VoiceType is recording');
+    pill.setState('processing');
+    expect(mini(pill).dataset.state).toBe('processing');
+    expect(mini(pill).getAttribute('aria-label')).toBe('VoiceType is processing');
+    expect(CSS_TEXT).toMatch(/\.mini\[data-state='processing'\] :is\(\.levels, \.mini-time\) \{\s*display: none;\s*\}/);
+    expect(CSS_TEXT).toMatch(/\.mini\[data-state='processing'\] \.mini-dots \{[^}]*vt-pulse/);
+  });
+
+  it('the indicator holds four level bars, the dots and the time, hidden from assistive tech', () => {
+    const { pill } = minimal();
+    pill.mount();
+    expect(mini(pill).querySelectorAll('.levels .lvl')).toHaveLength(4);
+    expect(q(pill, '.levels').getAttribute('aria-hidden')).toBe('true');
+    expect(q(pill, '.mini-dots').getAttribute('data-icon')).toBe('dots');
+    expect(q(pill, '.mini-time').getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('minimal: elapsed time counts on the indicator', () => {
+    vi.useFakeTimers();
+    const { pill } = minimal();
+    pill.show(FIELD);
+    pill.setState('recording');
+    expect(q(pill, '.mini-time').textContent).toBe('00:00');
+    vi.advanceTimersByTime(2000);
+    expect(q(pill, '.mini-time').textContent).toBe('00:02');
+  });
+
+  it('elapsedMs starts the clock there', () => {
+    vi.useFakeTimers();
+    const { pill } = minimal();
+    pill.show(FIELD);
+    pill.setState('recording', { elapsedMs: 65000 });
+    expect(q(pill, '.mini-time').textContent).toBe('01:05');
+    expect(q(pill, '.rec-label').textContent).toBe('01:05');
+    vi.advanceTimersByTime(2000);
+    expect(q(pill, '.mini-time').textContent).toBe('01:07');
+  });
+
+  it('a non-finite elapsedMs starts the clock at zero', () => {
+    vi.useFakeTimers();
+    const { pill } = minimal();
+    pill.show(FIELD);
+    pill.setState('recording', { elapsedMs: Number.NaN });
+    expect(q(pill, '.mini-time').textContent).toBe('00:00');
+  });
+
+  it('elapsedMs does not move a clock already running', () => {
+    vi.useFakeTimers();
+    const { pill } = minimal();
+    pill.show(FIELD);
+    pill.setState('recording');
+    vi.advanceTimersByTime(2000);
+    pill.setState('recording', { elapsedMs: 65000 });
+    vi.advanceTimersByTime(1000);
+    expect(q(pill, '.mini-time').textContent).toBe('00:03');
+  });
+
+  it.each(['idle', 'done', 'error'])('minimal: a status shows without an indicator, centred, in its place (%s)', (state) => {
+    const { pill } = minimal();
+    pill.show(FIELD);
+    statusEl(pill).getBoundingClientRect = STATUS_200;
+    pill.setStatus('Done', { tone: 'success', sticky: true });
+    pill.setState(state);
+    expect(statusEl(pill).dataset.side).toBe('above');
+    expect(statusEl(pill).style.left).toBe('412px');
+    expect(statusEl(pill).style.top).toBe('752px');
+  });
+
+  it.each(['recording', 'processing'])('minimal: a status while %s sits above the indicator', (state) => {
+    const { pill } = minimal();
+    pill.show(FIELD);
+    statusEl(pill).getBoundingClientRect = STATUS_200;
+    pill.setState(state);
+    pill.setStatus('Almost at the limit', { tone: 'warning', sticky: true });
+    expect(statusEl(pill).dataset.side).toBe('above');
+    expect(statusEl(pill).style.left).toBe('412px');
+    expect(statusEl(pill).style.top).toBe('718px');
+  });
+
+  it('minimal: a status too wide for a small viewport stays inside it', () => {
+    const { innerWidth } = window;
+    window.innerWidth = 150;
+    try {
+      const { pill } = minimal();
+      pill.show(FIELD);
+      statusEl(pill).getBoundingClientRect = STATUS_200;
+      pill.setStatus('Hello', { sticky: true });
+      expect(statusEl(pill).style.left).toBe(`${EDGE}px`);
+    } finally {
+      window.innerWidth = innerWidth;
+    }
+  });
+
+  it('minimal: openMenu does nothing', () => {
+    const { pill, h } = minimal();
+    pill.renderMenu(settings(), null);
+    pill.show(FIELD);
+    pill.setState('recording');
+    pill.openMenu();
+    expect(pill.menuOpen).toBe(false);
+    expect(q(pill, '.menu').hidden).toBe(true);
+    expect(h.onMenuOpen).not.toHaveBeenCalled();
+  });
+
+  it("setStyle('minimal') closes an open menu", () => {
+    const { pill } = makePill();
+    pill.renderMenu(settings(), null);
+    pill.show(FIELD);
+    pill.openMenu();
+    pill.setStyle('minimal');
+    expect(pill.menuOpen).toBe(false);
+    expect(q(pill, '.menu').hidden).toBe(true);
+  });
+
+  it('minimal: a clickable status calls onStatusClick', () => {
+    const { pill, h } = minimal();
+    pill.show(FIELD);
+    pill.setStatus('Could not insert. Click here to copy the text.', { tone: 'error', sticky: true, clickable: true });
+    statusEl(pill).click();
+    expect(h.onStatusClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('CSS: a plain status takes no pointer in minimal', () => {
+    expect(CSS_TEXT).toMatch(/\.vt\[data-style='minimal'\] \.status:not\(\[data-clickable\]\) \{\s*pointer-events: none;\s*\}/);
+  });
+
+  it('CSS: the indicator takes no pointer', () => {
+    expect(CSS_TEXT.match(/^\.mini \{[^}]*\}/m)[0]).toMatch(/\bpointer-events: none;/);
+  });
+
+  it('CSS: reduced motion keeps the bars static', () => {
+    const reduced = CSS_TEXT.slice(CSS_TEXT.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reduced).toMatch(/\.lvl \{\s*transform: none !important;\s*\}/);
+  });
+
+  it('setStyle while recording keeps the state and the clock', () => {
+    vi.useFakeTimers();
+    const { pill } = makePill();
+    pill.show(FIELD);
+    pill.setState('recording');
+    vi.advanceTimersByTime(2000);
+    pill.setStyle('minimal');
+    vi.advanceTimersByTime(1000);
+    expect(q(pill, '.pill').dataset.state).toBe('recording');
+    expect(mini(pill).dataset.state).toBe('recording');
+    expect(q(pill, '.mini-time').textContent).toBe('00:03');
+    expect(vi.getTimerCount()).toBe(1);
+    pill.setStyle('pill');
+    vi.advanceTimersByTime(1000);
+    expect(q(pill, '.rec-label').textContent).toBe('00:04');
+  });
+
+  it('setLevel reaches the indicator', () => {
+    const { pill } = minimal();
+    pill.show(FIELD);
+    pill.setState('recording');
+    pill.setLevel(0.5);
+    expect(mini(pill).style.getPropertyValue('--vt-level')).toBe('0.5');
+    expect(q(pill, '.pill').style.getPropertyValue('--vt-level')).toBe('0.5');
+    pill.setState('processing');
+    expect(mini(pill).style.getPropertyValue('--vt-level')).toBe('0');
+  });
+
+  it('right-to-left: placement does not depend on the page direction', () => {
+    const placed = (dir, style) => {
+      document.documentElement.dir = dir;
+      const { pill } = makePill();
+      pill.setStyle(style);
+      pill.show(FIELD);
+      pill.setState('recording');
+      const box = at(q(pill, style === 'minimal' ? '.mini' : '.pill'));
+      pill.destroy();
+      return box;
+    };
+    try {
+      for (const style of ['pill', 'dot', 'minimal']) expect(placed('rtl', style), style).toEqual(placed('ltr', style));
+    } finally {
+      document.documentElement.dir = '';
+    }
+    expect(CSS_TEXT.match(/^\.vt \{([^}]*)\}/m)[1]).toMatch(/^\s*direction: ltr;$/m);
+  });
+
+  it('a user string in a status is text', () => {
+    const { pill } = minimal();
+    pill.show(FIELD);
+    pill.setStatus(HOSTILE, { tone: 'error', sticky: true });
+    expect(statusEl(pill).textContent).toBe(HOSTILE);
+    expect(q(pill, '.status img')).toBeNull();
   });
 });
 

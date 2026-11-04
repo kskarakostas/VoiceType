@@ -56,6 +56,19 @@ export function computePillPosition({ anchor, pill, viewport, gap }) {
 }
 
 /**
+ * Places the Minimal indicator at the bottom centre of the viewport, whatever the field.
+ * @param {{ indicator: Size, viewport: Size }} input
+ * @returns {{ top: number, left: number, placement: 'minimal' }}
+ */
+export function computeIndicatorPosition({ indicator, viewport }) {
+  return {
+    top: Math.max(EDGE, viewport.height - indicator.height - CORNER_MARGIN),
+    left: Math.max(EDGE, (viewport.width - indicator.width) / 2),
+    placement: 'minimal',
+  };
+}
+
+/**
  * Opens the menu below the pill when it fits, else above when it fits there, else on the
  * side with more room, capped by maxHeight to that room. It never overlaps the pill and is
  * left-aligned with it.

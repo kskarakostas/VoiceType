@@ -1,11 +1,11 @@
 // The in-page UI: a closed Shadow DOM pill with its status line and menu.
 // User data (mode names and icons, statuses) is only ever set with textContent.
 import css from './pill.css';
-import { computePillPosition, computeMenuPlacement, EDGE } from './position.js';
+import { computePillPosition, computeMenuPlacement, computeIndicatorPosition, EDGE } from './position.js';
 import { formatChord } from '../shared/chord.js';
 import { formatCost } from '../shared/pricing.js';
 import { PROVIDERS } from '../shared/models.js';
-import { orderedModeKeys } from '../shared/defaults.js';
+import { orderedModeKeys, PILL_STYLES } from '../shared/defaults.js';
 
 /**
  * @typedef {import('./position.js').Box} Box
@@ -19,6 +19,9 @@ import { orderedModeKeys } from '../shared/defaults.js';
 
 /** Size of the expanded pill; `.pill` in pill.css has the same width and height. */
 export const PILL_SIZE = Object.freeze({ width: 140, height: 30 });
+
+/** Size of the Minimal indicator; `.mini` in pill.css has the same width and height. */
+export const MINI_SIZE = Object.freeze({ width: 92, height: 28 });
 
 /** How long a non-sticky status stays, by tone. */
 export const STATUS_MS = Object.freeze({ error: 6000, warning: 6000, info: 2500, success: 2500 });
@@ -87,6 +90,7 @@ export class Pill {
   /** @type {(Box & { placement: string })|null} */
   #box = null;
   #gap = 8;
+  #style = 'dot';
   #state = 'idle';
   #startedAt = 0;
   #timerId = null;
@@ -178,24 +182,36 @@ export class Pill {
     this.#els.wrap.hidden = true;
   }
 
-  /** @param {PillState} state */
-  setState(state) {
+  /** @param {'pill'|'dot'|'minimal'} style anything else is ignored */
+  setStyle(style) {
+    if (this.#destroyed || !PILL_STYLES.includes(style)) return;
+    this.#style = style;
+    this.#els.wrap.dataset.style = style;
+    if (style === 'minimal') this.closeMenu();
+    this.#replace();
+  }
+
+  /**
+   * @param {PillState} state
+   * @param {{ elapsedMs?: number }} [options] where a clock started by this call begins
+   */
+  setState(state, { elapsedMs = 0 } = {}) {
     if (this.#destroyed || !STATES.has(state)) return;
     const previous = this.#state;
     this.#state = state;
-    const { pill, rec, recIcon, recLabel } = this.#els;
+    const { pill, mini, rec, recIcon, recLabel } = this.#els;
     pill.dataset.state = state;
+    mini.dataset.state = state;
+    mini.setAttribute('aria-label', state === 'processing' ? 'VoiceType is processing' : 'VoiceType is recording');
     rec.setAttribute('aria-label', state === 'recording' ? 'Stop recording' : 'Start recording');
     this.#replace();
     if (state === 'recording') {
       setIcon(recIcon, 'stop');
       if (previous !== 'recording') {
-        this.#startedAt = Date.now();
-        recLabel.textContent = formatElapsed(0);
+        this.#startedAt = Date.now() - finite(elapsedMs);
+        this.#showElapsed();
         clearInterval(this.#timerId);
-        this.#timerId = setInterval(() => {
-          recLabel.textContent = formatElapsed(Date.now() - this.#startedAt);
-        }, 250);
+        this.#timerId = setInterval(() => this.#showElapsed(), 250);
       }
       return;
     }
@@ -210,7 +226,9 @@ export class Pill {
   setLevel(level) {
     if (this.#destroyed) return;
     const value = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
-    this.#els.pill.style.setProperty('--vt-level', String(Math.round(value * 1000) / 1000));
+    const rounded = String(Math.round(value * 1000) / 1000);
+    const { pill, mini } = this.#els;
+    for (const el of [pill, mini]) el.style.setProperty('--vt-level', rounded);
   }
 
   /**
@@ -267,7 +285,7 @@ export class Pill {
   }
 
   openMenu() {
-    if (this.#destroyed || this.#menuOpen || !this.visible) return;
+    if (this.#destroyed || this.#menuOpen || !this.visible || this.#style === 'minimal') return;
     this.#menuOpen = true;
     const { pill, menu, mode, more } = this.#els;
     pill.dataset.menu = 'open';
@@ -320,6 +338,12 @@ export class Pill {
     if (!event.composedPath().includes(this.#host)) this.closeMenu();
   };
 
+  #showElapsed() {
+    const text = formatElapsed(Date.now() - this.#startedAt);
+    this.#els.recLabel.textContent = text;
+    this.#els.miniTime.textContent = text;
+  }
+
   #toggleMenu() {
     if (this.#menuOpen) this.closeMenu();
     else this.openMenu();
@@ -351,6 +375,10 @@ export class Pill {
    */
   #place(anchor, { keepMenu = false } = {}) {
     this.#anchor = anchor;
+    if (this.#style === 'minimal') {
+      this.#placeIndicator();
+      return;
+    }
     const { wrap, pill } = this.#els;
     const input = { pill: PILL_SIZE, viewport: this.#viewport(), gap: this.#gap };
     let pos = computePillPosition({ ...input, anchor });
@@ -370,6 +398,23 @@ export class Pill {
     wrap.hidden = false;
     const moved = last?.top !== pos.top || last?.left !== pos.left;
     if (this.#menuOpen && (moved || !keepMenu)) this.#placeMenu();
+    this.#placeStatus();
+  }
+
+  /** Minimal shows at the bottom centre whatever the field, and only with something to show. */
+  #placeIndicator() {
+    const { wrap, mini } = this.#els;
+    if (!this.#hasContent()) {
+      this.#offscreen = true;
+      wrap.hidden = true;
+      return;
+    }
+    const pos = computeIndicatorPosition({ indicator: MINI_SIZE, viewport: this.#viewport() });
+    this.#offscreen = false;
+    this.#box = { top: pos.top, left: pos.left, ...MINI_SIZE, placement: pos.placement };
+    mini.style.top = `${Math.round(pos.top)}px`;
+    mini.style.left = `${Math.round(pos.left)}px`;
+    wrap.hidden = false;
     this.#placeStatus();
   }
 
@@ -396,9 +441,10 @@ export class Pill {
   }
 
   /**
-   * The status prefers the side opposite an open menu, else above for the above and corner
-   * placements and below otherwise. Without room there it takes the other side, or past the
-   * menu's far edge while the menu is open; failing that it is clamped into the viewport.
+   * The status prefers the side opposite an open menu, else above for the above, corner and
+   * minimal placements and below otherwise. Without room there it takes the other side, or past
+   * the menu's far edge while the menu is open; failing that it is clamped into the viewport.
+   * On Minimal it is centred, and with no indicator showing it takes the indicator's place.
    */
   #placeStatus() {
     const box = this.#box;
@@ -407,7 +453,12 @@ export class Pill {
     const viewport = this.#viewport();
     const { width, height: measured } = status.getBoundingClientRect();
     const height = Math.max(measured, STATUS_ROOM);
-    const tops = { below: box.top + box.height + STATUS_GAP, above: box.top - STATUS_GAP - height };
+    const minimal = box.placement === 'minimal';
+    const indicated = this.#state === 'recording' || this.#state === 'processing';
+    const tops = {
+      below: box.top + box.height + STATUS_GAP,
+      above: minimal && !indicated ? box.top + box.height - height : box.top - STATUS_GAP - height,
+    };
     const fits = (top) => top >= EDGE && top + height <= viewport.height - EDGE;
     let preferred;
     let fallback;
@@ -419,7 +470,7 @@ export class Pill {
         ? { side: 'below', top: menu.bottom + STATUS_GAP }
         : { side: 'above', top: menu.top - STATUS_GAP - height };
     } else {
-      preferred = box.placement === 'above' || box.placement === 'corner' ? 'above' : 'below';
+      preferred = box.placement === 'above' || box.placement === 'corner' || minimal ? 'above' : 'below';
       const other = preferred === 'below' ? 'above' : 'below';
       fallback = { side: other, top: tops[other] };
     }
@@ -430,7 +481,9 @@ export class Pill {
       else top = Math.max(EDGE, Math.min(top, viewport.height - height - EDGE));
     }
     status.dataset.side = side;
-    const wanted = GROWS_LEFT.has(box.placement) ? box.left + box.width - width : box.left;
+    let wanted = box.left;
+    if (minimal) wanted = box.left + (box.width - width) / 2;
+    else if (GROWS_LEFT.has(box.placement)) wanted = box.left + box.width - width;
     const left = Math.max(EDGE, Math.min(wanted, viewport.width - width - EDGE));
     status.style.left = `${Math.round(left)}px`;
     // "above" is lifted by its own height in CSS (translateY(-100%)), so it is placed by its bottom edge.
@@ -452,6 +505,7 @@ export class Pill {
     const el = (tag, className, attrs = {}) => this.#el(tag, className, attrs);
     const wrap = el('div', 'vt');
     wrap.hidden = true;
+    wrap.dataset.style = 'dot';
 
     const pill = el('div', 'pill');
     pill.dataset.state = 'idle';
@@ -482,7 +536,14 @@ export class Pill {
     const menu = el('div', 'menu', { id: 'vt-menu', role: 'group', 'aria-label': 'VoiceType menu' });
     menu.hidden = true;
 
-    wrap.append(pill, status, menu);
+    const mini = el('div', 'mini', { role: 'img', 'aria-label': 'VoiceType is recording' });
+    mini.dataset.state = 'idle';
+    const levels = el('span', 'levels', { 'aria-hidden': 'true' });
+    levels.append(el('span', 'lvl'), el('span', 'lvl'), el('span', 'lvl'), el('span', 'lvl'));
+    const miniTime = el('span', 'mini-time', { 'aria-hidden': 'true' });
+    mini.append(levels, this.#icon('dots', 'mini-dots'), miniTime);
+
+    wrap.append(pill, mini, status, menu);
 
     rec.addEventListener('click', () => this.#handlers.onRec());
     mode.addEventListener('click', () => this.#toggleMenu());
@@ -500,7 +561,7 @@ export class Pill {
       else if (lang !== undefined) this.#handlers.onTargetLang(lang);
     });
 
-    return { wrap, pill, mode, modeIcon, rec, recIcon, recLabel, more, status, statusIcon, statusText, menu };
+    return { wrap, pill, mini, miniTime, mode, modeIcon, rec, recIcon, recLabel, more, status, statusIcon, statusText, menu };
   }
 
   /**

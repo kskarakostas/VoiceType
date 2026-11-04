@@ -160,7 +160,8 @@ button:focus-visible {
 }
 
 .body:is(:hover, :focus-within),
-.pill:is([data-state='recording'], [data-state='processing'], [data-menu='open']) .body {
+.pill:is([data-state='recording'], [data-state='processing'], [data-menu='open']) .body,
+.vt[data-style='pill'] .body {
   --vt-delay: 0.1s;
 
   height: 30px;
@@ -221,13 +222,15 @@ button:focus-visible {
 }
 
 .body:is(:hover, :focus-within) .dot,
-.pill:is([data-state='recording'], [data-state='processing'], [data-menu='open']) .dot {
+.pill:is([data-state='recording'], [data-state='processing'], [data-menu='open']) .dot,
+.vt[data-style='pill'] .dot {
   width: 0;
   opacity: 0;
 }
 
 .body:is(:hover, :focus-within) .bar,
-.pill:is([data-state='recording'], [data-state='processing'], [data-menu='open']) .bar {
+.pill:is([data-state='recording'], [data-state='processing'], [data-menu='open']) .bar,
+.vt[data-style='pill'] .bar {
   max-width: 134px;
   opacity: 1;
 }
@@ -320,6 +323,80 @@ button:focus-visible {
   transition: box-shadow 0.1s linear;
 }
 
+/* Minimal: no pill, and no target of its own. MINI_SIZE in pill.js has the same width and height. */
+.vt[data-style='minimal'] .pill {
+  display: none;
+}
+
+.mini {
+  --vt-l: clamp(0, var(--vt-level, 0), 1);
+
+  position: absolute;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 92px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--vt-surface);
+  box-shadow: var(--vt-shadow);
+  pointer-events: none;
+}
+
+.vt[data-style='minimal'] .mini:is([data-state='recording'], [data-state='processing']) {
+  display: flex;
+}
+
+.levels {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+}
+
+/* Each bar answers the level with its own gain, so they do not move as one block. */
+.lvl {
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--vt-rec);
+  transform: scaleY(calc(0.3 + var(--vt-l) * var(--vt-k, 0.5)));
+  transition: transform 0.1s linear;
+}
+
+.lvl:nth-child(2) {
+  --vt-k: 0.7;
+}
+
+.lvl:nth-child(3) {
+  --vt-k: 0.6;
+}
+
+.lvl:nth-child(4) {
+  --vt-k: 0.4;
+}
+
+.mini-time {
+  color: var(--vt-text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-dots {
+  display: none;
+  color: var(--vt-text);
+}
+
+.mini[data-state='processing'] :is(.levels, .mini-time) {
+  display: none;
+}
+
+.mini[data-state='processing'] .mini-dots {
+  display: block;
+  animation: vt-pulse 1s ease-in-out infinite;
+}
+
 .status {
   position: absolute;
   display: flex;
@@ -368,6 +445,11 @@ button:focus-visible {
 
 .status[data-tone='error'] .status-icon {
   color: var(--vt-error);
+}
+
+/* Clicks pass through to the page, except on a status that does something. */
+.vt[data-style='minimal'] .status:not([data-clickable]) {
+  pointer-events: none;
 }
 
 .status[data-clickable] {
@@ -568,6 +650,10 @@ kbd {
 
   .pill[data-state='recording'] .body {
     box-shadow: var(--vt-shadow), 0 0 0 2px rgb(var(--vt-glow) / 0.8);
+  }
+
+  .lvl {
+    transform: none !important;
   }
 }
 

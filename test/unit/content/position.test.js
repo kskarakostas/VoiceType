@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computePillPosition, computeMenuPlacement, EDGE, CORNER_MARGIN } from '../../../src/content/position.js';
+import { computePillPosition, computeMenuPlacement, computeIndicatorPosition, EDGE, CORNER_MARGIN } from '../../../src/content/position.js';
 
 const viewport = { width: 1000, height: 800 };
 const pill = { width: 100, height: 40 };
@@ -192,5 +192,19 @@ describe('computeMenuPlacement', () => {
   it('clamps left into the viewport', () => {
     expect(computeMenuPlacement({ pill: box(900, 100, 100, 40), menu, viewport, gap }).left).toBe(1000 - 240 - EDGE);
     expect(computeMenuPlacement({ pill: box(-20, 100, 100, 40), menu, viewport, gap }).left).toBe(EDGE);
+  });
+});
+
+describe('computeIndicatorPosition', () => {
+  const indicator = { width: 92, height: 28 };
+
+  it('sits at the bottom centre', () => {
+    expect(computeIndicatorPosition({ indicator, viewport: { width: 1000, height: 600 } }))
+      .toEqual({ top: 556, left: 454, placement: 'minimal' });
+  });
+
+  it('clamps to EDGE in a viewport smaller than it', () => {
+    expect(computeIndicatorPosition({ indicator, viewport: { width: 60, height: 20 } }))
+      .toEqual({ top: EDGE, left: EDGE, placement: 'minimal' });
   });
 });

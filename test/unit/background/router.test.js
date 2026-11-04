@@ -221,10 +221,10 @@ describe('settings', () => {
       stored.siteRules = { 'new.com': { hidePill: true, mode: 'email' } };
       const area = memoryArea({ settings: stored });
       const save = routerOver(area);
-      const payload = { siteRules: { 'old.com': { hidePill: true, mode: null } }, pillStyle: 'dot', sounds: true };
+      const payload = { siteRules: { 'old.com': { hidePill: true, mode: null } }, pillStyle: 'minimal', sounds: true };
       expect(await save({ action: MSG.SAVE_SETTINGS, settings: payload }, POPUP)).toEqual({ success: true });
       expect(area.store.settings.siteRules).toEqual({ 'new.com': { hidePill: true, mode: 'email' } });
-      expect(area.store.settings.pillStyle).toBe('dot');
+      expect(area.store.settings.pillStyle).toBe('minimal');
       expect(area.store.settings.sounds).toBe(true);
     });
 

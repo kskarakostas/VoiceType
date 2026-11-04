@@ -212,7 +212,7 @@ test('Reset keeps keys, dictionary and site rules', async () => {
     ...(await storedSettings()),
     dictionary: { any: ['Palowise'], de: ['Karakostas'] },
     siteRules: { 'example.com': { hidePill: true, mode: 'email' } },
-    pillStyle: 'dot',
+    pillStyle: 'minimal',
   };
   expect(migrateSettings(seed)).toBe(seed);
   await serviceWorker.evaluate((s) => chrome.storage.local.set({ settings: s }), seed);
@@ -225,7 +225,7 @@ test('Reset keeps keys, dictionary and site rules', async () => {
   await page.waitForTimeout(CONFIRM_GUARD_MS + 100);
   await reset.click();
 
-  await expect.poll(async () => (await storedSettings()).pillStyle).toBe('pill');
+  await expect.poll(async () => (await storedSettings()).pillStyle).toBe('dot');
   const after = await storedSettings();
   expect(after.keys).toEqual(seed.keys);
   expect(after.dictionary).toEqual(seed.dictionary);
