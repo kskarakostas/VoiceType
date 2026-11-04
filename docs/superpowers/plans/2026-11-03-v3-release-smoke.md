@@ -87,7 +87,7 @@ Reload any open page after reloading the extension. Fixture pages: `http://local
 | 4.5 | H | Remove a chip by mouse and by keyboard; double-click an x; Remove group, two clicks. | One term each; focus moves on; the group goes after the second click. | |
 | 4.6 | H | Export CSV, then import the same file. | "Nothing new: all N terms are already in the dictionary." | |
 | 4.7 | H | Import: one term per line; an unknown language; past 100 terms. | Into All languages; "Line N: unknown language"; "over the 100 term limit by N". Nothing imported on an error. | |
-| 4.8 | M | Open the export in real Excel; save as CSV UTF-8 and import; save as plain CSV with Greek; save as Unicode Text. | Greek reads right; the UTF-8 file imports; "This file is not UTF-8. Save it as CSV UTF-8 and try again. Nothing was imported."; "Line 1: the term contains a tab. Nothing was imported." | |
+| 4.8 | M | Open the export in real Excel; save as CSV UTF-8 and import; save as plain CSV with Greek; save as Unicode Text. | Greek reads right; the UTF-8 file imports; both others are refused with nothing imported, "This file is not UTF-8. Save it as CSV UTF-8 and try again. Nothing was imported." | |
 | 4.9 | H | Two settings tabs: add a term in one. | The other shows it; text being typed there stays. | |
 | 4.10 | H | Dictate with a term from any group. | It goes with the request, one live call per provider. | |
 | 4.11 | M | An IME (Greek polytonic or similar) in the add field. | Composition is not cut. | |
@@ -109,7 +109,7 @@ Reload any open page after reloading the extension. Fixture pages: `http://local
 | 5.9b | M | Hide a site you visit daily, type its address from another site so Chrome may prerender it, click a field. The reverse from a hidden site to a normal one. | No pill; then the pill. | |
 | 5.9c | H | A field scrolled out of view, the hotkey, on a normal and a hidden site. | The pill in the corner, or Minimal at the bottom centre; back at the field on a scroll. | |
 | 5.9d | H | Click the pill's mode button across its width. | The menu opens from every point. | |
-| 5.10 | H | The real action popup: with Hide pill on, untick it with the page open, each style; tick it in lane item 1. | The page follows. | |
+| 5.10 | H | The real action popup: with Hide pill on, untick it with the page open, each style. Row 5.1 ticks it. | The page follows. | |
 
 ## 6. Sound and clipboard (L4)
 
@@ -147,7 +147,7 @@ Reload any open page after reloading the extension. Fixture pages: `http://local
 
 ## 8. A recording in a frame out of sight (L5)
 
-Both frames. Dot unless stated.
+Both frames, Dot unless stated. Row 8.8 ran on a same-origin frame.
 
 | # | Run | How | Expected | Result |
 |---|-----|-----|----------|--------|
@@ -162,7 +162,7 @@ Both frames. Dot unless stated.
 
 ## 9. Top layer
 
-Each with Pill, Dot and Minimal, on a recording in the top frame and in the cross-origin frame.
+Rows 9.1 to 9.3 ran with Pill, Dot and Minimal, on a recording in the top frame and in the cross-origin frame, headless and headed. Row 9.4 ran Dot and Minimal in the top frame.
 
 | # | Run | How | Expected | Result |
 |---|-----|-----|----------|--------|
@@ -178,7 +178,9 @@ Each with Pill, Dot and Minimal, on a recording in the top frame and in the cros
 
 Known limit: under a modal the indicator and statuses can be seen, not clicked. The hotkey works; close the dialog to click a click-to-copy status.
 
-## 10. 2.2 regressions (spec section 1), on each style
+## 10. 2.2 regressions (spec section 1)
+
+Rows 10.1, 10.5, 10.6, 10.7 and 10.8 ran on each style; 10.3 on Dot.
 
 | # | Run | How | Expected | Result |
 |---|-----|-----|----------|--------|
@@ -193,11 +195,12 @@ Known limit: under a modal the indicator and statuses can be seen, not clicked. 
 
 ## 11. Review fixes
 
+The guard against a press while a result is landing has unit tests only: its window is under 300 ms, too short to aim at.
+
 | # | Run | How | Expected | Result |
 |---|-----|-----|----------|--------|
-| 11.1 | H | `document.documentElement.style.zoom = '2'` and `'0.75'` in the console, each style, also in frame 0 over a mirror. | The indicator stays in the window, in its place. | |
+| 11.1 | H | `document.documentElement.style.zoom = '2'` and `'0.75'` in the console, each style. Zoom 2 in frame 0 over a mirror, on Minimal. | The indicator stays in the window, in its place. | |
 | 11.2 | H | "Could not insert. Click here to copy the text." up (a build without `clipboardWrite`, as 6.7b), press the hotkey. | "Copied to clipboard."; the next press records. | |
-| 11.2b | M | A press within a moment of the text landing, on a real page. Unit tests cover the guard; no harness hits the window. | "Still processing", then the result's status; no recording. | |
 | 11.3 | H | Gemini and OpenAI, real speech, one take each. | The sentence comes back. | |
 
 ## 12. Anything else on real hardware
@@ -209,7 +212,7 @@ Known limit: under a modal the indicator and statuses can be seen, not clicked. 
 
 ## Automated results (Atlas, 2026-11-04)
 
-Run on the real build at `9f8e607`, the last commit under `src/`. Later commits touch documents, the screenshots and their spec only. Headed in a nested X display with a real X clipboard, real audio output captured from a null sink, provider stubbed unless stated. Harnesses are in the session scratchpad, `smoke/`.
+Run on the real build at `9f8e607`, the last commit under `src/`. Later commits touch documents, the screenshots and their spec only. L4, L5, L6 and the dialog libraries ran headed in a nested X display with a real X clipboard and real audio output captured from a null sink; e2e, L1 to L3 and real speech ran headless. Provider stubbed unless stated. Harnesses are in the session scratchpad, `smoke/`.
 
 | Gate | Chromium 153 | Chrome 156 |
 |---|---|---|
@@ -223,17 +226,17 @@ Run on the real build at `9f8e607`, the last commit under `src/`. Later commits 
 | L5 items | 119/119 | 119/119 |
 | L6 items (`run-l6.mjs`: L0 pages, the real popup, rollback, tab closed, late top page, top layer headed, undo, zoom) | 45/45 | 45/45 |
 | Real dialog libraries (Material Web, Bootstrap) | 7/7 | 7/7 |
-| Real speech, one take per case: OpenAI Email, OpenAI no rule, OpenAI Translate to Greek on a hidden site, Gemini no rule, Gemini Email | 5/5, headless | not run |
+| Real speech, one take per case: OpenAI Email, OpenAI no rule, OpenAI Translate to Greek on a hidden site, Gemini no rule, Gemini Email | 4/5 in the full run; the hidden-site case waited for a stale selector, and passed on a rerun with that fixed: "Γεια σου, Μαρία..." | not run |
 
 On the OpenAI Email take the refined text ended with a stray non-Latin character from the model (`gpt-6-luna`), not from VoiceType.
 
-Rows 1.3 and 1.4 come from the probe below.
+Rows 1.3 and 1.4 come from the probe below, which ran on `62a26d1`, before the fix wave, and was not rerun on `9f8e607`. Round 2 of the review compared migration before and after that wave on a full 2.2 store: identical output.
 
 ## Packed upgrade
 
-Run with one signing key, Chromium 153 through a local update server. Chrome 156 refuses a self-packed crx, so its profile came from Chromium with the install location edited to the store's, and its own updater fetched the crx. Not a Web Store update.
+Run at `62a26d1` with one signing key, Chromium 153 through a local update server. Chrome 156 refuses a self-packed crx, so its profile came from Chromium with the install location edited to the store's, and its own updater fetched the crx. Not a Web Store update.
 
-- The update turns VoiceType off until the user accepts. Update while running: no bubble; the toolbar icon goes; the menu button reads "Action required"; the menu's top item reads "VoiceType - BYOK Speech to Text is disabled"; its bubble says "To re-enable it, accept the new permissions: Modify data you copy and paste", with Remove and Accept permissions.
+- The update turns VoiceType off until the user accepts, at the store's install location. At the local-server location a browser restart granted it silently. Update while running: no bubble; the toolbar icon goes; the menu button reads "Action required"; the menu's top item reads "VoiceType - BYOK Speech to Text is disabled"; its bubble says "To re-enable it, accept the new permissions: Modify data you copy and paste", with Remove and Accept permissions.
 - Update applied at browser start: the same bubble opens by itself.
 - Keys, modes and active mode unchanged; terms in `dictionary.any`; `settingsVersion` 3.
 - While off, an open page keeps its 2.2 pill; a press does not record and shows "VoiceType was turned off or updated. Reload this page."
@@ -244,4 +247,4 @@ An unpacked build, which is how the README installs, asks nothing. Your own chec
 
 ## What stays manual
 
-Rows marked M: 0.1, 2.7, 2.10b, 2.14, 4.8, 4.11, 5.6b, 5.9b, 6.8 to 6.12, 6.14, 7.6, 7.9, 9.8, 9.9, 10.4, 11.2b, 12.1, 12.2. That is real speakers and a real microphone, Bluetooth, real Google Docs, real Excel, an IME, two real OS windows, a screen reader, forced colours by eye, a real physical keyboard, your real sites and profile, the Web Store, a real prerender, Windows and macOS, Chrome 140.
+Rows marked M: 0.1, 2.7, 2.10b, 2.14, 4.8, 4.11, 5.6b, 5.9b, 6.8 to 6.12, 6.14, 7.6, 7.9, 9.8, 9.9, 10.4, 12.1, 12.2. That is real speakers and a real microphone, Bluetooth, real Google Docs, real Excel, an IME, two real OS windows, a screen reader, forced colours by eye, a real physical keyboard, your real sites and profile, the Web Store, a real prerender, Windows and macOS, Chrome 140.
