@@ -2,6 +2,7 @@
 // that ended, and the mark Undo AI edit works from. The controller owns the state and decides
 // when; everything from it arrives through deps.
 import { formatCost } from '../shared/pricing.js';
+import { sameSelection } from './insert.js';
 
 /**
  * @typedef {{
@@ -21,6 +22,7 @@ import { formatCost } from '../shared/pricing.js';
 
 const NOT_COPIED = ' Not copied.';
 const CLICK_TO_COPY = 'Could not insert. Click here to copy the text.';
+const SELECTION_CHANGED = 'Selection changed. Result copied to clipboard.';
 
 /**
  * @param {PlacementDeps} deps
@@ -69,23 +71,27 @@ export function createPlacement(deps) {
 
   /**
    * D12: the text goes into the field bound at REC start only while that field has focus,
-   * this frame included; otherwise to the clipboard.
+   * this frame included; otherwise to the clipboard. An edit also needs the selection captured at
+   * the press, checked here in the same task as the ladder's first step (V47).
    * @param {Element|null} bound
-   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null, unpaid?: boolean }} result
+   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null, unpaid?: boolean,
+   *   edit?: boolean, selection?: ReturnType<typeof import('./insert.js').readSelection> }} result
    *   copied: the worker's always-copy outcome, false when that copy failed;
-   *   unpaid: a history action, so a verified insert has no cost to report (V30)
+   *   unpaid: a history action, so a verified insert has no cost to report (V30);
+   *   edit: an edit's replacement; selection: what the press captured, null when this frame has none
    */
-  async function placeResult(bound, { text, cost, warning, copied: alwaysCopied, unpaid = false }) {
-    if (hasLiveFocus(bound)) {
+  async function placeResult(bound, { text, cost, warning, copied: alwaysCopied, unpaid = false, edit = false, selection = null }) {
+    if (hasLiveFocus(bound) && (!edit || sameSelection(bound, selection))) {
       let outcome;
       try {
-        outcome = await insertText(bound, text);
+        outcome = await (edit ? insertText(bound, text, { replacing: true }) : insertText(bound, text));
       } catch {
         // A paid transcript is never dropped: the click-to-copy status keeps it.
         outcome = 'failed';
       }
       if (inactive()) return;
-      if (outcome === 'inserted') insertMark = markFor(bound, text);
+      // No mark for an edit: its raw is the instruction, and Ctrl+Z is the undo (V48).
+      if (outcome === 'inserted' && !edit) insertMark = markFor(bound, text);
       reportInsert(outcome, () => {
         const suffix = alwaysCopied === false ? NOT_COPIED : '';
         if (unpaid) notify('Inserted.', { tone: 'success' });
@@ -100,6 +106,9 @@ export function createPlacement(deps) {
     if (!copied) {
       pill.setState('error');
       notify(CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true });
+    } else if (edit) {
+      pill.setState('done');
+      notify(SELECTION_CHANGED, { tone: 'warning' });
     } else if (bound) {
       pill.setState('done');
       notify('The field lost focus. Text copied to clipboard.', { tone: 'warning' });

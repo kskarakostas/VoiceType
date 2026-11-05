@@ -27,6 +27,31 @@ afterEach(() => {
 });
 
 describe('createChordTracker', () => {
+  it('drop forgets a press: its repeats and its keyup are the page\'s', () => {
+    const { tracker } = setup();
+    expect(pressChord(tracker)).toBe('press');
+    tracker.drop();
+    expect(tracker.pressed).toBe(false);
+    expect(tracker.keydown(key('Space', HELD, true))).toBeNull();
+    expect(tracker.keyup(key('Space', HELD))).toBeNull();
+  });
+
+  it('drop leaves nothing to drain: a modifier going up first frees the repeats too', () => {
+    const { tracker } = setup();
+    pressChord(tracker);
+    tracker.drop();
+    expect(tracker.keyup(key('ShiftLeft', { ctrlKey: true }))).toBeNull();
+    expect(tracker.keydown(key('Space', { ctrlKey: true }, true))).toBeNull();
+  });
+
+  it('after a drop the next press is a press', () => {
+    const { tracker } = setup();
+    pressChord(tracker);
+    tracker.drop();
+    tracker.keyup(key('Space', HELD));
+    expect(tracker.keydown(key('Space', HELD))).toBe('press');
+  });
+
   it('holds for 300 ms by default', () => {
     expect(HOLD_MS).toBe(300);
   });

@@ -2,8 +2,9 @@
 // sees it, and where a finished transcript goes. Side effects arrive through deps.
 import { MSG } from '../shared/messages.js';
 import { finite } from '../shared/numbers.js';
+import { MAX_EDIT_CHARS } from '../shared/defaults.js';
 import { isPasswordField } from './fields.js';
-import { normalizeForCompare } from './insert.js';
+import { normalizeForCompare, readSelection } from './insert.js';
 import { createPlacement } from './placement.js';
 import { STATUS_MS } from './pill.js';
 
@@ -41,6 +42,9 @@ const HOLD_NOTICE = 'Return to the field to insert, or click here to copy.';
 const PASSWORD_NOTICE = 'VoiceType does not record in password fields.';
 const FOCUS_NOTICE = 'Click into the field you want to dictate into, then try again.';
 const STILL_PROCESSING = 'Still processing';
+const EDIT_START = 'Say how to change the selection.';
+const NO_SELECTION = 'Select the text to edit first.';
+const TOO_LONG = `Selection too long to edit (${MAX_EDIT_CHARS.toLocaleString('en-US')} characters at most).`;
 const AUTO_STOP = Object.freeze({
   maxTime: { text: 'Max time reached', tone: 'info' },
   silence: { text: 'Stopped after silence', tone: 'info' },
@@ -65,11 +69,13 @@ export function createController(deps) {
   let unwatch = null;
   /** Field bound at REC start (D12): the text goes here only if it still has focus. */
   let target = null;
+  /** The selection in target an edit started from (V47); null for a dictation. */
+  let snapshot = null;
   let stopQueued = false;
   /** The current hotkey press started this recording, so a held release stops it. */
   let pressStarted = false;
-  /** A press refused because a result is landing, kept while the chord stays down (V38). */
-  let pressQueued = false;
+  /** A press refused because a result is landing, kept while the chord stays down (V38): how it starts. */
+  let pressQueued = null;
   let lastResult = null;
   /** The newest dictation of this site as of this menu open: `{ raw, text, refined }`, or null (V28). */
   let recent = null;
@@ -101,6 +107,11 @@ export function createController(deps) {
   const noIdlePill = () => presentation() === 'minimal';
   /** Nothing is running, so a press may record. A step still landing would finish on top of the recording. */
   const canStart = () => state === 'idle' && landing === 0;
+  /** No field is waiting on this frame any more. */
+  const unbind = () => {
+    target = null;
+    snapshot = null;
+  };
 
   /** Show the pill at el (null: the corner) and follow it. */
   function anchorTo(el) {
@@ -229,10 +240,11 @@ export function createController(deps) {
   /** @param {unknown} entry the GET_LAST_DICTATION reply's entry: `{ raw, text }`, or null */
   function setRecent(entry) {
     if (inactive()) return;
-    const { raw, text } = /** @type {any} */ (entry) ?? {};
-    // An edit of whitespace alone gets no Undo: the ladder's read-back could not tell it happened.
+    const { raw, text, edit } = /** @type {any} */ (entry) ?? {};
+    // A refine of whitespace alone gets no Undo: the ladder's read-back could not tell it happened.
+    // Neither does an edit: raw is the instruction, and Ctrl+Z is the undo (V48).
     recent = typeof raw === 'string' && typeof text === 'string' && text
-      ? { raw, text, refined: normalizeForCompare(raw) !== normalizeForCompare(text) }
+      ? { raw, text, refined: edit !== true && normalizeForCompare(raw) !== normalizeForCompare(text) }
       : null;
     render();
   }
@@ -267,7 +279,8 @@ export function createController(deps) {
     return null;
   }
 
-  async function start() {
+  /** @param {{ selection?: ReturnType<typeof readSelection> }} [options] an edit starts from its selection */
+  async function start({ selection = null } = {}) {
     // REC while a result is held settles that result first. The next REC starts a recording
     // when this frame has the focus and no password field is focused.
     if (held) return deliverHeld();
@@ -287,23 +300,26 @@ export function createController(deps) {
       return;
     }
     target = isValidInput(active) ? active : null;
+    snapshot = selection;
     // A press during the first settings read comes before any focusIn.
     if (target) lastField = target;
     stopQueued = false;
     state = 'starting';
     clearNotice();
     anchorTo(target);
-    const reply = await send({ action: MSG.START_RECORDING });
+    // A dictation omits the field: the router refuses `edit: null`.
+    const reply = await send({ action: MSG.START_RECORDING, ...(selection && { edit: { text: selection.text } }) });
     // Torn down, orphaned, or reset meanwhile (pagehide): this reply is stale.
     if (inactive() || state !== 'starting') return;
     if (reply?.ok === true) {
       state = 'recording';
       pill.setState('recording');
       if (stopQueued) await stop();
+      else if (selection) notify(EDIT_START, { tone: 'info' });
       return;
     }
     state = 'idle';
-    target = null;
+    unbind();
     stopQueued = false;
     pressStarted = false;
     pill.setState('idle');
@@ -319,6 +335,8 @@ export function createController(deps) {
     stopQueued = false;
     state = 'processing';
     pill.setState('processing');
+    // The start status asked for words, and they are in.
+    if (snapshot) clearNotice();
     armWatchdog();
     const reply = await send({ action: MSG.STOP_RECORDING });
     if (inactive() || state !== 'processing' || reply?.ok === true) return;
@@ -343,21 +361,61 @@ export function createController(deps) {
     notify(STILL_PROCESSING, { tone: 'info' });
   }
 
+  function pressStart() {
+    pressStarted = true;
+    return start();
+  }
+
   async function press() {
     if (inactive()) return;
-    if (canStart()) {
-      pressStarted = true;
-      return start();
-    }
+    if (canStart()) return pressStart();
     pressStarted = false;
-    pressQueued = state === 'idle';
+    pressQueued = state === 'idle' ? pressStart : null;
     return toggle();
+  }
+
+  /**
+   * Start an edit of the focused field's selection, if it has one to edit (V42, V43).
+   * @returns {boolean} the chord is claimed
+   */
+  function pressEdit() {
+    const active = deepActiveElement();
+    // A status for a chord the page keeps. A pending click-to-copy stays, as for a refused start.
+    const refuse = (text) => {
+      if (!copyPending) notify(text, { tone: 'info' });
+      return false;
+    };
+    if (isPasswordField(active)) return refuse(PASSWORD_NOTICE);
+    if (!deps.hasFocus() || !isValidInput(active)) return false;
+    const selection = readSelection(active);
+    if (!selection) return refuse(NO_SELECTION);
+    if (selection.text.length > MAX_EDIT_CHARS) {
+      refuse(TOO_LONG);
+      return true;
+    }
+    pressStarted = true;
+    start({ selection });
+    return true;
+  }
+
+  /**
+   * The edit chord went down. Synchronous, unlike press: boot decides on this keydown whether to
+   * preventDefault, so the answer cannot wait for anything (V43). In any state with something to
+   * settle or stop it is the dictation chord, except that a press kept through a landing stays an edit.
+   * @returns {boolean} the chord is claimed; if not, every keydown of this press is the page's
+   */
+  function editPress() {
+    if (inactive()) return false;
+    if (canStart() && !held && !(copyPending && !pressCopyFailed)) return pressEdit();
+    press();
+    if (pressQueued) pressQueued = pressEdit;
+    return true;
   }
 
   /** @param {{ held: boolean }} release */
   async function release({ held } = { held: false }) {
     if (inactive()) return;
-    pressQueued = false;
+    pressQueued = null;
     const started = pressStarted;
     pressStarted = false;
     if (!started || !held) return;
@@ -380,7 +438,7 @@ export function createController(deps) {
     if (message.reason === 'permission' && state !== 'idle') return;
     state = 'idle';
     clearWatchdog();
-    target = null;
+    unbind();
     stopQueued = false;
     pressStarted = false;
     pill.setState('idle');
@@ -410,7 +468,8 @@ export function createController(deps) {
   async function deliver(message) {
     clearWatchdog();
     const bound = target;
-    target = null;
+    const selection = snapshot;
+    unbind();
     stopQueued = false;
     pressStarted = false;
     held = null;
@@ -418,7 +477,10 @@ export function createController(deps) {
     if (state === 'processing') state = 'idle';
     if (!message.success) {
       pill.setState('error');
-      notify(textOr(message.error, 'Transcription failed.'), { tone: message.tone === 'warning' ? 'warning' : 'error' });
+      // A failed edit's status copies what was said. Not sticky: the next press records (V46).
+      const instruction = textOr(message.instruction, null);
+      if (instruction) lastResult = { text: instruction, raw: instruction };
+      notify(textOr(message.error, 'Transcription failed.'), { tone: message.tone === 'warning' ? 'warning' : 'error', clickable: instruction !== null });
       return;
     }
     const text = typeof message.text === 'string' ? message.text : '';
@@ -427,7 +489,10 @@ export function createController(deps) {
     // The entry is no longer the newest dictation: an open menu drops it until its next open (V28).
     recent = null;
     render();
-    const result = { text, cost: finite(message.cost), warning: textOr(message.warning, null), copied: message.copied };
+    // A worker answers a repeated start from a recording frame with ok, keeping that session's kind, so
+    // a result with no edit mark can reach an edit's frame: it is not this selection's replacement.
+    const edit = message.edit === true;
+    const result = { text, cost: finite(message.cost), warning: textOr(message.warning, null), copied: message.copied, edit: edit || selection !== null, selection: edit ? selection : null };
 
     if (bound && bound.isConnected && ownsFrameFocus(bound) && !deps.hasFocus()) {
       // The field kept this frame's focus, but another frame or window has the page's focus.
@@ -458,10 +523,10 @@ export function createController(deps) {
   /** The last landing is over with the chord still down: the kept press starts, as any press. */
   function startKeptPress() {
     if (landing > 0 || !pressQueued) return;
-    pressQueued = false;
+    const kept = pressQueued;
+    pressQueued = null;
     if (inactive() || !canStart()) return;
-    pressStarted = true;
-    start();
+    kept();
   }
 
   /** True while el is the field the user is in: still in the document, focused, this frame included. */
@@ -638,7 +703,7 @@ export function createController(deps) {
     statusTimer = null;
     clearWatchdog();
     state = 'idle';
-    target = null;
+    unbind();
     stopQueued = false;
     pressStarted = false;
     held = null;
@@ -660,7 +725,7 @@ export function createController(deps) {
     unwatch?.();
     unwatch = null;
     anchorEl = null;
-    target = null;
+    unbind();
     held = null;
     lastField = null;
     recent = null;
@@ -675,6 +740,7 @@ export function createController(deps) {
     focusOut,
     toggle,
     press,
+    editPress,
     release,
     handleMessage,
     copyLast,

@@ -28,6 +28,7 @@ function releases(code, chord) {
  *   keydown(event: KeyboardEvent): 'press'|'repeat'|null,
  *   keyup(event: KeyboardEvent): { held: boolean }|null,
  *   blur(): { held: boolean }|null,
+ *   drop(): void,
  *   readonly pressed: boolean,
  * }}
  */
@@ -69,6 +70,10 @@ export function createChordTracker({ getChord, holdMs = HOLD_MS, now = () => per
       // Keyups are lost while the window is unfocused (Alt+Tab), so a blur ends the hold.
       draining = null;
       return press ? end() : null;
+    },
+    /** Forget the press: it was not claimed, so its repeats and its keyup are the page's. */
+    drop() {
+      press = null;
     },
     get pressed() {
       return press !== null;

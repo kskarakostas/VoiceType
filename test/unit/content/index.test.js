@@ -526,6 +526,170 @@ describe('wiring', () => {
   });
 });
 
+describe('the edit chord', () => {
+  const EDIT_CHORD = { code: 'KeyE', ctrl: true, shift: true, alt: false, meta: false };
+  const editKey = (type, extra = {}) => new KeyboardEvent(type, {
+    code: 'KeyE', key: 'E', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true, ...extra,
+  });
+  const withEdit = (over = {}) => (message) => (message.action === MSG.GET_SETTINGS
+    ? { ...structuredClone(SETTINGS), editHotkey: EDIT_CHORD, ...over }
+    : reply(message));
+  const starts = (t) => t.chrome.runtime.sendMessage.mock.calls.map(([m]) => m).filter((m) => m.action === MSG.START_RECORDING);
+
+  /** What a page's own listener gets to see of the keydowns. */
+  function pageListener() {
+    const seen = [];
+    const listener = (event) => seen.push(event.repeat);
+    document.addEventListener('keydown', listener);
+    return { seen, remove: () => document.removeEventListener('keydown', listener) };
+  }
+
+  function select(field, start = 0, end = 5) {
+    field.value = 'hello world';
+    field.focus();
+    field.setSelectionRange(start, end);
+  }
+
+  it('a selection claims the press and its repeats, and records an edit', async () => {
+    const t = installChrome(withEdit());
+    const field = document.getElementById('field');
+    select(field);
+    await loadInstance();
+    const page = pageListener();
+
+    const down = editKey('keydown');
+    field.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    await flush();
+    const repeat = editKey('keydown', { repeat: true });
+    field.dispatchEvent(repeat);
+    expect(repeat.defaultPrevented).toBe(true);
+
+    expect(page.seen).toEqual([]);
+    expect(starts(t)).toEqual([{ action: MSG.START_RECORDING, edit: { text: 'hello' } }]);
+    page.remove();
+  });
+
+  it('no selection: every keydown, repeats included, reaches the page and nothing records', async () => {
+    const t = installChrome(withEdit());
+    const field = document.getElementById('field');
+    select(field, 3, 3);
+    await loadInstance();
+    const page = pageListener();
+
+    const downs = [editKey('keydown'), editKey('keydown', { repeat: true }), editKey('keydown', { repeat: true })];
+    for (const down of downs) field.dispatchEvent(down);
+    await flush();
+
+    expect(downs.map((down) => down.defaultPrevented)).toEqual([false, false, false]);
+    expect(page.seen).toEqual([false, true, true]);
+    expect(starts(t)).toEqual([]);
+    expect(statusText()).toBe('Select the text to edit first.');
+    page.remove();
+  });
+
+  it('an unclaimed press with a modifier up first: the main key\'s repeats stay the page\'s', async () => {
+    installChrome(withEdit());
+    const field = document.getElementById('field');
+    select(field, 3, 3);
+    await loadInstance();
+
+    field.dispatchEvent(editKey('keydown'));
+    await flush();
+    field.dispatchEvent(new KeyboardEvent('keyup', { code: 'ShiftLeft', key: 'Shift', ctrlKey: true, bubbles: true }));
+    const repeat = editKey('keydown', { shiftKey: false, key: 'e', repeat: true });
+    field.dispatchEvent(repeat);
+    expect(repeat.defaultPrevented).toBe(false);
+  });
+
+  it('outside a field the press reaches the page and the pill stays silent', async () => {
+    installChrome(withEdit());
+    await loadInstance();
+    document.activeElement?.blur?.();
+    const down = editKey('keydown');
+    window.dispatchEvent(down);
+    await flush();
+    expect(down.defaultPrevented).toBe(false);
+    expect(hosts()).toHaveLength(0);
+  });
+
+  it('equal chords: dictation wins and the edit chord does nothing (V41)', async () => {
+    const t = installChrome(withEdit({ editHotkey: SETTINGS.hotkey }));
+    const field = document.getElementById('field');
+    select(field);
+    await loadInstance();
+
+    const down = hotkey('keydown');
+    field.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    await flush();
+
+    expect(starts(t)).toEqual([{ action: MSG.START_RECORDING }]);
+  });
+
+  it('a pushed editHotkey takes over, and an invalid one is ignored', async () => {
+    const t = installChrome(withEdit());
+    const field = document.getElementById('field');
+    select(field);
+    await loadInstance();
+    const altD = { code: 'KeyD', ctrl: false, shift: false, alt: true, meta: false };
+    for (const listener of t.listeners) listener({ action: MSG.SETTINGS_CHANGED, settings: { ...structuredClone(SETTINGS), editHotkey: altD } });
+    for (const listener of t.listeners) listener({ action: MSG.SETTINGS_CHANGED, settings: { ...structuredClone(SETTINGS), editHotkey: { code: '' } } });
+
+    const old = editKey('keydown');
+    field.dispatchEvent(old);
+    expect(old.defaultPrevented).toBe(false);
+    const fresh = new KeyboardEvent('keydown', { code: 'KeyD', key: 'd', altKey: true, bubbles: true, cancelable: true });
+    field.dispatchEvent(fresh);
+    expect(fresh.defaultPrevented).toBe(true);
+  });
+
+  it('a release ends a hold of the edit chord', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const t = installChrome(withEdit());
+    const field = document.getElementById('field');
+    select(field);
+    await loadInstance();
+    field.dispatchEvent(editKey('keydown'));
+    await flush();
+    performance.now.mockReturnValue(2000);
+    field.dispatchEvent(editKey('keyup'));
+    await flush();
+    expect(t.sent()).toContain(MSG.STOP_RECORDING);
+  });
+
+  it('a window blur ends a hold of the edit chord', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const t = installChrome(withEdit());
+    const field = document.getElementById('field');
+    select(field);
+    await loadInstance();
+    field.dispatchEvent(editKey('keydown'));
+    await flush();
+    performance.now.mockReturnValue(2000);
+    window.dispatchEvent(new Event('blur'));
+    await flush();
+    expect(t.sent()).toContain(MSG.STOP_RECORDING);
+  });
+
+  it('on a dead extension the chord reaches the page and raises the notice', async () => {
+    const t = installChrome(withEdit());
+    let alive = true;
+    const field = document.getElementById('field');
+    select(field);
+    await loadInstance({ isAlive: () => alive });
+    alive = false;
+
+    const down = editKey('keydown');
+    field.dispatchEvent(down);
+    await flush();
+
+    expect(down.defaultPrevented).toBe(false);
+    expect(statusText()).toBe(ORPHAN);
+    expect(starts(t)).toEqual([]);
+  });
+});
+
 describe('a frame out of sight', () => {
   /** @type {{ callback: (entries: object[]) => void, targets: Element[] }[]} */
   let observers;

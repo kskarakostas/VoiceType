@@ -4,6 +4,7 @@ import { createController, FOCUS_OUT_MS, PROCESSING_TIMEOUT_MS } from '../../../
 import { isValidInput, deepActiveElement } from '../../../src/content/fields.js';
 import { markInsertion, replaceInsertion } from '../../../src/content/insert.js';
 import { MSG } from '../../../src/shared/messages.js';
+import { MAX_EDIT_CHARS } from '../../../src/shared/defaults.js';
 import { Pill, STATUS_MS } from '../../../src/content/pill.js';
 
 const RECT = { top: 100, left: 400, width: 300, height: 30 };
@@ -3010,6 +3011,619 @@ describe('Last dictation', () => {
     dead.controller.teardown();
     await dead.controller.historyAction('copy');
     expect(dead.deps.copyText).not.toHaveBeenCalled();
+  });
+});
+
+describe('edit', () => {
+  const SAY = ['Say how to change the selection.', { tone: 'info', sticky: false, clickable: false }];
+  const SELECT_FIRST = ['Select the text to edit first.', { tone: 'info', sticky: false, clickable: false }];
+  const TOO_LONG = ['Selection too long to edit (10,000 characters at most).', { tone: 'info', sticky: false, clickable: false }];
+  const CHANGED = ['Selection changed. Result copied to clipboard.', { tone: 'warning', sticky: false, clickable: false }];
+  const FAILED_TEXT = 'Could not edit the selection. Click here to copy what you said.';
+  const FAILED = [FAILED_TEXT, { tone: 'error', sticky: false, clickable: true }];
+  const PASSWORD = ['VoiceType does not record in password fields.', { tone: 'info', sticky: false, clickable: false }];
+  const CLICK = [CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true }];
+  const REPLACED = 'edited words';
+  const edited = (over = {}) => ({ action: MSG.DICTATION_RESULT, success: true, text: REPLACED, raw: 'make it shorter', cost: 0.01, warning: null, edit: true, ...over });
+  const dictated = (text = 'hello') => ({ action: MSG.DICTATION_RESULT, success: true, text, raw: text, cost: 0, warning: null });
+  const failedEdit = (over = {}) => ({ action: MSG.DICTATION_RESULT, success: false, error: FAILED_TEXT, tone: 'error', edit: true, instruction: 'make it shorter', ...over });
+  const sentStarts = (t) => t.sent.filter((m) => m.action === MSG.START_RECORDING);
+
+  /** Text in a field with its second word selected, and the field focused. */
+  function selected(value = 'hello world', start = 6, end = 11, id = 'a') {
+    $(id).value = value;
+    $(id).focus();
+    $(id).setSelectionRange(start, end);
+    return $(id);
+  }
+
+  /** An edit press on field a that got as far as recording. */
+  async function recordingEdit(t) {
+    selected();
+    t.controller.focusIn($('a'));
+    expect(t.controller.editPress()).toBe(true);
+    await flush();
+    expect(t.controller.state).toBe('recording');
+  }
+
+  /** The same, stopped by a second press: the frame waits for the result. */
+  async function processingEdit(t) {
+    await recordingEdit(t);
+    expect(t.controller.editPress()).toBe(true);
+    await flush();
+    expect(t.controller.state).toBe('processing');
+  }
+
+  describe('a press', () => {
+    it('an edit press with a selection starts with edit text and the start status "Say how to change the selection."', async () => {
+      const t = setup();
+      selected();
+      expect(t.controller.editPress()).toBe(true);
+      await flush();
+      expect(t.sent).toEqual([{ action: MSG.START_RECORDING, edit: { text: 'world' } }]);
+      expect(t.controller.state).toBe('recording');
+      expect(t.pill.setState).toHaveBeenLastCalledWith('recording');
+      expect(lastStatus(t.pill)).toEqual(SAY);
+    });
+
+    it('a dictation omits the edit field, over a selection too', async () => {
+      const t = setup();
+      selected();
+      await t.controller.press();
+      expect(t.sent).toEqual([{ action: MSG.START_RECORDING }]);
+      expect(Object.hasOwn(t.sent[0], 'edit')).toBe(false);
+      expect(t.pill.setStatus).not.toHaveBeenCalled();
+    });
+
+    it('decides and reads the selection in the same task as the keydown', () => {
+      const t = setup();
+      selected();
+      expect(t.controller.editPress()).toBe(true);
+      expect(t.controller.state).toBe('starting');
+      expect(sentStarts(t)).toEqual([{ action: MSG.START_RECORDING, edit: { text: 'world' } }]);
+    });
+
+    it('no selection in a field: unclaimed, "Select the text to edit first."', async () => {
+      const t = setup();
+      selected('hello', 2, 2);
+      expect(t.controller.editPress()).toBe(false);
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(SELECT_FIRST);
+      expect(t.sent).toEqual([]);
+      expect(t.controller.state).toBe('idle');
+    });
+
+    it('outside a field: unclaimed, silent', async () => {
+      const t = setup();
+      $('plain').focus();
+      expect(t.controller.editPress()).toBe(false);
+      document.activeElement.blur();
+      expect(t.controller.editPress()).toBe(false);
+      await flush();
+      expect(t.pill.setStatus).not.toHaveBeenCalled();
+      expect(t.sent).toEqual([]);
+    });
+
+    it('over the cap: claimed, the notice, no start', async () => {
+      const t = setup();
+      selected('x'.repeat(MAX_EDIT_CHARS + 1), 0, MAX_EDIT_CHARS + 1);
+      expect(t.controller.editPress()).toBe(true);
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(TOO_LONG);
+      expect(t.sent).toEqual([]);
+      expect(t.controller.state).toBe('idle');
+    });
+
+    it('at the cap: starts', async () => {
+      const t = setup();
+      selected('x'.repeat(MAX_EDIT_CHARS), 0, MAX_EDIT_CHARS);
+      expect(t.controller.editPress()).toBe(true);
+      await flush();
+      expect(sentStarts(t)).toHaveLength(1);
+    });
+
+    it('a password field refuses as the dictation chord does', async () => {
+      const t = setup();
+      document.body.insertAdjacentHTML('beforeend', '<input id="pw" type="password" value="secret">');
+      $('pw').focus();
+      $('pw').setSelectionRange(0, 6);
+      expect(t.controller.editPress()).toBe(false);
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(PASSWORD);
+      expect(t.sent).toEqual([]);
+    });
+
+    it('a field that is not a valid input: unclaimed, silent', () => {
+      const t = setup();
+      document.body.insertAdjacentHTML('beforeend', '<textarea id="ro" readonly>hello</textarea>');
+      $('ro').focus();
+      $('ro').setSelectionRange(0, 5);
+      expect(t.controller.editPress()).toBe(false);
+      expect(t.pill.setStatus).not.toHaveBeenCalled();
+    });
+
+    it('a refused start leaves the frame idle and forgets the selection', async () => {
+      const t = setup({ replies: { [MSG.START_RECORDING]: { ok: false, reason: 'badEdit', error: 'Could not read the selection.' } } });
+      selected();
+      t.controller.editPress();
+      await flush();
+      expect(t.controller.state).toBe('idle');
+      expect(lastStatus(t.pill)).toEqual(['Could not read the selection.', { tone: 'error', sticky: false, clickable: false }]);
+      t.controller.handleMessage(edited());
+      await flush();
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect(lastStatus(t.pill)).toEqual(CHANGED);
+    });
+
+    it('a tap stops on its second press, and a hold stops on release', async () => {
+      const tap = setup();
+      await recordingEdit(tap);
+      await tap.controller.release({ held: false });
+      expect(tap.controller.state).toBe('recording');
+      tap.controller.editPress();
+      await flush();
+      expect(tap.controller.state).toBe('processing');
+
+      const hold = setup();
+      selected();
+      hold.controller.editPress();
+      await flush();
+      await hold.controller.release({ held: true });
+      expect(hold.controller.state).toBe('processing');
+    });
+
+    it('a stop takes the start status down', async () => {
+      const t = setup();
+      await recordingEdit(t);
+      t.controller.editPress();
+      await flush();
+      expect(t.pill.clearStatus).toHaveBeenCalled();
+    });
+
+    it('a stop of a dictation leaves a status alone, as in 3.1', async () => {
+      const t = setup();
+      await recordAndStop(t);
+      expect(t.pill.clearStatus.mock.calls).toHaveLength(1);
+    });
+
+    it('on an orphaned frame nothing is claimed', () => {
+      const t = setup();
+      selected();
+      t.controller.orphaned();
+      expect(t.controller.editPress()).toBe(false);
+      expect(t.sent).toEqual([]);
+    });
+  });
+
+  describe('in any other state it does what the dictation chord does (V43)', () => {
+    it('while recording the chord stops', async () => {
+      const t = setup();
+      await recordingEdit(t);
+      expect(t.controller.editPress()).toBe(true);
+      await flush();
+      expect(t.controller.state).toBe('processing');
+      expect(t.actions()).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING]);
+    });
+
+    it('while starting the stop is queued, and the start status is skipped', async () => {
+      const pending = deferred();
+      const t = setup({ replies: { [MSG.START_RECORDING]: () => pending.promise } });
+      selected();
+      t.controller.editPress();
+      expect(t.controller.editPress()).toBe(true);
+      pending.resolve({ ok: true });
+      await flush();
+      expect(t.controller.state).toBe('processing');
+      expect(t.pill.setStatus).not.toHaveBeenCalled();
+    });
+
+    it('while processing it says so', async () => {
+      const t = setup();
+      await processingEdit(t);
+      expect(t.controller.editPress()).toBe(true);
+      await flush();
+      expect(lastStatus(t.pill)[0]).toBe('Still processing');
+    });
+
+    it('no START_RECORDING is sent while this frame has a session, so an edit never joins a dictation', async () => {
+      const pending = deferred();
+      const t = setup({ replies: { [MSG.START_RECORDING]: () => pending.promise } });
+      selected();
+      t.controller.press();
+      expect(t.controller.state).toBe('starting');
+      t.controller.editPress();
+      await flush();
+      expect(sentStarts(t)).toHaveLength(1);
+
+      pending.resolve({ ok: true });
+      await flush();
+      expect(t.controller.state).toBe('processing');
+      t.controller.editPress();
+      await flush();
+      expect(sentStarts(t)).toEqual([{ action: MSG.START_RECORDING }]);
+
+      const recording = setup();
+      selected();
+      await recording.controller.press();
+      expect(recording.controller.state).toBe('recording');
+      recording.controller.editPress();
+      await flush();
+      expect(sentStarts(recording)).toEqual([{ action: MSG.START_RECORDING }]);
+      expect(recording.actions()).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING]);
+    });
+
+    it('a held result lands first and nothing records', async () => {
+      const t = setup();
+      await processingEdit(t);
+      t.deps.hasFocus.mockReturnValue(false);
+      t.controller.handleMessage(edited());
+      await flush();
+      expect(lastStatus(t.pill)[0]).toBe('Return to the field to insert, or click here to copy.');
+      t.deps.hasFocus.mockReturnValue(true);
+      expect(t.controller.editPress()).toBe(true);
+      await flush();
+      expect(t.deps.insertText).toHaveBeenCalledTimes(1);
+      expect(sentStarts(t)).toHaveLength(1);
+    });
+
+    it('a pending click-to-copy copies first, and nothing records', async () => {
+      const t = setup({ insert: 'failed' });
+      await recordAndStop(t);
+      t.controller.handleMessage(dictated());
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(CLICK);
+      selected();
+      expect(t.controller.editPress()).toBe(true);
+      await flush();
+      expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+      expect(sentStarts(t)).toHaveLength(1);
+    });
+
+    it('the press after a copy that failed records an edit, not a dictation', async () => {
+      const t = setup({ insert: 'failed', copy: false });
+      await recordAndStop(t);
+      t.controller.handleMessage(dictated());
+      await flush();
+      selected();
+      t.controller.editPress();
+      await flush();
+      expect(sentStarts(t)).toHaveLength(1);
+      t.controller.editPress();
+      await flush();
+      expect(sentStarts(t).at(-1)).toEqual({ action: MSG.START_RECORDING, edit: { text: 'world' } });
+    });
+
+    it('with no selection after a failed copy the click-to-copy status stays', async () => {
+      const t = setup({ insert: 'failed', copy: false });
+      await recordAndStop(t);
+      t.controller.handleMessage(dictated());
+      await flush();
+      selected('hello', 2, 2);
+      t.controller.editPress();
+      await flush();
+      const shown = lastStatus(t.pill);
+      expect(t.controller.editPress()).toBe(false);
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(shown);
+    });
+
+    it('a press kept through a landing starts as an edit when the landing ends', async () => {
+      const pending = deferred();
+      const t = setup();
+      t.deps.insertText.mockImplementationOnce(() => pending.promise);
+      await recordAndStop(t);
+      t.controller.handleMessage(dictated());
+      await flush();
+      selected();
+      expect(t.controller.editPress()).toBe(true);
+      await flush();
+      expect(lastStatus(t.pill)[0]).toBe('Still processing');
+      pending.resolve('inserted');
+      await flush();
+      expect(sentStarts(t).at(-1)).toEqual({ action: MSG.START_RECORDING, edit: { text: 'world' } });
+    });
+
+    it('a kept press with the chord up by then starts nothing', async () => {
+      const pending = deferred();
+      const t = setup();
+      t.deps.insertText.mockImplementationOnce(() => pending.promise);
+      await recordAndStop(t);
+      t.controller.handleMessage(dictated());
+      await flush();
+      selected();
+      t.controller.editPress();
+      await t.controller.release({ held: false });
+      pending.resolve('inserted');
+      await flush();
+      expect(sentStarts(t)).toHaveLength(1);
+    });
+  });
+
+  describe('a result', () => {
+    it('a delivered edit with the selection intact calls insertText', async () => {
+      const t = setup();
+      await processingEdit(t);
+      t.controller.handleMessage(edited());
+      await flush();
+      expect(t.deps.insertText).toHaveBeenCalledWith($('a'), REPLACED, { replacing: true });
+      expect(t.deps.copyText).not.toHaveBeenCalled();
+      expect(lastStatus(t.pill)[0]).toMatch(/^Done /);
+    });
+
+    it('a dictation still calls insertText with the field and the text alone', async () => {
+      const t = setup();
+      selected();
+      await t.controller.press();
+      await t.controller.press();
+      t.controller.handleMessage(dictated());
+      await flush();
+      expect(t.deps.insertText.mock.calls[0]).toEqual([$('a'), 'hello']);
+    });
+
+    it('a moved selection copies with "Selection changed. Result copied to clipboard."', async () => {
+      const t = setup();
+      await processingEdit(t);
+      $('a').setSelectionRange(0, 5);
+      t.controller.handleMessage(edited());
+      await flush();
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect(t.deps.copyText).toHaveBeenCalledWith(REPLACED);
+      expect(lastStatus(t.pill)).toEqual(CHANGED);
+      expect(t.pill.setState).toHaveBeenLastCalledWith('done');
+    });
+
+    it('text the page rewrote at the same offsets copies, and the field stays as the page left it', async () => {
+      const t = setup();
+      await processingEdit(t);
+      $('a').value = 'hello there';
+      $('a').setSelectionRange(6, 11);
+      t.controller.handleMessage(edited());
+      await flush();
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect($('a').value).toBe('hello there');
+      expect(lastStatus(t.pill)).toEqual(CHANGED);
+    });
+
+    it('the focus in another field copies, with the same words', async () => {
+      const t = setup();
+      await processingEdit(t);
+      $('b').focus();
+      t.controller.handleMessage(edited());
+      await flush();
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect(lastStatus(t.pill)).toEqual(CHANGED);
+    });
+
+    it('a field gone from the page copies, with the same words', async () => {
+      const t = setup();
+      await processingEdit(t);
+      $('a').remove();
+      t.controller.handleMessage(edited());
+      await flush();
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect(lastStatus(t.pill)).toEqual(CHANGED);
+    });
+
+    it('a copy that fails keeps the replacement on a click-to-copy status', async () => {
+      const t = setup({ copy: false });
+      await processingEdit(t);
+      $('a').setSelectionRange(0, 5);
+      t.controller.handleMessage(edited());
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(CLICK);
+      t.deps.copyText.mockResolvedValue(true);
+      await t.controller.copyLast();
+      expect(t.deps.copyText).toHaveBeenLastCalledWith(REPLACED);
+    });
+
+    it('an edit result with no selection snapshot in this frame is never inserted', async () => {
+      const t = setup();
+      await recordingEdit(t);
+      // A cancel leaves the frame idle with nothing bound, and the session may still deliver.
+      t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'idle' });
+      t.controller.handleMessage(edited());
+      await flush();
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect(t.deps.copyText).toHaveBeenCalledWith(REPLACED);
+      expect(lastStatus(t.pill)).toEqual(CHANGED);
+    });
+
+    it('a result with no edit mark on an edit session never lands on the selection', async () => {
+      const t = setup();
+      await processingEdit(t);
+      t.controller.handleMessage(dictated());
+      await flush();
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect(t.deps.copyText).toHaveBeenCalledWith('hello');
+      expect(lastStatus(t.pill)).toEqual(CHANGED);
+    });
+
+    it('an edit result reaching a frame that recorded none is copied', async () => {
+      const t = setup();
+      selected();
+      t.controller.handleMessage(edited());
+      await flush();
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect(lastStatus(t.pill)).toEqual(CHANGED);
+    });
+
+    it('a dictation after an edit is a dictation: no snapshot is left over', async () => {
+      const t = setup();
+      await processingEdit(t);
+      t.controller.handleMessage(edited());
+      await flush();
+      t.deps.insertText.mockClear();
+      await t.controller.press();
+      await t.controller.press();
+      t.controller.handleMessage(dictated());
+      await flush();
+      expect(t.deps.insertText.mock.calls[0]).toEqual([$('a'), 'hello']);
+    });
+
+    it('a watchdog that gave up keeps the snapshot: a late edit is still checked and placed', async () => {
+      const t = setup();
+      await processingEdit(t);
+      vi.advanceTimersByTime(PROCESSING_TIMEOUT_MS);
+      expect(t.controller.state).toBe('idle');
+      t.controller.handleMessage(edited());
+      await flush();
+      expect(t.deps.insertText).toHaveBeenCalledWith($('a'), REPLACED, { replacing: true });
+    });
+
+    describe('a held edit is checked when it lands', () => {
+      async function heldEdit(t) {
+        await processingEdit(t);
+        t.deps.hasFocus.mockReturnValue(false);
+        t.controller.handleMessage(edited());
+        await flush();
+        expect(t.deps.insertText).not.toHaveBeenCalled();
+        expect(t.deps.copyText).not.toHaveBeenCalled();
+      }
+
+      it('intact: into the field', async () => {
+        const t = setup();
+        await heldEdit(t);
+        t.deps.hasFocus.mockReturnValue(true);
+        await t.controller.onWindowFocus();
+        await flush();
+        expect(t.deps.insertText).toHaveBeenCalledWith($('a'), REPLACED, { replacing: true });
+      });
+
+      it('moved meanwhile: copied', async () => {
+        const t = setup();
+        await heldEdit(t);
+        $('a').setSelectionRange(0, 5);
+        t.deps.hasFocus.mockReturnValue(true);
+        await t.controller.onWindowFocus();
+        await flush();
+        expect(t.deps.insertText).not.toHaveBeenCalled();
+        expect(t.deps.copyText).toHaveBeenCalledWith(REPLACED);
+        expect(lastStatus(t.pill)).toEqual(CHANGED);
+      });
+
+      it('a click on its status copies the replacement', async () => {
+        const t = setup();
+        await heldEdit(t);
+        await t.controller.copyLast();
+        expect(t.deps.copyText).toHaveBeenCalledWith(REPLACED);
+      });
+    });
+
+    /** insertText as the ladder ends for a field: over the selection, caret after it. */
+    function writing(t) {
+      t.deps.insertText.mockImplementation(async (el, text) => {
+        el.setRangeText(text, el.selectionStart, el.selectionEnd, 'end');
+        return 'inserted';
+      });
+    }
+
+    async function undoCopies(t, entry) {
+      t.deps.insertText.mockClear();
+      t.controller.setRecent(entry);
+      await t.controller.historyAction('undo');
+      await flush();
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect(lastStatus(t.pill)[0]).toBe('Original text copied.');
+    }
+
+    it('no mark is taken for an edit', async () => {
+      const t = setup();
+      writing(t);
+      await processingEdit(t);
+      t.controller.handleMessage(edited());
+      await flush();
+      expect($('a').value).toBe(`hello ${REPLACED}`);
+      await undoCopies(t, { raw: 'make it shorter', text: REPLACED });
+      expect($('a').value).toBe(`hello ${REPLACED}`);
+    });
+
+    it('an edit drops the mark of the dictation before it', async () => {
+      const t = setup();
+      writing(t);
+      await recordAndStop(t);
+      t.controller.handleMessage({ ...dictated('refined'), raw: 'raw' });
+      await flush();
+      await processingEdit(t);
+      t.controller.handleMessage(edited({ text: 'hello world' }));
+      await flush();
+      await undoCopies(t, { raw: 'raw', text: 'refined' });
+    });
+
+    it('recent with edit: true has refined false', () => {
+      const t = setup();
+      t.controller.setSettings(settings());
+      t.controller.setRecent({ raw: 'make it shorter', text: REPLACED, edit: true });
+      expect(t.pill.renderMenu.mock.calls.at(-1)[2]).toEqual({ refined: false });
+      t.controller.setRecent({ raw: 'make it shorter', text: REPLACED, edit: false });
+      expect(t.pill.renderMenu.mock.calls.at(-1)[2]).toEqual({ refined: true });
+    });
+  });
+
+  describe('a failure', () => {
+    it('a failed edit shows a clickable, not sticky status whose click copies the instruction, and the next press records', async () => {
+      const t = setup();
+      await processingEdit(t);
+      t.controller.handleMessage(failedEdit());
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(FAILED);
+      expect(t.pill.setState).toHaveBeenLastCalledWith('error');
+      expect(t.deps.insertText).not.toHaveBeenCalled();
+      expect(t.deps.copyText).not.toHaveBeenCalled();
+
+      await t.controller.copyLast();
+      expect(t.deps.copyText).toHaveBeenCalledWith('make it shorter');
+      expect(lastStatus(t.pill)[0]).toBe('Copied to clipboard.');
+
+      t.sent.length = 0;
+      expect(t.controller.editPress()).toBe(true);
+      await flush();
+      expect(t.sent).toEqual([{ action: MSG.START_RECORDING, edit: { text: 'world' } }]);
+    });
+
+    it('with the failure still showing, the next press records and copies nothing', async () => {
+      const t = setup();
+      await processingEdit(t);
+      t.controller.handleMessage(failedEdit());
+      await flush();
+      expect(t.controller.editPress()).toBe(true);
+      await flush();
+      expect(t.deps.copyText).not.toHaveBeenCalled();
+      expect(t.controller.state).toBe('recording');
+    });
+
+    it('the dictation chord records too with the failure showing', async () => {
+      const t = setup();
+      await processingEdit(t);
+      t.controller.handleMessage(failedEdit());
+      await flush();
+      await t.controller.press();
+      expect(t.controller.state).toBe('recording');
+    });
+
+    it('it picks the clickable status from instruction: a plain failure on an edit is plain', async () => {
+      const t = setup();
+      await processingEdit(t);
+      t.controller.handleMessage({ action: MSG.DICTATION_RESULT, success: false, error: 'No speech detected.', tone: 'warning' });
+      await flush();
+      expect(lastStatus(t.pill)).toEqual(['No speech detected.', { tone: 'warning', sticky: false, clickable: false }]);
+    });
+
+    it('an empty instruction has nothing to copy', async () => {
+      const t = setup();
+      await processingEdit(t);
+      t.controller.handleMessage(failedEdit({ instruction: '' }));
+      await flush();
+      expect(lastStatus(t.pill)[1].clickable).toBe(false);
+    });
+
+    it('a failed edit leaves the field and its selection', async () => {
+      const t = setup();
+      await processingEdit(t);
+      t.controller.handleMessage(failedEdit());
+      await flush();
+      expect($('a').value).toBe('hello world');
+      expect([$('a').selectionStart, $('a').selectionEnd]).toEqual([6, 11]);
+    });
   });
 });
 

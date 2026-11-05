@@ -29,6 +29,7 @@ export function boot({
   document.dispatchEvent(new CustomEvent(TEARDOWN_EVENT));
 
   let chord = DEFAULT_SETTINGS.hotkey;
+  let editChord = DEFAULT_SETTINGS.editHotkey;
   const inSubframe = window !== window.top;
 
   const pill = new Pill({
@@ -72,6 +73,7 @@ export function boot({
   });
 
   const tracker = createChordTracker({ getChord: () => chord });
+  const editTracker = createChordTracker({ getChord: () => editChord });
   /** The extension is gone under this page: only the terminal notice is left, and keys go to the page. */
   let orphan = false;
   /** The first settings read has settled. Until then focus shows no idle pill: this may be a Minimal page. */
@@ -108,9 +110,11 @@ export function boot({
     return { top: r.top, left: r.left, width: r.width, height: r.height };
   }
 
-  /** The chord tracker reads the hotkey from here; the controller keeps the rest of the settings. */
+  /** The chord trackers read the hotkeys from here; the controller keeps the rest of the settings. */
   function trackHotkey(settings) {
-    if (settings && typeof settings === 'object' && isValidChord(settings.hotkey)) chord = settings.hotkey;
+    if (!settings || typeof settings !== 'object') return;
+    if (isValidChord(settings.hotkey)) chord = settings.hotkey;
+    if (isValidChord(settings.editHotkey)) editChord = settings.editHotkey;
   }
 
   async function loadSettings({ forMenu = false } = {}) {
@@ -140,11 +144,18 @@ export function boot({
     if (!isTrusted(event) || orphan) return;
     if (!isAlive()) {
       // Checked before any preventDefault, so the chord reaches the page; its press says why.
-      if (matchesChord(event, chord)) becomeOrphan();
+      if (matchesChord(event, chord) || matchesChord(event, editChord)) becomeOrphan();
       return;
     }
     const kind = tracker.keydown(event);
-    if (!kind) return;
+    // Asked second, so with equal chords dictation wins and the edit chord does nothing (V41).
+    const editKind = kind ? null : editTracker.keydown(event);
+    if (!kind && !editKind) return;
+    // Before preventDefault: with nothing to edit the press is the page's, repeats included (V43).
+    if (editKind === 'press' && !controller.editPress()) {
+      editTracker.drop();
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     if (kind === 'press') controller.press();
@@ -152,14 +163,16 @@ export function boot({
 
   function onKeyUp(event) {
     if (!isTrusted(event) || orphan) return;
-    const released = tracker.keyup(event);
-    if (released) controller.release(released);
+    for (const released of [tracker.keyup(event), editTracker.keyup(event)]) {
+      if (released) controller.release(released);
+    }
   }
 
   function onWindowBlur(event) {
     if (!isTrusted(event) || orphan) return;
-    const released = tracker.blur();
-    if (released) controller.release(released);
+    for (const released of [tracker.blur(), editTracker.blur()]) {
+      if (released) controller.release(released);
+    }
     // Focus left this frame for another frame or window: settle so an idle pill hides (spec 6.4).
     if (booted) controller.focusOut();
   }

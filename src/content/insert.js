@@ -29,7 +29,9 @@ const isTrustedEvent = (event) => event.isTrusted === true;
  *   hostname?: string,
  *   createPasteEvent?: (text: string) => Event|null,
  *   isTrusted?: (event: Event) => boolean,
+ *   replacing?: boolean,
  * }} InsertDeps
+ * `replacing`: the text goes over a selection the caller checked, so only the exact result counts.
  */
 
 /**
@@ -207,6 +209,44 @@ export async function replaceInsertion(el, { start, end, length }, text, raw, de
   return outcome;
 }
 
+/**
+ * The selection inside a field: offsets in text units, a contenteditable's as `editableSplice`
+ * counts them, and the text. For a contenteditable that text keeps its line breaks. Null for a
+ * caret, whitespace, a selection not wholly inside el, an input type with no selection API
+ * (email) and Google Docs (V42).
+ * @param {Element} el
+ * @param {{ hostname?: string }} [deps]
+ * @returns {{ text: string, start: number, end: number }|null}
+ */
+export function readSelection(el, { hostname = frameHostname(el.ownerDocument) } = {}) {
+  if (CLIPBOARD_ONLY_HOSTS.has(hostname)) return null;
+  const selection = isFormField(el) ? formSelection(el) : editableSelection(el);
+  return selection && normalizeForCompare(selection.text).trim() !== '' ? selection : null;
+}
+
+/**
+ * True while el's selection is the one read earlier: same offsets and same text. It never searches.
+ * @param {Element} el
+ * @param {{ text: string, start: number, end: number }|null} snapshot
+ * @returns {boolean}
+ */
+export function sameSelection(el, snapshot) {
+  const now = readSelection(el);
+  return now !== null && now.start === snapshot?.start && now.end === snapshot.end && now.text === snapshot.text;
+}
+
+function formSelection(el) {
+  const { selectionStart: start, selectionEnd: end } = el;
+  return typeof start === 'number' && start !== end ? { text: el.value.slice(start, end), start, end } : null;
+}
+
+function editableSelection(el) {
+  const offsets = selectionOffsets(el);
+  if (!offsets || offsets.start === offsets.end) return null;
+  // Not range.toString(): that runs paragraphs together, and the text model would read one word.
+  return { text: selectionFor(el).toString(), ...offsets };
+}
+
 /** Focuses the target, fixes the caret and records the state every rung is judged against. */
 function prepare(target, text, deps) {
   const editable = !isFormField(target);
@@ -221,6 +261,7 @@ function prepare(target, text, deps) {
     nBefore: normalizeForCompare(before),
     nText: normalizeForCompare(text),
     nExpected: null,
+    replacing: deps.replacing === true,
     trusted: false,
     prevented: false,
     exec: deps.execCommand ?? ((t) => target.ownerDocument.execCommand('insertText', false, t)),
@@ -328,8 +369,19 @@ function judge(run) {
   const after = normalizeForCompare(readValue(run.target));
   const touched = after !== run.nBefore || run.trusted || run.prevented;
   if (!run.target.isConnected) return touched ? 'ambiguous' : 'untouched';
-  if (after === run.nExpected || count(after, run.nText) > count(run.nBefore, run.nText)) return 'inserted';
+  if (landed(run, after, touched)) return 'inserted';
   return touched ? 'ambiguous' : 'advance';
+}
+
+/**
+ * A count cannot verify a replacement: its text may have been in the field, even inside the
+ * selection, and the selection may have stayed beside it. Only the exact result does. Compare form
+ * drops whitespace, so a rung that left the field as it was proves nothing about a change of
+ * whitespace alone.
+ */
+function landed(run, after, touched) {
+  if (run.replacing) return after === run.nExpected && (touched || readValue(run.target) !== run.before);
+  return after === run.nExpected || count(after, run.nText) > count(run.nBefore, run.nText);
 }
 
 function count(haystack, needle) {
@@ -422,6 +474,12 @@ function isFocused(el) {
 
 /** The field's value with text spliced over the current selection, or null when unknown. */
 function editableSplice(el, before, text) {
+  const offsets = selectionOffsets(el);
+  return offsets && before.slice(0, offsets.start) + text + before.slice(offsets.end);
+}
+
+/** The current selection as text offsets into el, or null when it is not inside el or unknown. */
+function selectionOffsets(el) {
   try {
     const sel = selectionFor(el);
     if (!sel || sel.rangeCount === 0) return null;
@@ -430,9 +488,9 @@ function editableSplice(el, before, text) {
     const prefix = el.ownerDocument.createRange();
     prefix.selectNodeContents(el);
     prefix.setEnd(range.startContainer, range.startOffset);
-    const from = prefix.toString().length;
+    const start = prefix.toString().length;
     prefix.setEnd(range.endContainer, range.endOffset);
-    return before.slice(0, from) + text + before.slice(prefix.toString().length);
+    return { start, end: prefix.toString().length };
   } catch {
     return null;
   }

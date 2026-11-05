@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  insertText, copyText, readValue, normalizeForCompare, markInsertion, replaceInsertion, CLIPBOARD_ONLY_HOSTS, WRITE_LIMIT_MS,
+  insertText, copyText, readValue, normalizeForCompare, markInsertion, replaceInsertion, readSelection, sameSelection,
+  CLIPBOARD_ONLY_HOSTS, WRITE_LIMIT_MS,
 } from '../../../src/content/insert.js';
 
 // jsdom has no execCommand, DataTransfer or ClipboardEvent, and every event a script
@@ -1059,5 +1060,273 @@ describe('copyText', () => {
     const execCopy = vi.fn(() => true);
     expect(await insertText(null, 'text', deps({ writeClipboard: undefined, execCopy }))).toBe('clipboard');
     expect(execCopy).toHaveBeenCalledWith('text');
+  });
+});
+
+/** Selects from one point to another, as a drag in the field would. */
+function selectRange(startNode, startOffset, endNode = startNode, endOffset = startOffset) {
+  const range = document.createRange();
+  range.setStart(startNode, startOffset);
+  range.setEnd(endNode, endOffset);
+  const sel = document.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function selectedTextarea(value, start, end) {
+  const el = textarea(value);
+  el.setSelectionRange(start, end);
+  return el;
+}
+
+function selectedEditable(html, start, end, attrs) {
+  const el = editable(html, attrs);
+  el.focus();
+  selectRange(el.firstChild, start, el.firstChild, end);
+  return el;
+}
+
+describe('readSelection', () => {
+  it('reads a textarea', () => {
+    expect(readSelection(selectedTextarea('hello world', 6, 11))).toEqual({ text: 'world', start: 6, end: 11 });
+  });
+
+  it('reads an input', () => {
+    document.body.innerHTML = '<input id="in" type="text" value="hello world">';
+    const el = document.getElementById('in');
+    el.setSelectionRange(0, 5);
+    expect(readSelection(el)).toEqual({ text: 'hello', start: 0, end: 5 });
+  });
+
+  it('an email input has no selection API, so no selection', () => {
+    document.body.innerHTML = '<input id="in" type="email" value="a@example.com">';
+    expect(readSelection(document.getElementById('in'))).toBeNull();
+  });
+
+  it('a collapsed caret is no selection', () => {
+    expect(readSelection(textarea('hello', 2))).toBeNull();
+    expect(readSelection(selectedEditable('hello', 2, 2))).toBeNull();
+  });
+
+  it('whitespace alone is no selection', () => {
+    expect(readSelection(selectedTextarea('a \n\t b', 1, 5))).toBeNull();
+    expect(readSelection(selectedTextarea('a ​﻿b', 1, 4))).toBeNull();
+    expect(readSelection(selectedEditable('a   b', 1, 4))).toBeNull();
+  });
+
+  it('reads a contenteditable in text offsets', () => {
+    expect(readSelection(selectedEditable('hello world', 6, 11))).toEqual({ text: 'world', start: 6, end: 11 });
+  });
+
+  it('counts the text offsets across nodes, as a splice does', () => {
+    const el = editable('<p>one</p><p>two <b>three</b> four</p>');
+    el.focus();
+    selectRange(el.querySelector('b').firstChild, 1, el.lastChild.lastChild, 3);
+    expect(readSelection(el)).toEqual({ text: 'hree fo', start: 8, end: 15 });
+  });
+
+  it('reads a role=textbox that is no contenteditable', () => {
+    document.body.innerHTML = '<div id="box" role="textbox">hello world</div>';
+    const el = document.getElementById('box');
+    selectRange(el.firstChild, 0, el.firstChild, 5);
+    expect(readSelection(el)).toEqual({ text: 'hello', start: 0, end: 5 });
+  });
+
+  it('a selection outside the field is none of its own', () => {
+    document.body.innerHTML = '<div id="ce" contenteditable="true">inside</div><p id="p">outside</p>';
+    selectRange(document.getElementById('p').firstChild, 0, document.getElementById('p').firstChild, 7);
+    expect(readSelection(document.getElementById('ce'))).toBeNull();
+  });
+
+  it('a selection reaching out of the field is none of its own', () => {
+    document.body.innerHTML = '<div id="ce" contenteditable="true">inside</div><p id="p">outside</p>';
+    const el = document.getElementById('ce');
+    selectRange(el.firstChild, 2, document.getElementById('p').firstChild, 3);
+    expect(readSelection(el)).toBeNull();
+  });
+
+  it('a field with no selection at all reads as none', () => {
+    const el = editable('hello');
+    expect(readSelection(el)).toBeNull();
+  });
+
+  it('Google Docs has no readable selection', () => {
+    const el = selectedEditable('hello world', 0, 5);
+    expect(readSelection(el, { hostname: [...CLIPBOARD_ONLY_HOSTS][0] })).toBeNull();
+  });
+
+  it('a page whose selection API throws reads as none', () => {
+    const el = selectedEditable('hello world', 0, 5);
+    vi.spyOn(document, 'getSelection').mockImplementation(() => { throw new Error('page'); });
+    expect(readSelection(el)).toBeNull();
+    vi.restoreAllMocks();
+  });
+});
+
+describe('sameSelection', () => {
+  it('true while nothing moved', () => {
+    const el = selectedTextarea('hello world', 6, 11);
+    expect(sameSelection(el, readSelection(el))).toBe(true);
+    const ce = selectedEditable('hello world', 6, 11);
+    expect(sameSelection(ce, readSelection(ce))).toBe(true);
+  });
+
+  it('false on moved offsets', () => {
+    const el = selectedTextarea('hello hello', 0, 5);
+    const snapshot = readSelection(el);
+    el.setSelectionRange(6, 11);
+    expect(sameSelection(el, snapshot)).toBe(false);
+  });
+
+  it('false on a collapsed selection', () => {
+    const el = selectedTextarea('hello world', 6, 11);
+    const snapshot = readSelection(el);
+    el.setSelectionRange(11, 11);
+    expect(sameSelection(el, snapshot)).toBe(false);
+  });
+
+  it('false on changed text at the same offsets, in a form field', () => {
+    const el = selectedTextarea('hello world', 6, 11);
+    const snapshot = readSelection(el);
+    el.value = 'hello there';
+    el.setSelectionRange(6, 11);
+    expect(sameSelection(el, snapshot)).toBe(false);
+  });
+
+  it('false on changed text at the same offsets, in a contenteditable', () => {
+    const el = selectedEditable('hello world', 6, 11);
+    const snapshot = readSelection(el);
+    el.textContent = 'hello there';
+    selectRange(el.firstChild, 6, el.firstChild, 11);
+    expect(sameSelection(el, snapshot)).toBe(false);
+  });
+
+  it('false on the same word elsewhere in a contenteditable', () => {
+    const el = selectedEditable('word and word', 0, 4);
+    const snapshot = readSelection(el);
+    selectRange(el.firstChild, 9, el.firstChild, 13);
+    expect(sameSelection(el, snapshot)).toBe(false);
+  });
+
+  it('false when the text before the selection grew, the word unchanged', () => {
+    const el = selectedEditable('word', 0, 4);
+    const snapshot = readSelection(el);
+    el.textContent = 'a word';
+    selectRange(el.firstChild, 2, el.firstChild, 6);
+    expect(sameSelection(el, snapshot)).toBe(false);
+  });
+
+  it('false on no snapshot', () => {
+    expect(sameSelection(selectedTextarea('hello', 0, 5), null)).toBe(false);
+  });
+});
+
+describe('insertText over a selection', () => {
+  const replacing = (overrides) => deps({ replacing: true, ...overrides });
+  /** No raw rung here, so a test can see every rung do nothing. */
+  const FRAMEWORK = 'contenteditable="true" data-lexical-editor="true"';
+  /** A rung that puts the text in front of the selection and leaves the selection in place. */
+  const execKeepingSelection = (text) => {
+    insertAtCaret(text);
+    document.activeElement.dispatchEvent(trustedInput(text));
+    return true;
+  };
+
+  it('replaces a selection in a form field', async () => {
+    const el = selectedTextarea('hello world', 6, 11);
+    expect(await insertText(el, 'there', replacing({ execCommand: formExec }))).toBe('inserted');
+    expect(el.value).toBe('hello there');
+  });
+
+  it('keeps a contenteditable selection for the first rung when focus() moves it', async () => {
+    const el = selectedEditable('hello world', 6, 11);
+    el.focus = () => document.getSelection().collapse(el.firstChild, 0);
+    expect(await insertText(el, 'there', replacing({ execCommand: editableExec }))).toBe('inserted');
+    expect(el.textContent).toBe('hello there');
+  });
+
+  it('replaces a selection across paragraphs', async () => {
+    const el = editable('<p>one two</p><p>three</p>');
+    el.focus();
+    selectRange(el.firstChild.firstChild, 4, el.lastChild.firstChild, 5);
+    expect(await insertText(el, 'four', replacing({ execCommand: editableExec }))).toBe('inserted');
+    expect(el.textContent).toBe('one four');
+  });
+
+  it('a replacement that is a substring of the selection is verified', async () => {
+    const el = selectedTextarea('the quick fox', 4, 13);
+    expect(await insertText(el, 'fox', replacing({ execCommand: formExec }))).toBe('inserted');
+    expect(el.value).toBe('the fox');
+    const ce = selectedEditable('the quick fox', 4, 13);
+    expect(await insertText(ce, 'fox', replacing({ execCommand: editableExec }))).toBe('inserted');
+    expect(ce.textContent).toBe('the fox');
+  });
+
+  it('a replacement repeating text already in the field is verified', async () => {
+    const el = selectedTextarea('foo bar foo', 4, 7);
+    expect(await insertText(el, 'foo', replacing({ execCommand: formExec }))).toBe('inserted');
+    expect(el.value).toBe('foo foo foo');
+    const ce = selectedEditable('foo bar foo', 4, 7);
+    expect(await insertText(ce, 'foo', replacing({ execCommand: editableExec }))).toBe('inserted');
+    expect(ce.textContent).toBe('foo foo foo');
+  });
+
+  it('a replacement equal to the selection counts when the rung ran', async () => {
+    const el = selectedTextarea('hello world', 6, 11);
+    expect(await insertText(el, 'world', replacing({ execCommand: formExec }))).toBe('inserted');
+    expect(el.value).toBe('hello world');
+  });
+
+  it('a replacement that repeats text is not found where it already was', async () => {
+    const el = selectedEditable('foo bar foo', 4, 7, FRAMEWORK);
+    expect(await insertText(el, 'foo', replacing())).toBe('clipboard');
+    expect(el.textContent).toBe('foo bar foo');
+  });
+
+  it('a substring that no rung placed is not read as placed', async () => {
+    const el = selectedEditable('the quick fox', 4, 13, FRAMEWORK);
+    expect(await insertText(el, 'fox', replacing())).toBe('clipboard');
+    expect(el.textContent).toBe('the quick fox');
+  });
+
+  it('a change of whitespace alone that no rung made is not read as made', async () => {
+    const el = selectedEditable('hello world', 0, 11, FRAMEWORK);
+    expect(await insertText(el, 'hello\nworld', replacing())).toBe('clipboard');
+    expect(el.textContent).toBe('hello world');
+  });
+
+  it('a change of whitespace alone that the setter made in a form field is verified', async () => {
+    const el = selectedTextarea('hello world', 0, 11);
+    expect(await insertText(el, 'hello\nworld', replacing())).toBe('inserted');
+    expect(el.value).toBe('hello\nworld');
+  });
+
+  it('text set beside a selection left in place is no replacement', async () => {
+    const el = selectedEditable('hello world', 6, 11);
+    const t = replacing({ execCommand: execKeepingSelection });
+    expect(await insertText(el, 'there', t)).toBe('unverified');
+    expect(t.writeClipboard).toHaveBeenCalledWith('there');
+  });
+
+  it('a dictation over a selection still reads the same rung as an insert, as in 3.1', async () => {
+    const el = selectedEditable('hello world', 6, 11);
+    const t = deps({ execCommand: execKeepingSelection });
+    expect(await insertText(el, 'there', t)).toBe('inserted');
+    expect(t.writeClipboard).not.toHaveBeenCalled();
+  });
+
+  it('a page that rewrites what it takes is unverified, with the text copied', async () => {
+    const el = selectedTextarea('hello world', 6, 11);
+    el.addEventListener('input', () => { el.value = el.value.toUpperCase(); });
+    const t = replacing({ execCommand: formExec });
+    expect(await insertText(el, 'there', t)).toBe('unverified');
+    expect(t.writeClipboard).toHaveBeenCalledWith('there');
+    expect(el.value).toBe('HELLO THERE');
+  });
+
+  it('a raw rung replaces a selection in a plain contenteditable', async () => {
+    const el = selectedEditable('hello world', 6, 11);
+    expect(await insertText(el, 'there', replacing())).toBe('inserted');
+    expect(el.textContent).toBe('hello there');
   });
 });

@@ -15,7 +15,7 @@ const DIST = fileURLToPath(new URL('../../dist', import.meta.url));
 export const PORT = Number(process.env.PORT) || 8765;
 const FIELDS_URL = `http://localhost:${PORT}/fields.html`;
 const TRANSCRIPTION_URL = 'https://api.openai.com/v1/audio/transcriptions';
-const REFINE_URL = 'https://api.openai.com/v1/responses';
+export const REFINE_URL = 'https://api.openai.com/v1/responses';
 export const TRANSCRIPT = 'stubbed transcript';
 export const DUMMY_KEY = 'sk-e2e-dummy-key';
 export const START = 'button[aria-label="Start recording"]';
@@ -451,11 +451,11 @@ export async function dictate(target) {
  * before the microphone answers, so a slow microphone never gets a second press.
  * @param {import('@playwright/test').Page} page
  * @param {import('@playwright/test').Page|import('@playwright/test').Frame} target
- * @param {{ indicator?: string }} [options] the selector that shows a recording
+ * @param {{ indicator?: string, chord?: string }} [options] the selector that shows a recording; the chord to press
  */
-export async function startWithHotkey(page, target, { indicator = STOP } = {}) {
+export async function startWithHotkey(page, target, { indicator = STOP, chord = HOTKEY } = {}) {
   await expect(async () => {
-    await page.keyboard.press(HOTKEY);
+    await page.keyboard.press(chord);
     await expect.poll(async () => (await pillQuery(target, '.vt')) !== null, { timeout: PRESS_LANDS_MS }).toBe(true);
   }).toPass({ timeout: 15_000 });
   await waitForPill(target, indicator);
