@@ -2343,6 +2343,39 @@ describe('ping (V52)', () => {
     expect(t.tabMessages()).toEqual([{ endpoint: { tabId: 1, frameId: 0 }, action: MSG.RECORDING_MIRROR, state: 'idle', elapsedMs: expect.any(Number) }]);
   });
 
+  it('a subframe with no record takes down the mirror its worker left', async () => {
+    const t = setup();
+    expect(await t.recorder.ping(A_CHILD)).toEqual({ alive: false });
+    expect(t.tabMessages()).toEqual([{ endpoint: { tabId: 1, frameId: 0 }, action: MSG.RECORDING_MIRROR, state: 'idle', elapsedMs: expect.any(Number) }]);
+  });
+
+  it("a subframe with only another document's record does too", async () => {
+    const t = setup({ record: leftBehind({ endpoint: B }) });
+    expect(await t.recorder.ping(A_CHILD)).toEqual({ alive: false });
+    expect(t.tabMessages()).toEqual([{ endpoint: { tabId: 1, frameId: 0 }, action: MSG.RECORDING_MIRROR, state: 'idle', elapsedMs: expect.any(Number) }]);
+    expect(t.deps.pending.store.record).not.toBeNull();
+  });
+
+  it('frame 0 with no record sends no mirror', async () => {
+    const t = setup();
+    expect(await t.recorder.ping(A)).toEqual({ alive: false });
+    expect(t.tabMessages()).toEqual([]);
+  });
+
+  it('a subframe with no record leaves the mirror of a session in the same tab', async () => {
+    const t = setup();
+    await t.recorder.start({ tabId: 1, frameId: 9 });
+    expect(await t.recorder.ping(A_CHILD)).toEqual({ alive: false });
+    expect(t.tabMessages().filter((m) => m.action === MSG.RECORDING_MIRROR)).toEqual([]);
+  });
+
+  it('a subframe with no record takes down its mirror beside a session in another tab', async () => {
+    const t = setup();
+    await t.recorder.start(B);
+    expect(await t.recorder.ping(A_CHILD)).toEqual({ alive: false });
+    expect(t.tabMessages().filter((m) => m.action === MSG.RECORDING_MIRROR)).toHaveLength(1);
+  });
+
   it('a frame 0 record cleared on a ping sends no mirror', async () => {
     const t = setup({ record: leftBehind({ attempts: 1 }) });
     await t.recorder.ping(A);

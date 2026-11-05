@@ -435,12 +435,12 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       const record = mine() ? null : await pending.read();
       // After the read too: a ping that overlapped this one may have resumed the record meanwhile.
       if (mine()) return { alive: true };
-      if (!record || !sameDocument(record.endpoint, endpoint)) return { alive: false };
-      if (record.bootId === bootId) return { alive: true };
-      if (session === null && record.attempts === 0 && now() - record.at < PENDING_WINDOW_MS) return resume(record);
+      const ours = Boolean(record) && sameDocument(record.endpoint, endpoint);
+      if (ours && record.bootId === bootId) return { alive: true };
+      if (ours && session === null && record.attempts === 0 && now() - record.at < PENDING_WINDOW_MS) return resume(record);
       // The worker that knew about frame 0's mirror is gone; a session in this tab has its own use for it.
-      if (endpoint.frameId !== 0 && session?.endpoint.tabId !== endpoint.tabId) mirror({ endpoint, liveAt: record.at }, 'idle');
-      await clearRecord();
+      if (endpoint.frameId !== 0 && session?.endpoint.tabId !== endpoint.tabId) mirror({ endpoint, liveAt: now() }, 'idle');
+      if (ours) await clearRecord();
       return { alive: false };
     },
 
