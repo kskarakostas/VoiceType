@@ -35,6 +35,8 @@ const PRESS_LANDS_MS = 1000;
 const NODE_GONE = /Could not find node|No node with given id|Node with given id|Could not find object|Cannot find context/;
 /** The install tab is on its way when the settings poll ends; a launch without one within this long fails. */
 const WELCOME_TAB_MS = 10_000;
+/** VT_CHROME_BIN names a Chromium-family binary to run instead of Playwright's Chromium, which Playwright has no variable for. */
+const BROWSER = process.env.VT_CHROME_BIN ? { executablePath: process.env.VT_CHROME_BIN } : { channel: 'chromium' };
 
 const isExtensionWorker = (worker) => worker.url().startsWith('chrome-extension://');
 
@@ -65,7 +67,7 @@ export async function launchExtension({ transcriptDelayMs = 0, contextOptions = 
     const tone = writeToneWav(join(workDir, 'tone.wav'), { seconds: 10 });
     context = await chromium.launchPersistentContext('', {
       ...contextOptions,
-      channel: 'chromium',
+      ...BROWSER,
       headless: true,
       args: [
         `--disable-extensions-except=${DIST}`,
