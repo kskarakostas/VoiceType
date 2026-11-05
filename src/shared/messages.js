@@ -33,10 +33,11 @@ export const MSG = Object.freeze({
   GET_LAST_DICTATION: 'getLastDictation',
   GET_HISTORY: 'getHistory',
   CLEAR_HISTORY: 'clearHistory',
+  PROCESSING_PING: 'processingPing',
 });
 
 /**
- * @typedef {'noKey'|'busy'|'needsPermission'|'denied'|'micError'} StartFailure
+ * @typedef {'noKey'|'busy'|'needsPermission'|'denied'|'micError'|'badEdit'} StartFailure
  * @typedef {{ ok: true } | { ok: false, reason: StartFailure, error: string }} StartResponse
  * @typedef {{ text: string, tone: 'info'|'success'|'warning'|'error' }} Notice
  * @typedef {{ state: 'idle'|'processing', reason?: 'maxTime'|'silence'|'ended'|'error'|'permission', notice?: Notice }} RecordingStatePayload

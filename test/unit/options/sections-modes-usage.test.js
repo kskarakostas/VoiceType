@@ -12,7 +12,7 @@ import { formatChord } from '../../../src/shared/chord.js';
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/options/options.html'), 'utf8');
 const SETTINGS_CHANGE = { settings: { newValue: {} } };
 const RESET_PROMPT = 'Click again to reset. Custom modes will be deleted.';
-const RESET_HINT = 'Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the hotkey, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.';
+const RESET_HINT = 'Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the dictation and edit hotkeys, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.';
 
 function bucket(sessions, audioSeconds, cost) {
   return {
@@ -251,6 +251,7 @@ describe('settings page reset (V21)', () => {
       provider: 'gemini', activeMode: 'custom_1', minRecordingTime: 2, maxRecordingTime: 300,
       translateTargetLang: 'German', languages: ['el'], dictionary: { any: ['x'] }, pillGap: 16,
       hotkey: { code: 'KeyD', ctrl: false, shift: false, alt: true, meta: false }, autoStopSilenceSec: 3,
+      editHotkey: { code: 'KeyJ', ctrl: false, shift: false, alt: true, meta: false },
       siteRules: { 'a.com': { hidePill: true, mode: 'custom_1' } }, pillStyle: 'minimal', sounds: true, alwaysCopy: true,
       keepHistory: false,
     });
@@ -290,6 +291,21 @@ describe('settings page reset (V21)', () => {
     expect($('hotkey').textContent).toBe(formatChord(freshSettings().hotkey));
     expect(row('select', 'custom_1')).toBeNull();
     expect($('toast').textContent).toBe('Settings reset');
+  });
+
+  it('Reset resets editHotkey', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome(offDefaults());
+    const page = await start(chrome, 'settings/usage');
+    const button = $('reset');
+    button.click();
+    await vi.advanceTimersByTimeAsync(CONFIRM_GUARD_MS);
+    button.click();
+    await flush();
+    expect(chrome.saves()[0].editHotkey).toEqual(freshSettings().editHotkey);
+    expect(page.settings.editHotkey).toEqual(freshSettings().editHotkey);
+    expect($('edit-hotkey').textContent).toBe(formatChord(freshSettings().editHotkey));
+    expect($('reset-hint').textContent).toContain('the dictation and edit hotkeys');
   });
 
   it('Reset keeps keepHistory', async () => {

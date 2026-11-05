@@ -10,6 +10,7 @@ import { freshSettings } from '../../../src/shared/defaults.js';
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/options/options.html'), 'utf8');
 const KEY = 'sk-proj-abcdefgh1234';
 const INSTRUCTION = 'click into any text field on a web page and press it';
+const EDIT_INSTRUCTION = ': select text in a field and press it to edit by voice.';
 const ASKS = 'Chrome asks once, for VoiceType itself, in a new tab.';
 const BLOCKED = 'Microphone blocked for VoiceType. Allow it at chrome://settings/content/microphone.';
 
@@ -239,5 +240,18 @@ describe('Welcome: start dictating', () => {
     stubNavigator('platform', 'MacIntel');
     await open(fakeChrome(storedSettings({ hotkey: { code: 'KeyD', ctrl: false, shift: false, alt: true, meta: false } })));
     expect($('welcome-hotkey').textContent).toBe('Option+D');
+  });
+
+  it('Welcome shows the edit chord', async () => {
+    const { chrome } = await open();
+    const line = $('welcome-edit-hotkey').closest('.welcome-line');
+    expect($('welcome-edit-hotkey').textContent).toBe('Ctrl+Shift+E');
+    expect(line.textContent).toBe(`Ctrl+Shift+E${EDIT_INSTRUCTION}`);
+    expect(line.closest('li')).toBe($('welcome-hotkey').closest('li'));
+
+    chrome.stored = storedSettings({ editHotkey: { code: 'KeyJ', ctrl: false, shift: false, alt: true, meta: false } });
+    chrome.fire({ settings: { newValue: {} } }, 'local');
+    await flush();
+    expect($('welcome-edit-hotkey').textContent).toBe('Alt+J');
   });
 });

@@ -21,6 +21,13 @@ export const TARGET_LANGUAGES = Object.freeze([
   Object.freeze({ code: 'DE', name: 'German' }),
 ]);
 
+/** The longest selection an edit takes (V42). */
+export const MAX_EDIT_CHARS = 10000;
+
+/** The mode key of an edit: reserved, so validation drops a stored mode that holds it (V48). */
+export const EDIT_MODE = 'edit-selection';
+export const EDIT_MODE_LABEL = 'Edit selection';
+
 /**
  * @typedef {{ name: string, icon: string, prompt: string, builtIn: boolean, hasLanguageOption?: boolean }} Mode
  * @typedef {{
@@ -35,6 +42,7 @@ export const TARGET_LANGUAGES = Object.freeze([
  *   dictionary: Record<string, string[]>,
  *   pillGap: number,
  *   hotkey: import('./chord.js').Chord,
+ *   editHotkey: import('./chord.js').Chord,
  *   autoStopSilenceSec: number,
  *   modes: Record<string, Mode>,
  *   siteRules: Record<string, { hidePill: boolean, mode: string|null }>,
@@ -96,6 +104,7 @@ export const DEFAULT_SETTINGS = deepFreeze({
   dictionary: {},
   pillGap: 8,
   hotkey: { code: 'Space', ctrl: true, shift: true, alt: false, meta: false },
+  editHotkey: { code: 'KeyE', ctrl: true, shift: true, alt: false, meta: false },
   autoStopSilenceSec: 0,
   modes: BUILTIN_MODES,
   siteRules: {},
@@ -161,10 +170,10 @@ function repairKeys(value) {
   return out;
 }
 
-/** Same reference when every mode is an object and every built-in is present, else a repaired copy. */
+/** Same reference when every mode is an object under a free key and every built-in is present, else a repaired copy. */
 function repairModes(value) {
   const modes = isObject(value) ? value : {};
-  const entries = Object.entries(modes).filter(([, mode]) => isObject(mode));
+  const entries = Object.entries(modes).filter(([key, mode]) => isObject(mode) && key !== EDIT_MODE);
   const missing = Object.keys(BUILTIN_MODES).filter((key) => !Object.hasOwn(modes, key) || !isObject(modes[key]));
   if (modes === value && entries.length === Object.keys(modes).length && missing.length === 0) return value;
   const out = Object.fromEntries(entries);
@@ -296,6 +305,7 @@ function validateV3(v) {
   if (typeof v.sounds !== 'boolean') fix.sounds = DEFAULT_SETTINGS.sounds;
   if (typeof v.alwaysCopy !== 'boolean') fix.alwaysCopy = DEFAULT_SETTINGS.alwaysCopy;
   if (typeof v.keepHistory !== 'boolean') fix.keepHistory = DEFAULT_SETTINGS.keepHistory;
+  if (!isValidChord(v.editHotkey)) fix.editHotkey = DEFAULT_SETTINGS.editHotkey;
   return applyFix(v, fix);
 }
 

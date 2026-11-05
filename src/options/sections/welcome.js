@@ -24,7 +24,7 @@ export function createWelcomeSection(ctx) {
   const el = {
     keyStatus: $('welcome-key-status'), keyState: $('welcome-key-state'),
     micStatus: $('welcome-mic-status'), micState: $('welcome-mic-state'), micHint: $('welcome-mic-hint'), allowMic: $('welcome-allow-mic'),
-    hotkey: $('welcome-hotkey'),
+    hotkey: $('welcome-hotkey'), editHotkey: $('welcome-edit-hotkey'),
   };
 
   function render() {
@@ -36,6 +36,7 @@ export function createWelcomeSection(ctx) {
     if (!ctx.loaded()) el.keyState.textContent = UNKNOWN;
     else el.keyState.textContent = hasKey ? `${label} key saved` : `No ${label} key`;
     el.hotkey.textContent = formatChord(settings.hotkey, { mac });
+    el.editHotkey.textContent = formatChord(settings.editHotkey, { mac });
   }
 
   /** @param {string} [state] a PermissionState, or nothing when it could not be read */

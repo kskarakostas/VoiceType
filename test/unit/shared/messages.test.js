@@ -31,6 +31,7 @@ const CONTRACT = {
   GET_LAST_DICTATION: 'getLastDictation',
   GET_HISTORY: 'getHistory',
   CLEAR_HISTORY: 'clearHistory',
+  PROCESSING_PING: 'processingPing',
 };
 
 describe('MSG', () => {

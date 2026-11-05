@@ -229,8 +229,13 @@
                 <label class="field-label" for="hotkey">Hotkey</label>
                 <button type="button" class="hotkey" id="hotkey" aria-pressed="false" aria-describedby="hotkey-hint"></button>
               </div>
+              <div class="field">
+                <label class="field-label" for="edit-hotkey">Edit hotkey</label>
+                <button type="button" class="hotkey" id="edit-hotkey" aria-pressed="false" aria-describedby="edit-hotkey-hint"></button>
+              </div>
             </div>
             <p class="hint" id="hotkey-hint" aria-live="polite">Tap to toggle, hold to talk.</p>
+            <p class="hint" id="edit-hotkey-hint" aria-live="polite">Select text in a field, press this and say how to change it. The selected text goes to your provider.</p>
           </div>
         </section>
 
@@ -342,7 +347,7 @@
           <div class="card">
             <h2>Reset</h2>
             <button type="button" class="btn btn-danger btn-block" id="reset" aria-describedby="reset-hint">Reset to defaults</button>
-            <p class="hint" id="reset-hint">Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the hotkey, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.</p>
+            <p class="hint" id="reset-hint">Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the dictation and edit hotkeys, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.</p>
           </div>
         </section>
 
@@ -369,6 +374,7 @@
             <li class="card">
               <h2>Start dictating</h2>
               <p class="welcome-line"><kbd id="welcome-hotkey"></kbd>: click into any text field on a web page and press it.</p>
+              <p class="welcome-line"><kbd id="welcome-edit-hotkey"></kbd>: select text in a field and press it to edit by voice.</p>
             </li>
           </ol>
         </section>

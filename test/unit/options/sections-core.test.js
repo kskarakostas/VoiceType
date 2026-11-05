@@ -108,7 +108,7 @@ describe('settings page core sections layout', () => {
     for (const id of ['key-row-openai', 'key-openai', 'test-openai', 'clear-openai', 'key-row-gemini', 'key-gemini', 'spend-hint']) {
       expect(inRoute('settings/provider', id), id).toBe(true);
     }
-    for (const id of ['min-time', 'max-time', 'auto-stop', 'hotkey', 'hotkey-hint']) expect(inRoute('settings/recording', id), id).toBe(true);
+    for (const id of ['min-time', 'max-time', 'auto-stop', 'hotkey', 'hotkey-hint', 'edit-hotkey', 'edit-hotkey-hint']) expect(inRoute('settings/recording', id), id).toBe(true);
     for (const id of ['languages']) expect(inRoute('settings/speech', id), id).toBe(true);
     expect($('status')).toBeNull();
     expect($('status-text')).toBeNull();
@@ -347,6 +347,18 @@ describe('settings page hotkey recorder', () => {
     expect(button.textContent).toBe('Press keys');
   });
 
+  it('pressing the chord it already holds disarms and saves nothing', async () => {
+    const chrome = fakeChrome();
+    await start(chrome, 'settings/recording');
+    const button = $('hotkey');
+    button.click();
+    keydown(button, { code: 'Space', key: ' ', ctrlKey: true, shiftKey: true });
+    await flush();
+    expect(chrome.saves()).toHaveLength(0);
+    expect(button.textContent).toBe(formatChord(freshSettings().hotkey));
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+  });
+
   it('Escape cancels', async () => {
     const chrome = fakeChrome();
     await start(chrome, 'settings/recording');
@@ -359,6 +371,133 @@ describe('settings page hotkey recorder', () => {
     keydown(button, { code: 'KeyK', key: 'k', ctrlKey: true });
     await flush();
     expect(chrome.saves()).toHaveLength(0);
+  });
+});
+
+describe('settings page edit hotkey recorder', () => {
+  const EDIT_HINT = 'Select text in a field, press this and say how to change it. The selected text goes to your provider.';
+  const IDLE_HINT = 'Tap to toggle, hold to talk.';
+  const SAME_AS_DICTATION = 'Same as the dictation hotkey.';
+  const SAME_AS_EDIT = 'Same as the edit hotkey.';
+  const CTRL_SHIFT_E = { code: 'KeyE', key: 'E', ctrlKey: true, shiftKey: true };
+  const CTRL_SHIFT_SPACE = { code: 'Space', key: ' ', ctrlKey: true, shiftKey: true };
+
+  it('shows the label, the chord and the hint', async () => {
+    await start(fakeChrome(), 'settings/recording');
+    const button = $('edit-hotkey');
+    expect(document.querySelector('label[for="edit-hotkey"]').textContent).toBe('Edit hotkey');
+    expect(button.textContent).toBe('Ctrl+Shift+E');
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(button.getAttribute('aria-describedby')).toBe('edit-hotkey-hint');
+    expect($('edit-hotkey-hint').textContent).toBe(EDIT_HINT);
+    expect($('edit-hotkey-hint').getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('the Recording page saves an edit chord', async () => {
+    const chrome = fakeChrome();
+    await start(chrome, 'settings/recording');
+    const button = $('edit-hotkey');
+    button.click();
+    expect(button.textContent).toBe('Press keys');
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect($('edit-hotkey-hint').textContent).toBe('Press the new hotkey. Esc cancels.');
+    expect($('hotkey').textContent).toBe('Ctrl+Shift+Space');
+    expect($('hotkey-hint').textContent).toBe(IDLE_HINT);
+    keydown(button, { code: 'KeyJ', key: 'j', ctrlKey: true, altKey: true });
+    await flush();
+    const chord = { code: 'KeyJ', ctrl: true, shift: false, alt: true, meta: false };
+    expect(chrome.saves()).toEqual([{ editHotkey: chord }]);
+    expect(button.textContent).toBe(formatChord(chord));
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect($('edit-hotkey-hint').textContent).toBe(EDIT_HINT);
+    expect($('toast').textContent).toBe('Edit hotkey: Ctrl+Alt+J');
+  });
+
+  it('the page refuses a chord equal to the hotkey with "Same as the dictation hotkey."', async () => {
+    const chrome = fakeChrome();
+    await start(chrome, 'settings/recording');
+    const button = $('edit-hotkey');
+    button.click();
+    expect(keydown(button, CTRL_SHIFT_SPACE).defaultPrevented).toBe(true);
+    await flush();
+    expect($('edit-hotkey-hint').textContent).toBe(SAME_AS_DICTATION);
+    expect($('edit-hotkey-hint').dataset.tone).toBe('error');
+    expect(chrome.saves()).toHaveLength(0);
+    expect(button.textContent).toBe('Press keys');
+    keydown(button, { code: 'KeyJ', key: 'j', ctrlKey: true });
+    await flush();
+    expect(chrome.saves()).toEqual([{ editHotkey: { code: 'KeyJ', ctrl: true, shift: false, alt: false, meta: false } }]);
+    expect($('edit-hotkey-hint').textContent).toBe(EDIT_HINT);
+    expect($('edit-hotkey-hint').dataset.tone).toBeUndefined();
+  });
+
+  it('the dictation recorder refuses a chord equal to the edit hotkey', async () => {
+    const chrome = fakeChrome();
+    await start(chrome, 'settings/recording');
+    const button = $('hotkey');
+    button.click();
+    keydown(button, CTRL_SHIFT_E);
+    await flush();
+    expect($('hotkey-hint').textContent).toBe(SAME_AS_EDIT);
+    expect($('hotkey-hint').dataset.tone).toBe('error');
+    expect(chrome.saves()).toHaveLength(0);
+    expect(button.textContent).toBe('Press keys');
+    expect(keydown(button, { code: 'Escape', key: 'Escape' }).defaultPrevented).toBe(true);
+    expect($('hotkey-hint').textContent).toBe(IDLE_HINT);
+    expect($('hotkey-hint').dataset.tone).toBeUndefined();
+  });
+
+  it('a different modifier set is not the same chord', async () => {
+    const chrome = fakeChrome();
+    await start(chrome, 'settings/recording');
+    const button = $('edit-hotkey');
+    button.click();
+    keydown(button, { code: 'Space', key: ' ', ctrlKey: true, altKey: true });
+    await flush();
+    expect(chrome.saves()).toEqual([{ editHotkey: { code: 'Space', ctrl: true, shift: false, alt: true, meta: false } }]);
+  });
+
+  it('refuses against the chord saved now, not the one the page opened with', async () => {
+    const chrome = fakeChrome();
+    await start(chrome, 'settings/recording');
+    $('hotkey').click();
+    keydown($('hotkey'), { code: 'KeyD', key: 'd', ctrlKey: true });
+    await flush();
+    const button = $('edit-hotkey');
+    button.click();
+    keydown(button, { code: 'KeyD', key: 'd', ctrlKey: true });
+    await flush();
+    expect($('edit-hotkey-hint').textContent).toBe(SAME_AS_DICTATION);
+    keydown(button, CTRL_SHIFT_SPACE);
+    await flush();
+    expect(chrome.saves()).toHaveLength(2);
+    expect(chrome.saves()[1]).toEqual({ editHotkey: { code: 'Space', ctrl: true, shift: true, alt: false, meta: false } });
+  });
+
+  it('rejects a chord with no Ctrl, Alt or Cmd, and Escape restores the edit hint', async () => {
+    const chrome = fakeChrome();
+    await start(chrome, 'settings/recording');
+    const button = $('edit-hotkey');
+    button.click();
+    keydown(button, { code: 'Space', key: ' ', shiftKey: true });
+    expect($('edit-hotkey-hint').textContent).toBe('Use Ctrl, Alt or Cmd with a key');
+    keydown(button, { code: 'Escape', key: 'Escape' });
+    expect(button.textContent).toBe('Ctrl+Shift+E');
+    expect($('edit-hotkey-hint').textContent).toBe(EDIT_HINT);
+    expect(chrome.saves()).toHaveLength(0);
+  });
+
+  it('arming one recorder disarms the other', async () => {
+    await start(fakeChrome(), 'settings/recording');
+    const hotkey = $('hotkey');
+    const edit = $('edit-hotkey');
+    hotkey.click();
+    expect(hotkey.textContent).toBe('Press keys');
+    edit.click();
+    expect(edit.textContent).toBe('Press keys');
+    expect(hotkey.textContent).toBe('Ctrl+Shift+Space');
+    expect(hotkey.getAttribute('aria-pressed')).toBe('false');
+    expect($('hotkey-hint').textContent).toBe(IDLE_HINT);
   });
 });
 

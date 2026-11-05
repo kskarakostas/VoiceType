@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   SETTINGS_VERSION, BUILTIN_MODES, DEFAULT_SETTINGS, AUTO_STOP_CHOICES, CONTENT_PATCH_FIELDS, PILL_STYLES,
+  MAX_EDIT_CHARS, EDIT_MODE, EDIT_MODE_LABEL,
   freshSettings, recoverKey, migrateSettings, toPublicSettings, applySettingsPatch, orderedModeKeys,
 } from '../../../src/shared/defaults.js';
 import { isValidChord } from '../../../src/shared/chord.js';
@@ -29,6 +30,7 @@ const V1_SETTINGS = {
 };
 
 const DEFAULT_HOTKEY = { code: 'Space', ctrl: true, shift: true, alt: false, meta: false };
+const DEFAULT_EDIT_HOTKEY = { code: 'KeyE', ctrl: true, shift: true, alt: false, meta: false };
 
 /** A v2 record as Phase 0 stored it: no hotkey, no autoStopSilenceSec. */
 function phase0Settings() {
@@ -65,6 +67,7 @@ function fullV3Settings() {
   return {
     ...v2,
     settingsVersion: 3,
+    editHotkey: { code: 'KeyJ', ctrl: false, shift: false, alt: true, meta: false },
     dictionary: { any: ['Palowise', 'Karakostas'], el: ['Νόησις'] },
     siteRules: { 'mail.google.com': { hidePill: false, mode: 'email' }, 'example.com': { hidePill: true, mode: null } },
     pillStyle: 'pill',
@@ -75,7 +78,9 @@ function fullV3Settings() {
 }
 
 /** The v3 fields a v2 record gains when it migrates. */
-const V3_DEFAULTS = { siteRules: {}, pillStyle: 'dot', sounds: false, alwaysCopy: false, keepHistory: true };
+const V3_DEFAULTS = {
+  siteRules: {}, pillStyle: 'dot', sounds: false, alwaysCopy: false, keepHistory: true, editHotkey: DEFAULT_EDIT_HOTKEY,
+};
 
 describe('defaults', () => {
   it('default mode has no prompt and all built-ins are flagged', () => {
@@ -560,6 +565,89 @@ describe('migrateSettings', () => {
   it('v1: produces a record the v3 path accepts unchanged', () => {
     const s = migrateSettings(V1_SETTINGS);
     expect(migrateSettings(s)).toBe(s);
+  });
+});
+
+describe('the edit setting', () => {
+  it('defines the edit constants', () => {
+    expect(DEFAULT_SETTINGS.editHotkey).toEqual(DEFAULT_EDIT_HOTKEY);
+    expect(isValidChord(DEFAULT_SETTINGS.editHotkey)).toBe(true);
+    expect(Object.isFrozen(DEFAULT_SETTINGS.editHotkey)).toBe(true);
+    expect(MAX_EDIT_CHARS).toBe(10000);
+    expect(EDIT_MODE).toBe('edit-selection');
+    expect(EDIT_MODE_LABEL).toBe('Edit selection');
+  });
+
+  it('validation repairs a missing or invalid editHotkey', () => {
+    const { editHotkey: _editHotkey, ...missing } = fullV3Settings();
+    const bad = [
+      null, 'Ctrl+Shift+E', 5,
+      { code: 'KeyE', ctrl: false, shift: true, alt: false, meta: false },
+      { code: 'ShiftLeft', ctrl: true, shift: true, alt: false, meta: false },
+      { code: 'KeyE', ctrl: true },
+    ];
+    for (const stored of [missing, ...bad.map((editHotkey) => ({ ...fullV3Settings(), editHotkey }))]) {
+      const label = JSON.stringify(stored.editHotkey);
+      const s = migrateSettings(stored);
+      expect(s, label).not.toBe(stored);
+      expect(s.editHotkey, label).toEqual(DEFAULT_EDIT_HOTKEY);
+      expect(s.settingsVersion, label).toBe(3);
+      expect({ ...s, editHotkey: null }, label).toEqual({ ...fullV3Settings(), editHotkey: null });
+      expect(migrateSettings(s), label).toBe(s);
+    }
+  });
+
+  it('the repair shares nothing with the frozen defaults', () => {
+    const s = migrateSettings({ ...fullV3Settings(), editHotkey: null });
+    expect(s.editHotkey).not.toBe(DEFAULT_SETTINGS.editHotkey);
+    s.editHotkey.alt = true;
+    expect(DEFAULT_SETTINGS.editHotkey.alt).toBe(false);
+  });
+
+  it('keeps a valid editHotkey with the same reference', () => {
+    const stored = fullV3Settings();
+    expect(migrateSettings(stored)).toBe(stored);
+  });
+
+  it('gives a v2 record the default and keeps one a store that went back to 2.2 still holds', () => {
+    expect(migrateSettings(fullSettings()).editHotkey).toEqual(DEFAULT_EDIT_HOTKEY);
+    const editHotkey = { code: 'KeyJ', ctrl: false, shift: false, alt: true, meta: false };
+    expect(migrateSettings({ ...fullSettings(), editHotkey }).editHotkey).toEqual(editHotkey);
+  });
+
+  it('leaves a stored editHotkey equal to the hotkey alone: dictation wins at the page (V41)', () => {
+    const stored = { ...fullV3Settings(), editHotkey: fullV3Settings().hotkey };
+    expect(migrateSettings(stored)).toBe(stored);
+  });
+
+  it('editHotkey is public', () => {
+    const settings = fullV3Settings();
+    const pub = toPublicSettings(settings);
+    expect(pub.editHotkey).toEqual(settings.editHotkey);
+    expect(pub.editHotkey).not.toBe(settings.editHotkey);
+  });
+
+  it('a stored mode with key EDIT_MODE is dropped by validation', () => {
+    const base = fullV3Settings();
+    const stored = {
+      ...base,
+      activeMode: EDIT_MODE,
+      modes: { ...base.modes, [EDIT_MODE]: { name: 'Mine', icon: '🎯', prompt: 'x', builtIn: false } },
+      siteRules: { ...base.siteRules, 'a.com': { hidePill: true, mode: EDIT_MODE }, 'b.com': { hidePill: false, mode: EDIT_MODE } },
+    };
+    const s = migrateSettings(stored);
+    expect(s.modes).toEqual(base.modes);
+    expect(s.activeMode).toBe('default');
+    expect(s.siteRules).toEqual({ ...base.siteRules, 'a.com': { hidePill: true, mode: null } });
+    expect(migrateSettings(s)).toBe(s);
+  });
+
+  it('drops EDIT_MODE from a v2 and a v1 record too', () => {
+    const mode = { name: 'Mine', icon: '🎯', prompt: 'x', builtIn: false };
+    const v2 = fullSettings();
+    expect(migrateSettings({ ...v2, modes: { ...v2.modes, [EDIT_MODE]: mode } }).modes).not.toHaveProperty(EDIT_MODE);
+    expect(migrateSettings({ activeMode: EDIT_MODE, modes: { [EDIT_MODE]: mode } }).modes).not.toHaveProperty(EDIT_MODE);
+    expect(migrateSettings({ activeMode: EDIT_MODE, modes: { [EDIT_MODE]: mode } }).activeMode).toBe('default');
   });
 });
 
