@@ -260,15 +260,16 @@ function editableSelection(el) {
 
 /**
  * Where a contenteditable selection ends (V42): its last point in a text node holding more than
- * whitespace, the range's own end when that is one. A triple click runs on into the next block, and
- * a write over that much pulls the block up into this one.
+ * whitespace, the range's own end when the part of its node inside the range does. A triple click
+ * runs on into the next block, and a write over that much pulls the block up into this one.
  * @param {Element} el
  * @param {Range} range changed in place, and left as it is when it holds no such node
  * @returns {Range}
  */
 function endAtText(el, range) {
   const { endContainer: end, endOffset } = range;
-  if (end.nodeType === Node.TEXT_NODE && endOffset > 0 && hasText(end.data)) return range;
+  const startInNode = range.startContainer === end ? range.startOffset : 0;
+  if (end.nodeType === Node.TEXT_NODE && hasText(end.data.slice(startInNode, endOffset))) return range;
   const walker = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   let last = null;
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {

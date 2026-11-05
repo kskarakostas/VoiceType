@@ -358,6 +358,46 @@ for (const [name, html, block] of [
   });
 }
 
+for (const [name, select] of [
+  ['a triple click', (first) => first.click({ clickCount: 3 })],
+  ['Shift+Down from the start of its line', async (first, page) => {
+    await first.click();
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Shift+ArrowDown');
+  }],
+  // No gesture tried on Chromium 153 or Chrome 140 ends here: a page's script has to set this end.
+  ['a selection a script ends in the next item\'s leading whitespace', (first) => first.evaluate((item) => {
+    const selection = document.getSelection();
+    const range = document.createRange();
+    range.setStart(item.firstChild, 5);
+    range.setEnd(item.nextElementSibling.firstChild, 3);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  })],
+]) {
+  test(`${name} on a list item that source formatting indents leaves the items apart, and Ctrl+Z restores`, async () => {
+    const page = await openPage();
+    const field = page.locator('#ce');
+    await focusField(page, field);
+    await field.evaluate((el) => {
+      el.innerHTML = '<ul>\n  <li>\n    first line\n  </li>\n  <li>\n    second line\n  </li>\n</ul>';
+    });
+    const before = await field.evaluate((el) => el.innerHTML);
+    const items = field.locator('li');
+    await select(items.first(), page);
+
+    await editByVoice(page);
+
+    await expect.poll(() => pillStatus(page)).toMatch(/^Done /);
+    expect(JSON.parse(refineCalls[0].input).selected_text).toBe('first line');
+    expect((await items.allTextContents()).map((text) => text.trim())).toEqual([EDITED, 'second line']);
+
+    await page.keyboard.press('Control+z');
+
+    await expect.poll(() => field.evaluate((el) => el.innerHTML)).toBe(before);
+  });
+}
+
 test('a triple click on a line of a preformatted contenteditable keeps the line break the field holds', async () => {
   const page = await openPage();
   const field = page.locator('#ce');

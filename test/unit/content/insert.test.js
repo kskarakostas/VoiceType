@@ -1112,6 +1112,12 @@ const END_SHAPES = [
     FIRST_P, (el) => [el.childNodes[1], 2], { text: 'first line', start: 0, end: 10 }],
   ['an end at offset 0 of the next text', '<p>first line</p><p>second line</p>',
     FIRST_P, (el) => [LAST_P(el).firstChild, 0], { text: 'first line', start: 0, end: 10 }],
+  ['an end in the leading whitespace of the next list item', '<ul><li>first line</li><li>\n    second\n  </li></ul>',
+    FIRST_LI, (el) => [el.querySelectorAll('li')[1].firstChild, 3], { text: 'first line', start: 0, end: 10 }],
+  ['an end in the leading whitespace of the next paragraph', '<p>first line</p><p>\n  second</p>',
+    FIRST_P, (el) => [LAST_P(el).firstChild, 3], { text: 'first line', start: 0, end: 10 }],
+  ['an end after the zero-width character leading the next paragraph', '<p>first line</p><p>\u200Bsecond</p>',
+    FIRST_P, (el) => [LAST_P(el).firstChild, 1], { text: 'first line', start: 0, end: 10 }],
   ['a real trailing br', 'first line<br>second line',
     (el) => el.firstChild, (el) => [el, 2], { text: 'first line', start: 0, end: 10 }],
   ['a trailing image', 'first line<img alt="">',
@@ -1171,6 +1177,20 @@ describe('the end of a contenteditable selection', () => {
   it('spaces inside the last text node stay', () => {
     const el = selectShape('<p>first line  </p>\n<p>second line</p>', FIRST_P, (e) => [LAST_P(e), 0]);
     expect(readSelection(el)).toEqual({ text: 'first line  ', start: 0, end: 12 });
+  });
+
+  it('an end past the leading whitespace of a text node stays there', () => {
+    const el = selectShape('<p>first line</p><p>\n  second</p>', FIRST_P, (e) => [LAST_P(e).firstChild, 5]);
+    const end = LAST_P(el).firstChild;
+    expect(readSelection(el)).toMatchObject({ start: 0, end: 15 });
+    expect(document.getSelection().getRangeAt(0).endContainer).toBe(end);
+  });
+
+  it('a text node with spaces selected after its text keeps them, its start in the node', () => {
+    const el = editable('<p>keep this  word</p>');
+    el.focus();
+    selectRange(FIRST_P(el), 5, FIRST_P(el), 11);
+    expect(readSelection(el)).toEqual({ text: 'this  ', start: 5, end: 11 });
   });
 
   it('a line break in the last text node stays, in a preformatted field', () => {
