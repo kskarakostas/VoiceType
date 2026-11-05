@@ -16,17 +16,17 @@ VoiceType collects and processes the following data **locally on your device**:
 2. **API Keys**: Your OpenAI or Google Gemini API keys, stored in plain text in Chrome's local extension storage
 3. **Settings**: Your preferences (provider, modes, Translate target language, recording limits, silence auto-stop, hotkey, spoken languages, pill style, sounds, always-copy, keep recent dictations)
 4. **Dictionary**: The terms you add, by language
-5. **Site Rules**: The hostnames you add a rule for, with that rule (Hide pill, mode). VoiceType stores only the sites you set a rule on
+5. **Site Rules**: The hostnames you add a rule for, with that rule (Hide pill, mode). Recent dictations (item 7) also hold the site of each dictation; no other site is stored
 6. **Usage Statistics**: Session counts, audio duration, word counts, modes used, and estimated costs per day. Word counts are numbers; the statistics hold no transcript
 7. **Recent dictations**: With Keep recent dictations on, which is the default, the text of your last 20 dictations, the transcript before a mode changed it, the mode, the site and the time. Off, none of this is kept. A dictation in an incognito tab is never kept
 
 ### What We Do NOT Collect
 
 - Personal information
-- Browsing history
+- Browsing history (the site of a recent dictation, item 7, is the only exception)
 - Form data or passwords
 - Any data for advertising purposes
-- Clipboard contents (VoiceType writes dictated text to the clipboard when it cannot insert it, and on every dictation with Always copy the result on; it never reads the clipboard)
+- Clipboard contents (VoiceType writes dictated text to the clipboard when it cannot insert it, when you click a Copy action, and on every dictation with Always copy the result on; it never reads the clipboard)
 
 ## Data Storage
 
@@ -36,7 +36,7 @@ VoiceType collects and processes the following data **locally on your device**:
 - No data is sent to our servers (we don't have any servers)
 - Your dictionary and site rules are stored locally. Dictionary terms leave this device only with a recording, as described below; site rules never do
 - Usage statistics are stored locally and never transmitted
-- Recent dictations are held in Chrome's session storage, in memory, not on disk, and never leave this device. Only VoiceType's service worker and extension pages can read that store. A web page's in-page script can ask for the newest dictation of its own site, when you open the pill menu; a frame from another site gets nothing
+- Recent dictations are held in Chrome's session storage, in memory, not on disk, and never leave this device. Only VoiceType's service worker and extension pages can read that store. VoiceType's own in-page script can ask for the newest dictation of the site it runs on, when you open the pill menu; the web page's scripts cannot ask, and a frame from another site gets nothing. With VoiceType allowed in incognito, an incognito tab of a site can be offered that site's newest dictation from a normal tab
 
 ## Data Transmission
 
@@ -83,7 +83,7 @@ Your use of these services is subject to their terms and privacy policies.
 You can:
 
 - **Clear your API keys** at any time through the extension settings
-- **Clear usage statistics** on the settings page under Usage and data
+- **Clear usage history** on the settings page under Usage and data
 - **Clear recent dictations**, or turn them off, on the History page of the settings page
 - **Remove dictionary terms and site rules** on the Dictionary and Sites pages of the settings page
 - **Uninstall the extension** to remove all stored data

@@ -198,7 +198,7 @@ Then in Chrome 140 or newer:
 1. A first install opens a **Welcome** page: it shows whether you have a key, the microphone and your hotkey. Pin the VoiceType icon from the puzzle piece menu and click it, then **Add API key**. The settings page opens at **Provider**
 2. Using Gemini? Select **Gemini** at the top of that page first. Paste your API key. It saves on its own
 3. Open a web page (VoiceType does not run on Chrome's own pages or its extension pages) and click into a text field, then hold `Ctrl+Shift+Space` while you speak, or point at the dot beside the field and click **REC**
-4. The first time, VoiceType opens a tab asking for the microphone. Choose **Allow while visiting the site**, then start again
+4. The first time, unless you already used **Allow microphone** on the Welcome page, VoiceType opens a tab asking for the microphone. Choose **Allow while visiting the site**, then start again
 
 ---
 
@@ -224,7 +224,7 @@ Only real key presses count. A web page cannot trigger the hotkey with synthetic
 
 VoiceType records in its own extension page, not in the website you are typing on. The website never gets your microphone, and one permission covers every site, including sites whose policy blocks the microphone.
 
-The first recording opens a VoiceType tab that asks for the microphone. Choose **Allow while visiting the site**. "Allow this time" can expire as soon as that tab closes, and then VoiceType has to ask again.
+The first recording opens a VoiceType tab that asks for the microphone, unless you already used **Allow microphone** on the Welcome page. Choose **Allow while visiting the site**. "Allow this time" can expire as soon as that tab closes, and then VoiceType has to ask again.
 
 While VoiceType records, Chrome shows its microphone indicator in the system tray or menu bar; the website's tab shows none. The microphone is released after every recording.
 
@@ -249,7 +249,7 @@ Blocked it by mistake? Open `chrome://settings/content/microphone`, find VoiceTy
 
 ## ⚙️ Settings and Quick Panel
 
-Click the VoiceType icon for the quick panel: status, provider, active mode, **This site** (Hide pill and Mode on this site), today's sessions and cost, **Copy last** and **Open settings**.
+Click the VoiceType icon for the quick panel: status, provider, active mode, **This site** (Hide pill and Mode on this site), today's sessions and cost, **Copy last** (hidden with Keep recent dictations off) and **Open settings**.
 
 The settings page opens in a tab, also from **Extension options** on `chrome://extensions`. **Home**, **Modes**, **Dictionary** and **History** come first, then Settings: **Provider**, **Recording**, **Speech**, **Sites**, **Appearance**, **Sound and clipboard**, **Usage and data**.
 
@@ -258,7 +258,7 @@ The settings page opens in a tab, also from **Extension options** on `chrome://e
   - **Maximum length** (30 s to 5 min; default 2 min): recording stops at this length, the pill says "Max time reached", and what you said is transcribed.
   - **Silence auto-stop** (Off, 2, 3 or 5 s; default Off): once you have spoken, recording stops after this much silence.
 - **Sites**: **Hide pill** removes the idle pill on a site; the hotkey still records there, with a small indicator at the bottom of the page. **Mode** gives a site its own mode. The rule goes by hostname, without `www.`; subdomains need their own rule. On a site with a mode, a mode picked in the pill menu updates that site; **Use active mode** clears it.
-- **History**: your last 20 dictations with time, site and mode. **Copy** takes the text, **Copy original** the transcript from before a mode changed it. **Keep recent dictations** is on by default; turning it off clears them. A dictation in an incognito tab is not kept.
+- **History**: your last 20 dictations with time, site and mode. A dictation in a frame from another site shows **This device** instead of a site. **Copy** takes the text, **Copy original** the transcript from before a mode changed it. **Keep recent dictations** is on by default; turning it off clears them. A dictation in an incognito tab is not kept.
 - **Appearance**
   - **Dot** (default): a small dot beside the field that opens into the bar when you point at it.
   - **Pill**: the full bar beside the field, always in view.
@@ -274,7 +274,7 @@ If the frame you dictate in is out of sight, hidden or covered, VoiceType shows 
 
 ## 🕘 Last Dictation
 
-Open the pill menu on a site where you dictated: **Last dictation** offers **Insert**, **Copy** and, when a mode changed the text, **Undo AI edit**. Minimal has no menu; use **Copy last** in the quick panel.
+Open the pill menu on a site where you dictated: **Last dictation** offers **Insert**, **Copy** and, when a mode changed the text, **Undo AI edit**. Minimal and a site with Hide pill have no menu; use **Copy last** in the quick panel, which copies your newest dictation from any site.
 
 - **Insert** goes to the field focused when you click. With no field, or in a password field, the text goes to the clipboard.
 - **Undo AI edit** puts the original transcript back in a text field or text box when the inserted text is still exactly where it landed; one `Ctrl+Z` brings the edit back. Anything else, a rich editor included, copies the original and says so.
