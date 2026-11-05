@@ -12,21 +12,22 @@ VoiceType is a Chrome extension that provides AI-powered speech-to-text function
 
 VoiceType collects and processes the following data **locally on your device**:
 
-1. **Audio Data**: Temporarily recorded for transcription purposes
+1. **Audio Data**: Temporarily recorded for transcription purposes, and held in memory while a dictation is processing
 2. **API Keys**: Your OpenAI or Google Gemini API keys, stored in plain text in Chrome's local extension storage
-3. **Settings**: Your preferences (provider, modes, Translate target language, recording limits, silence auto-stop, hotkey, spoken languages, pill style, sounds, always-copy, keep recent dictations)
+3. **Settings**: Your preferences (provider, modes, Translate target language, recording limits, silence auto-stop, the dictation and edit hotkeys, spoken languages, pill style, sounds, always-copy, keep recent dictations)
 4. **Dictionary**: The terms you add, by language
-5. **Site Rules**: The hostnames you add a rule for, with that rule (Hide pill, mode). Recent dictations (item 7) also hold the site of each dictation; no other site is stored
-6. **Usage Statistics**: Session counts, audio duration, word counts, modes used, and estimated costs per day. Word counts are numbers; the statistics hold no transcript
-7. **Recent dictations**: With Keep recent dictations on, which is the default, the text of your last 20 dictations, the transcript before a mode changed it, the mode, the site and the time. Off, none of this is kept. A dictation in an incognito tab is never kept
+5. **Site Rules**: The hostnames you add a rule for, with that rule (Hide pill, mode). Recent dictations (item 7) also hold the site of each dictation, and a dictation being processed holds its site until it ends (see Data Storage); no other site is stored
+6. **Usage Statistics**: Session counts, audio duration, word counts, modes used, and estimated costs per day. Word counts are numbers; the statistics hold no transcript and no selected text
+7. **Recent dictations**: With Keep recent dictations on, which is the default, the text of your last 20 dictations, the transcript before a mode changed it, the mode, the site and the time. For an edit, that is the replacement and your spoken instruction, never the selected text. Off, none of this is kept. A dictation in an incognito tab is never kept, nor is one run again after a stopped service worker (see Data Storage)
+8. **Selected Text**: With the edit hotkey, the text you selected in the focused field, taken at that press and from nowhere else. It is held in memory while the edit is processing (see Data Storage) and sent as described under Data Transmission. It is not stored after that
 
 ### What We Do NOT Collect
 
 - Personal information
-- Browsing history (the site of a recent dictation, item 7, is the only exception)
-- Form data or passwords
+- Browsing history (the site of a recent dictation, item 7, and of a dictation being processed are the only exceptions)
+- Form data or passwords (the text you select in a field goes to your provider only with the edit hotkey, item 8; a password field is refused)
 - Any data for advertising purposes
-- Clipboard contents (VoiceType writes dictated text to the clipboard when it cannot insert it, when you click a Copy action, and on every dictation with Always copy the result on; it never reads the clipboard)
+- Clipboard contents (VoiceType writes dictated text or an edit's result to the clipboard when it cannot insert it, when you click a Copy action, and on every dictation with Always copy the result on; it never reads the clipboard)
 
 ## Data Storage
 
@@ -37,6 +38,7 @@ VoiceType collects and processes the following data **locally on your device**:
 - Your dictionary and site rules are stored locally. Dictionary terms leave this device only with a recording, as described below; site rules never do
 - Usage statistics are stored locally and never transmitted
 - Recent dictations are held in Chrome's session storage, in memory, not on disk, and never leave this device. Only VoiceType's service worker and extension pages can read that store. VoiceType's own in-page script can ask for the newest dictation of the site it runs on, when you open the pill menu; the web page's scripts cannot ask, and a frame from another site gets nothing. With VoiceType allowed in incognito, an incognito tab of a site can be offered that site's newest dictation from a normal tab
+- While a dictation is processing, its audio, an edit's selected text and its site are held in the same session storage, in memory, not on disk, so that a stopped service worker can retry once. That retry is a second provider charge. This holds for incognito tabs too. Only VoiceType's service worker and extension pages can read that store; its in-page script and web pages cannot. It is cleared when the result is delivered or copied or the dictation fails. If a stopped service worker leaves it behind, it goes when its tab closes or the next time the service worker runs after two minutes, and at the latest when you close the browser
 
 ## Data Transmission
 
@@ -47,33 +49,37 @@ Audio data is transmitted only to:
 1. **OpenAI API** (api.openai.com) - when using OpenAI provider
 2. **Google AI API** (generativelanguage.googleapis.com) - when using Gemini provider
 
-These transmissions occur only when you actively record and submit audio for transcription. The audio is sent directly to the chosen API provider and is subject to their respective privacy policies:
+These transmissions occur only when you actively record and submit audio for transcription. If the service worker stops while that audio is processing, the same recording is sent once more, with no action from you, while the page that recorded it is open and for up to two minutes after the recording ended. That is a second provider charge. The audio is sent directly to the chosen API provider and is subject to their respective privacy policies:
 
 - [OpenAI Privacy Policy](https://openai.com/privacy/)
 - [Google AI Privacy Policy](https://ai.google.dev/terms)
 
+Selected text is transmitted only after a press of the edit hotkey, and only from the focused field. It goes with your spoken instruction, directly to the text model of the provider you chose, never to the speech recognition model and nowhere else. If the service worker stops, as above, it is sent a second time with the recording. Dictating over a selection does not send the selection.
+
 ## Third-Party Services
 
-VoiceType uses third-party AI services for transcription and mode processing:
+VoiceType uses third-party AI services for transcription, mode processing and edits:
 
-- **OpenAI**: `gpt-transcribe` for speech recognition, `gpt-6-luna` for modes (Email, Translate, Instruct and custom modes)
-- **Google Gemini**: `gemini-3.5-transcribe` for speech recognition, `gemini-3.8-flash` for modes
+- **OpenAI**: `gpt-transcribe` for speech recognition, `gpt-6-luna` for modes (Email, Translate, Instruct and custom modes) and edits
+- **Google Gemini**: `gemini-3.5-transcribe` for speech recognition, `gemini-3.8-flash` for modes and edits
 
 Mode processing sends the transcript text, not the audio, to the text model of the same provider you chose for speech recognition. Your spoken-language hints and dictionary terms, when set, are sent with the audio to the speech recognition model. Every term of every language group is sent with every recording.
+
+An edit sends your spoken instruction and the selected text, not the audio, to that same text model, with VoiceType's fixed edit instructions. Your active mode and a site's mode do not apply.
 
 Your use of these services is subject to their terms and privacy policies.
 
 ## Permissions
 
-- **Access to all sites** (`<all_urls>`): the in-page script that shows the pill runs on every site so you can dictate anywhere. VoiceType uses the host permission itself to put that script back into tabs that are already open when VoiceType is installed or updated. The same permission is what lets the background service worker call the OpenAI and Gemini APIs. The script looks only at the field you focus and dictate into; it does not read or send page content.
+- **Access to all sites** (`<all_urls>`): the in-page script that shows the pill runs on every site so you can dictate anywhere. VoiceType uses the host permission itself to put that script back into tabs that are already open when VoiceType is installed or updated. The same permission is what lets the background service worker call the OpenAI and Gemini APIs. The script looks only at the field you focus and dictate into, and reads a selection only in that field, on a press of the edit hotkey; it does not read or send any other page content.
 - **scripting**: the re-injection described above.
 - **offscreen**: the extension document that records the microphone. It also plays the optional sounds and copies results.
-- **storage**: settings, keys, dictionary, site rules and usage statistics on this device, and recent dictations in memory.
+- **storage**: settings, keys, dictionary, site rules and usage statistics on this device, and recent dictations in memory, along with the audio and any selected text of a dictation being processed.
 - **clipboardWrite**: copying a result to the clipboard with no click: for Always copy the result, and for text VoiceType cannot insert. Chrome describes it as "Modify data you copy and paste". VoiceType does not read the clipboard. Always copy the result is off by default.
 
 ## Data Retention
 
-- Audio recordings are processed in memory and immediately discarded after transcription. Closing the tab or navigating it away while it records cancels the recording without sending it. Switching to another tab does not: the recording goes on until you stop it or it reaches the maximum length, and that audio is sent
+- Audio recordings and an edit's selected text are processed in memory and discarded once the result is delivered or copied or the dictation fails. Closing the tab or navigating it away while it records cancels the recording without sending it, and an edit's selected text goes with it, as it does with a recording too short to count. Switching to another tab does not: the recording goes on until you stop it or it reaches the maximum length, and that audio is sent, with an edit's selected text
 - Settings, API keys, your dictionary and site rules persist until you clear them or uninstall the extension
 - Recent dictations: at most 20, gone when you close the browser, or when the extension is reloaded, updated or turned off, or when you clear them or turn them off
 - Usage statistics: daily history is trimmed to 90 days each time a dictation is logged; all-time totals are kept until you clear them

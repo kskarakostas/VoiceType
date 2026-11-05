@@ -47,6 +47,9 @@ Bring your own OpenAI or Gemini key. Speech recognition uses `gpt-transcribe` or
 ### 📧 Smart Modes
 Not just transcription: compose emails, translate languages, or ask AI questions directly with your voice.
 
+### ✏️ Edit by Voice
+Select text in a field, press the edit hotkey and say how to change it. The selection is replaced, as plain text.
+
 </td>
 <td width="50%">
 
@@ -195,7 +198,7 @@ Then in Chrome 140 or newer:
 
 ### 3. Configure & Go
 
-1. A first install opens a **Welcome** page: it shows whether you have a key, the microphone and your hotkey. Pin the VoiceType icon from the puzzle piece menu and click it, then **Add API key**. The settings page opens at **Provider**
+1. A first install opens a **Welcome** page: it shows whether you have a key, the microphone and your hotkeys. Pin the VoiceType icon from the puzzle piece menu and click it, then **Add API key**. The settings page opens at **Provider**
 2. Using Gemini? Select **Gemini** at the top of that page first. Paste your API key. It saves on its own
 3. Open a web page (VoiceType does not run on Chrome's own pages or its extension pages) and click into a text field, then hold `Ctrl+Shift+Space` while you speak, or point at the dot beside the field and click **REC**
 4. The first time, unless you already used **Allow microphone** on the Welcome page, VoiceType opens a tab asking for the microphone. Choose **Allow while visiting the site**, then start again
@@ -217,6 +220,34 @@ On Windows, do not choose a combination with both Ctrl and Alt: AltGr reports as
 The hotkey works on web pages once they have loaded. Extensions cannot run on `chrome://` pages, the Chrome Web Store or the new tab page, and VoiceType does not run on its own settings page, so it does nothing there.
 
 Only real key presses count. A web page cannot trigger the hotkey with synthetic key events from its own scripts.
+
+---
+
+## ✏️ Edit by Voice
+
+Select text in a field, press `Ctrl+Shift+E` (the Control key on a Mac too) and say how to change it, such as "make this shorter" or "translate this into Greek". What you said is the instruction: it is never inserted. The selection is replaced with the result.
+
+- **Hold** the hotkey while you speak and let go, or **tap** it to start and tap again to stop. The pill says "Say how to change the selection."
+- In text boxes, one `Ctrl+Z` brings back the text you selected.
+- The selected text goes to the text model of the provider you chose (`gpt-6-luna` or `gemini-3.8-flash`), with your instruction. It goes only after a press of this hotkey, only from the focused field, and never to the speech model. See What Is Sent below.
+- An edit adds a small text cost. The active mode and a site's mode do not apply.
+- Dictating over a selection has not changed: the dictation hotkey and **REC** put what you say in its place, and the selected text is sent nowhere.
+- Change the hotkey under **Settings, Recording, Edit hotkey**, by the same rules as the dictation hotkey. It cannot be the same chord: the page says "Same as the dictation hotkey."
+
+**Limits**
+- A selection inside the focused field only. Text selected elsewhere on the page cannot be edited.
+- Plain text: the selection's formatting is not kept.
+- 10,000 characters at most. Past that the pill says "Selection too long to edit (10,000 characters at most)."
+- With nothing selected the key press goes through to the page. In a field the pill also says "Select the text to edit first." Input types with no selection support (such as email) and Google Docs read as nothing selected.
+- Password fields are refused.
+- While VoiceType records or processes, or a result is waiting for you, this hotkey does what the dictation hotkey does then.
+
+**When an edit cannot land**
+- The result goes in only if the field still has focus and the same text is still selected at the same place. Anything else copies it: the pill says "Selection changed. Result copied to clipboard." VoiceType never searches for the text.
+- If you are in another window or tab when the result arrives, it waits as dictated text does ("Return to the field to insert, or click here to copy."), and gets the same check when you come back.
+- In rich editors, a replacement VoiceType cannot confirm is also on the clipboard, and the pill says so.
+- "No speech detected." changes nothing in the field.
+- If the text model fails or returns nothing, the field does not change and the pill says "Could not edit the selection. Click here to copy what you said." The click copies your instruction; the next press records, so you can try the same edit again at once. Speech recognition was paid for, so usage counts it. A failed edit adds no entry to History, and with the tab gone your instruction is not copied.
 
 ---
 
@@ -244,6 +275,7 @@ Blocked it by mistake? Open `chrome://settings/content/microphone`, find VoiceTy
 - In text boxes, one `Ctrl+Z` removes exactly the dictated text.
 - Fields inside iframes and open shadow roots work too. VoiceType does not record in password fields, and input types such as number or date get no pill.
 - With **Always copy the result** on, every dictation also goes to the clipboard, replacing what is there. If that copy fails, the status says "Not copied." and the text still goes to the field.
+- If VoiceType's service worker stops while a dictation is processing, the page asks for it and VoiceType runs the same recording again, once, within two minutes of the recording's end. That is a second provider charge. The text lands as usual, and the dictation adds no entry to History. If that cannot happen, the pill says "VoiceType restarted. Check the clipboard, or try again."
 
 ---
 
@@ -257,8 +289,9 @@ The settings page opens in a tab, also from **Extension options** on `chrome://e
   - **Minimum length** (0.5, 1, 2 or 3 s; default 1 s): shorter recordings are discarded as accidental clicks, and the pill says "Too short, ignored".
   - **Maximum length** (30 s to 5 min; default 2 min): recording stops at this length, the pill says "Max time reached", and what you said is transcribed.
   - **Silence auto-stop** (Off, 2, 3 or 5 s; default Off): once you have spoken, recording stops after this much silence.
+  - **Edit hotkey** (default `Ctrl+Shift+E`): see Edit by Voice above. **Reset to defaults** resets it.
 - **Sites**: **Hide pill** removes the idle pill on a site; the hotkey still records there, with a small indicator at the bottom of the page. **Mode** gives a site its own mode. The rule goes by hostname, without `www.`; subdomains need their own rule. On a site with a mode, a mode picked in the pill menu updates that site; **Use active mode** clears it.
-- **History**: your last 20 dictations with time, site and mode. A dictation in a frame from another site shows **This device** instead of a site. **Copy** takes the text, **Copy original** the transcript from before a mode changed it. **Keep recent dictations** is on by default; turning it off clears them. A dictation in an incognito tab is not kept.
+- **History**: your last 20 dictations with time, site and mode. A dictation in a frame from another site shows **This device** instead of a site. **Copy** takes the text, **Copy original** the transcript from before a mode changed it. An edit shows **Edit selection** as its mode: **Copy** takes the result and **Copy instruction** what you said; the selected text is not kept. **Keep recent dictations** is on by default; turning it off clears them. A dictation in an incognito tab is not kept.
 - **Appearance**
   - **Dot** (default): a small dot beside the field that opens into the bar when you point at it.
   - **Pill**: the full bar beside the field, always in view.
@@ -278,6 +311,7 @@ Open the pill menu on a site where you dictated: **Last dictation** offers **Ins
 
 - **Insert** goes to the field focused when you click. With no field, or in a password field, the text goes to the clipboard.
 - **Undo AI edit** puts the original transcript back in a text field or text box when the inserted text is still exactly where it landed; one `Ctrl+Z` brings the edit back. Anything else, a rich editor included, copies the original and says so.
+- An edit offers **Insert** and **Copy** for its result, and no **Undo AI edit**: `Ctrl+Z` is its undo.
 - The menu only offers what was dictated on this site. A frame from another site on the page gets nothing.
 
 ---
@@ -323,7 +357,7 @@ VoiceType listens for the hotkey inside web pages, so click into the page first.
 <details>
 <summary><b>Why did my text go to the clipboard?</b></summary>
 <br>
-The field you started in lost focus or disappeared before the text arrived, no field was focused, or the site (Google Docs) does not accept inserted text. VoiceType never types into a different field. Paste with <code>Ctrl+V</code>.
+The field you started in lost focus or disappeared before the text arrived, no field was focused, the selection you were editing changed, or the site (Google Docs) does not accept inserted text. VoiceType never types into a different field. Paste with <code>Ctrl+V</code>.
 </details>
 
 <details>
@@ -350,6 +384,7 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 | **Asked for the microphone every time** | You chose "Allow this time". Reset it at `chrome://settings/content/microphone`, start a recording and choose **Allow while visiting the site** |
 | **Hotkey doesn't work** | Click into the page first. Browser shortcuts such as `Ctrl+T` never reach a page; set another hotkey under Settings, Recording, Hotkey |
 | **"VoiceType was turned off or updated. Reload this page."** | VoiceType was turned off on `chrome://extensions`, or that tab could not be switched to the new version. Turn VoiceType on if it is off, then reload the page |
+| **"VoiceType restarted. Check the clipboard, or try again."** | VoiceType's service worker stopped during processing and the dictation could not be run again. Check the clipboard, then dictate again |
 | **Text went to the clipboard** | Focus moved before the text arrived, or the site does not accept inserted text. Paste with `Ctrl+V` |
 | **Transcription fails** | Check your API key and account balance |
 | **VoiceType is off after an update** | A store install stays off until you accept the new permission: open the Chrome menu, click the VoiceType line, then **Accept permissions**. Loading the new build unpacked asks nothing |
@@ -364,9 +399,9 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 | Provider | Model | Cost |
 |----------|-------|------|
 | OpenAI | gpt-transcribe | ~$0.0045 per minute |
-| OpenAI | gpt-6-luna (modes) | $0.10 in / $0.50 out per 1M tokens |
+| OpenAI | gpt-6-luna (modes, edits) | $0.10 in / $0.50 out per 1M tokens |
 | Gemini | gemini-3.5-transcribe | ~$0.006 per minute |
-| Gemini | gemini-3.8-flash (modes) | $0.75 in / $3.75 out per 1M tokens (list price through 2026) |
+| Gemini | gemini-3.8-flash (modes, edits) | $0.75 in / $3.75 out per 1M tokens (list price through 2026) |
 
 *A typical 30-second recording costs less than $0.01*
 
@@ -378,8 +413,11 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 |------|---------------------|-------------------|
 | No instructions (Default as shipped) | Audio, spoken languages, dictionary terms | Nothing |
 | With instructions | Audio, spoken languages, dictionary terms | The transcript text and the mode's instructions, never the audio |
+| Edit hotkey | Audio, spoken languages, dictionary terms | The transcript of your instruction, the selected text and VoiceType's fixed edit instructions, never the audio |
 
 - Everything goes straight from your browser to the provider you chose, with your key. Both steps use that same provider.
+- Selected text goes only to the text model, only with the edit hotkey. The dictation hotkey never sends it.
+- While a dictation is processing, its audio and an edit's selected text are held in Chrome's session storage, in memory. If the service worker stops, they are sent once more: that is a second provider charge.
 - On Gemini, speech recognition already removes filler words and self-corrections and formats the text, even in Default. On OpenAI, Default returns the transcript as recognized.
 
 ---
@@ -389,6 +427,8 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 - ✅ API keys stored in plain text in Chrome's local extension storage, readable only by VoiceType's own service worker and extension pages, never synced, never sent anywhere but the provider
 - ✅ Web pages never receive your keys or your microphone; audio is recorded in VoiceType's own extension page
 - ✅ Audio sent directly to OpenAI/Google (not our servers)
+- ✅ Selected text leaves the device only after a press of the edit hotkey, only from the focused field and only to the chosen provider's text model. It is not kept; the result and your instruction sit in recent dictations
+- ✅ Audio and an edit's selected text are held in Chrome's session storage, in memory, only while a dictation is processing, so a stopped service worker can retry once, which is a second provider charge
 - ✅ Site rules and your dictionary stay on this device; dictionary terms go to the provider with each recording
 - ✅ The `clipboardWrite` permission lets VoiceType copy results with no click, for **Always copy the result** and for text it cannot insert. It never reads the clipboard
 - ✅ Recent dictations stay in memory, not on disk, and go at browser close. A page's pill only gets the newest one dictated on that site
