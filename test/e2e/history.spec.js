@@ -216,8 +216,14 @@ test('a Clear since the last open: reopening the menu shows no section', async (
   await expect.poll(async () => (await pillQuery(page, INSERT))?.width ?? 0).toBe(0);
 
   await serviceWorker.evaluate(() => chrome.storage.session.remove('history'));
+  // The usage line comes in the same reply as the entry, and an open keeps the old line until then,
+  // so a new total marks the reply, and with it the section's final state.
+  await serviceWorker.evaluate(async () => {
+    const { usageLog } = await chrome.storage.local.get('usageLog');
+    await chrome.storage.local.set({ usageLog: { ...usageLog, total: { ...usageLog.total, estimatedCost: 5 } } });
+  });
   await clickPill(page, MENU);
-  await waitForPill(page, '.usage');
+  await expect.poll(async () => (await pillQuery(page, '.usage'))?.text).toContain('all time $5');
 
   expect(await pillQuery(page, INSERT)).toBeNull();
   expect(await pillQuery(page, COPY)).toBeNull();

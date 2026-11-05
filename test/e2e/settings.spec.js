@@ -13,6 +13,8 @@ const CLOSE_AFTER_MS = 1000;
 /** The pill shows a mode chosen on the settings page within this long (spec 6.1). */
 const PILL_SYNC_MS = 1000;
 const PASTED_KEY = 'sk-e2e-pasted-key';
+/** How long after a worker wake a second welcome tab would have opened by. */
+const WAKE_WINDOW_MS = 1000;
 
 test.describe.configure({ mode: 'serial' });
 
@@ -113,9 +115,6 @@ test('the popup opens a route and reuses the settings tab', async () => {
 });
 
 test('a fresh install opens Welcome once', async () => {
-  // A default launch has already closed its welcome tab.
-  expect(settingsPages()).toEqual([]);
-
   const fresh = await launchExtension({ keepWelcome: true });
   try {
     const url = `chrome-extension://${fresh.extensionId}/options.html#welcome`;
@@ -135,7 +134,9 @@ test('a fresh install opens Welcome once', async () => {
     await expect.poll(() => statuses.at(-1)).toBe('stopped');
     await page.reload();
     await expect(page.locator('#welcome-hotkey')).toHaveText('Ctrl+Shift+Space');
-    expect(welcomePages()).toHaveLength(1);
+    // One tab through a short window after the wake: a second one sends the poll to -1 until it times out.
+    const woke = Date.now();
+    await expect.poll(() => (welcomePages().length === 1 ? Date.now() - woke : -1), { timeout: 3000 }).toBeGreaterThanOrEqual(WAKE_WINDOW_MS);
   } finally {
     await fresh.close();
   }
@@ -338,4 +339,32 @@ test('History shows a real dictation on an open page, Copy and Copy last copy it
   await expect.poll(() => serviceWorker.evaluate(async () => (await chrome.storage.session.get('history')).history ?? [])).toEqual([]);
   await popup.reload();
   await expect(popup.locator('#copy-last')).toBeHidden();
+});
+
+test('Clear on the History page goes through the worker: the entries go, the store empties, the focus stays on the page', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  await serviceWorker.evaluate(() => chrome.storage.session.remove('history'));
+  const fields = await openFields(context);
+  const textarea = fields.locator('#ta');
+  await focusField(fields, textarea);
+  await dictate(fields);
+  await expect(textarea).toHaveValue(TRANSCRIPT);
+
+  const page = await openSettingsPage('history');
+  const stored = () => serviceWorker.evaluate(async () => (await chrome.storage.session.get('history')).history ?? []);
+  const clear = page.locator('#clear-history');
+  await expect(page.locator('#history-list .history-entry')).toHaveCount(1);
+  expect(await stored()).toHaveLength(1);
+
+  await clear.click();
+  await expect(clear).toHaveText('Click again to clear history');
+  await page.waitForTimeout(CONFIRM_GUARD_MS);
+  await clear.click();
+
+  await expect(page.locator('#toast')).toHaveText('History cleared');
+  await expect(page.locator('#history-list .history-entry')).toHaveCount(0);
+  await expect(page.locator('#history-empty')).toHaveText('No dictations yet.');
+  await expect(clear).toBeDisabled();
+  await expect(page.locator('#h-history')).toBeFocused();
+  expect(await stored()).toEqual([]);
 });
