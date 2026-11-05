@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createRecorder, COPY_TIMEOUT_MS } from '../../../src/background/recorder.js';
 import { MSG } from '../../../src/shared/messages.js';
-import { freshSettings } from '../../../src/shared/defaults.js';
+import { freshSettings, EDIT_MODE } from '../../../src/shared/defaults.js';
 
 const A = { tabId: 1, frameId: 0 };
 const A_CHILD = { tabId: 1, frameId: 5 };
@@ -779,7 +779,7 @@ describe('results', () => {
     let sessionAtDelivery = 'unset';
     deps.toTab.mockImplementation(async () => { sessionAtDelivery = recorder.session; return true; });
     await recorder.onDone(done({ captureId: id() }));
-    expect(deps.dictate).toHaveBeenCalledWith({ audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 4.2, host: null, incognito: false });
+    expect(deps.dictate).toHaveBeenCalledWith({ audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 4.2, host: null, incognito: false, editText: null });
     expect(tabMessages()).toEqual([{ endpoint: A_CHILD, action: MSG.DICTATION_RESULT, ...RESULT }]);
     expect(sessionAtDelivery).toBeNull();
     expect(recorder.session).toBeNull();
@@ -1669,5 +1669,120 @@ describe('always-copy', () => {
     const results = t.tabMessages().filter((m) => m.action === MSG.DICTATION_RESULT);
     expect(results).toHaveLength(3);
     for (const message of results) expect(message).not.toHaveProperty('copied');
+  });
+});
+
+describe('an edit', () => {
+  const SELECTED = 'the selected words';
+  const TOP = 'https://a.com/page';
+  const startEdit = (t, endpoint = A) => t.recorder.start(endpoint, TOP, { host: 'a.com', incognito: false, editText: SELECTED });
+  const FAILED = { success: false, error: 'Could not edit the selection. Click here to copy what you said.', tone: 'error', edit: true, instruction: 'raw' };
+
+  it("the session's mode is EDIT_MODE with no rule read", async () => {
+    const t = setup({ settings: { activeMode: 'email' } });
+    const read = vi.fn(() => ({ 'a.com': { hidePill: false, mode: 'email' } }));
+    Object.defineProperty(t.settings, 'siteRules', { get: read });
+    expect(await startEdit(t)).toEqual({ ok: true });
+    expect(t.recorder.session.modeKey).toBe(EDIT_MODE);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('hands the text to dictate under EDIT_MODE', async () => {
+    const t = setup();
+    await startEdit(t);
+    await t.recorder.stop(A);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.deps.dictate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modeKey: EDIT_MODE, editText: SELECTED, host: 'a.com' }));
+  });
+
+  it('a later dictation carries no text from it', async () => {
+    const t = setup();
+    await startEdit(t);
+    await t.recorder.stop(A);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    await dictation(t);
+    expect(t.deps.dictate.mock.calls[1][0]).toMatchObject({ modeKey: 'email', editText: null });
+  });
+
+  it('the public session never shows the text', async () => {
+    const t = setup();
+    await startEdit(t);
+    expect(t.recorder.session).toEqual({ endpoint: A, state: 'recording', modeKey: EDIT_MODE, minSec: 1 });
+  });
+
+  it('cancel drops the text unsent', async () => {
+    const t = setup();
+    await startEdit(t);
+    await t.recorder.cancel(A);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.recorder.session).toBeNull();
+    expect(t.deps.dictate).not.toHaveBeenCalled();
+  });
+
+  it('a closed tab drops the text unsent, even with the audio on its way', async () => {
+    const t = setup();
+    await startEdit(t);
+    await t.recorder.stop(A);
+    expect(t.recorder.session.state).toBe('processing');
+    await t.recorder.onTabRemoved(A.tabId);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.recorder.session).toBeNull();
+    expect(t.deps.dictate).not.toHaveBeenCalled();
+  });
+
+  it('a tab closed during the provider call still leaves the replacement on the clipboard', async () => {
+    const t = setup();
+    const call = deferred();
+    t.deps.dictate.mockReturnValueOnce(call.promise);
+    t.deps.toTab.mockResolvedValue(false);
+    await startEdit(t);
+    await t.recorder.stop(A);
+    const finished = t.recorder.onDone(done({ captureId: t.id() }));
+    await flush();
+    await t.recorder.onTabRemoved(A.tabId);
+    call.resolve({ ...DICTATION, edit: true });
+    await finished;
+    expect(t.copies()).toEqual([{ action: MSG.OFFSCREEN_COPY, text: 'final' }]);
+  });
+
+  it('a too-short edit makes no provider call', async () => {
+    const t = setup();
+    await startEdit(t);
+    await t.recorder.stop(A);
+    await t.recorder.onDone(done({ captureId: t.id(), durationSec: 0.2 }));
+    expect(t.deps.dictate).not.toHaveBeenCalled();
+    expect(t.result()).toMatchObject({ success: false, error: 'Too short, ignored', tone: 'warning' });
+  });
+
+  it('always-copy copies the replacement', async () => {
+    const t = setup({ settings: { alwaysCopy: true } });
+    t.deps.dictate.mockResolvedValueOnce({ ...DICTATION, edit: true });
+    await startEdit(t);
+    await t.recorder.stop(A);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.copies()).toEqual([{ action: MSG.OFFSCREEN_COPY, text: 'final' }]);
+    expect(t.result()).toMatchObject({ success: true, text: 'final', edit: true, copied: true });
+  });
+
+  it('a failed edit reaches its frame with the instruction, and nothing is copied', async () => {
+    const t = setup({ settings: { alwaysCopy: true, sounds: true } });
+    t.deps.dictate.mockResolvedValueOnce(FAILED);
+    await startEdit(t);
+    await t.recorder.stop(A);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    await flush();
+    expect(t.result()).toMatchObject(FAILED);
+    expect(t.copies()).toEqual([]);
+    expect(t.cues()).toContain('error');
+  });
+
+  it('a failed edit with no frame left copies nothing: the instruction is not the result', async () => {
+    const t = setup();
+    t.deps.dictate.mockResolvedValueOnce(FAILED);
+    t.deps.toTab.mockResolvedValue(false);
+    await startEdit(t);
+    await t.recorder.stop(A);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.copies()).toEqual([]);
   });
 });

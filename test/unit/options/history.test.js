@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { initOptions } from '../../../src/options/options.js';
 import { CONFIRM_GUARD_MS } from '../../../src/ui/form.js';
 import { MSG } from '../../../src/shared/messages.js';
-import { freshSettings } from '../../../src/shared/defaults.js';
+import { freshSettings, EDIT_MODE } from '../../../src/shared/defaults.js';
 
 // jsdom replaces the global URL, so resolve paths with node:path rather than new URL().
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/options/options.html'), 'utf8');
@@ -167,6 +167,19 @@ describe('settings page History (V29)', () => {
     await flush();
     expect(writeText).toHaveBeenCalledExactlyOnceWith('raw words');
     expect($('toast').textContent).toBe('Original text copied.');
+  });
+
+  it('an edit row reads "Copy instruction" and "Edit selection"', async () => {
+    const writeText = stubClipboard();
+    await start(fakeChrome({ history: [entry({ raw: 'make it shorter', text: 'shorter', mode: EDIT_MODE })] }));
+    expect(meta(rows()[0])).toBe(`${time(TS)} · example.com · Edit selection`);
+    expect(buttons(rows()[0])).toEqual(['Copy', 'Copy instruction']);
+    const copyInstruction = button(rows()[0], 'Copy instruction');
+    expect(copyInstruction.getAttribute('aria-label')).toBe(`Copy instruction from ${time(TS)}`);
+    copyInstruction.click();
+    await flush();
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('make it shorter');
+    expect($('toast').textContent).toBe('Instruction copied.');
   });
 
   it('a rejected clipboard write shows a toast and throws nothing', async () => {

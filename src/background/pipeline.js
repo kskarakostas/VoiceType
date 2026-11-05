@@ -5,16 +5,18 @@ import { fillTemplate } from '../shared/text.js';
 import { flattenDictionary } from '../shared/dictionary.js';
 import { estimateSttCost, estimateTextCost } from '../shared/pricing.js';
 import { ProviderError } from './providers/errors.js';
+import { EDIT_INSTRUCTIONS, editInput } from './edit-prompt.js';
 
 export const ADAPTERS = { openai, gemini };
 export const REQUEST_TIMEOUT_MS = 60_000;
 
 /**
  * `warning` is set when the mode step failed or returned nothing and the raw transcript
- * was kept; null otherwise.
+ * was kept; null otherwise. `failed` is true when an edit's text step failed or returned nothing:
+ * `text` is then the instruction, which is never inserted, and `warning` is null.
  * @typedef {{ raw: string, text: string, provider: 'openai'|'gemini', sttModel: string,
  *             textModel: string|null, audioSeconds: number, cost: number,
- *             warning: string|null }} DictationResult
+ *             warning: string|null, failed: boolean }} DictationResult
  */
 
 /** @param {unknown} err */
@@ -37,20 +39,34 @@ function asSentence(text) {
 }
 
 /**
- * Transcribe, then apply the active mode's prompt with the text model when it has one.
+ * What the text model is asked: the fixed edit request, or the mode's prompt over the transcript.
+ * @param {{ raw: string, modeKey: string, settings: import('../shared/defaults.js').Settings, editText: string|null }} args
+ * @returns {{ instructions: string, text: string }|null} Null means speech to text only.
+ */
+function textRequest({ raw, modeKey, settings, editText }) {
+  if (editText !== null) return { instructions: EDIT_INSTRUCTIONS, text: editInput(raw, editText) };
+  const mode = settings.modes?.[modeKey] || settings.modes?.default || { prompt: '' };
+  // A non-string prompt (hand-edited or corrupt storage) means STT only, like an empty one.
+  const prompt = trimmed(mode.prompt);
+  if (!prompt) return null;
+  return { instructions: fillTemplate(prompt, { targetLanguage: trimmed(settings.translateTargetLang) || 'English' }), text: raw };
+}
+
+/**
+ * Transcribe, then apply the active mode's prompt with the text model when it has one. With
+ * `editText`, the transcript is an instruction for that text and the mode does not apply.
  * @param {{ audioBase64: string, mimeType?: string, modeKey: string,
- *           settings: import('../shared/defaults.js').Settings, durationSec: number }} args
+ *           settings: import('../shared/defaults.js').Settings, durationSec: number, editText?: string|null }} args
  * @param {typeof ADAPTERS} [adapters]
  * @param {number} [timeoutMs]
  * @returns {Promise<DictationResult>}
  */
-export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeKey, settings, durationSec }, adapters = ADAPTERS, timeoutMs = REQUEST_TIMEOUT_MS) {
+export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeKey, settings, durationSec, editText = null }, adapters = ADAPTERS, timeoutMs = REQUEST_TIMEOUT_MS) {
   const provider = Object.hasOwn(adapters, settings.provider) ? settings.provider : 'openai';
   const key = trimmed(settings.keys?.[provider]);
   if (!key) {
     throw new ProviderError(`${PROVIDERS[provider].label} API key not set. Add it in VoiceType settings.`, { code: 'no_key' });
   }
-  const mode = settings.modes?.[modeKey] || settings.modes?.default || { prompt: '' };
   const adapter = adapters[provider];
   const signal = AbortSignal.timeout(timeoutMs);
 
@@ -67,12 +83,10 @@ export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeK
   let textUsage = null; // set whenever the text model answered, so an empty answer is still billed
   let refined = false;
   let warning = null;
-  // A non-string prompt (hand-edited or corrupt storage) means STT only, like an empty one.
-  const instructions = trimmed(mode.prompt);
-  if (instructions) {
-    const filled = fillTemplate(instructions, { targetLanguage: trimmed(settings.translateTargetLang) || 'English' });
+  const request = textRequest({ raw, modeKey, settings, editText });
+  if (request) {
     try {
-      const out = await adapter.refine({ key, instructions: filled, text: raw, signal });
+      const out = await adapter.refine({ key, ...request, signal });
       textUsage = out.usage || null;
       const refinedText = (out.text || '').trim();
       if (refinedText) {
@@ -86,10 +100,11 @@ export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeK
     }
   }
 
+  const failed = editText !== null && !refined;
   const sttModel = PROVIDERS[provider].stt;
   const textModel = refined ? PROVIDERS[provider].text : null;
   const audioSeconds = stt.usage?.kind === 'duration' ? stt.usage.seconds : durationSec;
   const cost = estimateSttCost(sttModel, stt.usage, durationSec) + estimateTextCost(PROVIDERS[provider].text, textUsage);
 
-  return { raw, text, provider, sttModel, textModel, audioSeconds, cost, warning };
+  return { raw, text, provider, sttModel, textModel, audioSeconds, cost, warning: failed ? null : warning, failed };
 }

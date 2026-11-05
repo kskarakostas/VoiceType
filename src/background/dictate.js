@@ -4,6 +4,7 @@ import { countWords } from './usage.js';
 
 /** Once a transcript exists, the bookkeeping shares this long (V34), then the result goes out regardless. */
 export const BOOKKEEPING_LIMIT_MS = 2000;
+const EDIT_FAILED = 'Could not edit the selection. Click here to copy what you said.';
 
 /**
  * Run the bookkeeping for a finished transcript together, under one limit. Never throws: logging is
@@ -28,7 +29,10 @@ async function keepBooks(writes) {
 }
 
 /**
- * One dictation from recorded audio to the message the tab receives. Never throws.
+ * One dictation from recorded audio to the message the tab receives. Never throws. With `editText`
+ * it is an edit of that text; `modeKey` is then EDIT_MODE. A failed edit keeps the books, as the
+ * speech to text was paid, and adds no history. `resumed` adds no history either: the mark that
+ * guards a clear died with the worker that took it (V52).
  * @param {{
  *   storage: Pick<ReturnType<import('./storage.js').createStorage>, 'getSettings'|'updateUsageLog'>,
  *   history: Pick<ReturnType<import('./history.js').createHistory>, 'mark'|'add'>,
@@ -36,17 +40,17 @@ async function keepBooks(writes) {
  *   applyUsage: typeof import('./usage.js').applyUsage,
  *   userMessage: typeof import('./router.js').userMessage,
  * }} deps
- * @returns {(input: { audioBase64: string, mimeType: string, modeKey: string, durationSec: number, host: string|null, incognito: boolean }) => Promise<import('../shared/messages.js').DictationMessage>}
+ * @returns {(input: { audioBase64: string, mimeType: string, modeKey: string, durationSec: number, host: string|null, incognito: boolean, editText?: string|null, resumed?: boolean }) => Promise<import('../shared/messages.js').DictationMessage>}
  */
 export function createDictate({ storage, history, runDictation, applyUsage, userMessage }) {
-  return async function dictate({ audioBase64, mimeType, modeKey, durationSec, host, incognito }) {
+  return async function dictate({ audioBase64, mimeType, modeKey, durationSec, host, incognito, editText = null, resumed = false }) {
     // Before the settings read: a clear after this point, even during that read, drops the entry (V27).
     const mark = history.mark();
     let settings;
     let result;
     try {
       settings = await storage.getSettings();
-      result = await runDictation({ audioBase64, mimeType, modeKey, durationSec, settings });
+      result = await runDictation({ audioBase64, mimeType, modeKey, durationSec, settings, editText });
     } catch (err) {
       warnFailure(err);
       // The text goes to a web page: redact again in case a provider echoed a key.
@@ -59,13 +63,15 @@ export function createDictate({ storage, history, runDictation, applyUsage, user
         words: countWords(result.raw),
       })),
     }];
-    if (settings.keepHistory === true && !incognito) {
+    if (settings.keepHistory === true && !incognito && !resumed && !result.failed) {
       writes.push({
         warning: 'VoiceType: history write failed',
         write: () => history.add({ raw: result.raw, text: result.text, mode: modeKey, host }, mark),
       });
     }
     await keepBooks(writes);
-    return { success: true, text: result.text, raw: result.raw, cost: result.cost, warning: result.warning ?? null };
+    if (result.failed) return { success: false, error: EDIT_FAILED, tone: 'error', edit: true, instruction: result.raw };
+    const message = { success: true, text: result.text, raw: result.raw, cost: result.cost, warning: result.warning ?? null };
+    return editText === null ? message : { ...message, edit: true };
   };
 }

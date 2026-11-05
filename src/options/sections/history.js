@@ -1,7 +1,8 @@
 // History: the keepHistory switch and the recent dictations, each with Copy and, when a mode
-// changed it, Copy original. The worker holds the entries and clears them when the switch goes off
+// changed it, Copy original, which is Copy instruction on an edit. The worker holds the entries and clears them when the switch goes off
 // (V27, V29). Entry text is set with textContent only.
 import { MSG } from '../../shared/messages.js';
+import { EDIT_MODE, EDIT_MODE_LABEL } from '../../shared/defaults.js';
 import { createInlineConfirm } from '../../ui/form.js';
 import { sameList } from '../../ui/lists.js';
 
@@ -63,7 +64,9 @@ export function createHistorySection(ctx) {
     actions.className = 'history-actions';
     actions.append(createButton('Copy', `Copy dictation from ${time}`, () => copy(entry.text, 'Copied to clipboard.')));
     if (entry.raw !== entry.text) {
-      actions.append(createButton('Copy original', `Copy original from ${time}`, () => copy(entry.raw, 'Original text copied.')));
+      const edit = entry.mode === EDIT_MODE;
+      const label = edit ? 'Copy instruction' : 'Copy original';
+      actions.append(createButton(label, `${label} from ${time}`, () => copy(entry.raw, edit ? 'Instruction copied.' : 'Original text copied.')));
     }
     item.append(meta, text, actions);
     return { item, meta, time };
@@ -76,7 +79,7 @@ export function createHistorySection(ctx) {
     for (const entry of shown) {
       if (!rows.has(entry.id)) rows.set(entry.id, createRow(entry));
       const row = rows.get(entry.id);
-      const mode = ctx.settings().modes[entry.mode]?.name ?? entry.mode;
+      const mode = entry.mode === EDIT_MODE ? EDIT_MODE_LABEL : ctx.settings().modes[entry.mode]?.name ?? entry.mode;
       row.meta.textContent = [row.time, entry.host ?? NO_HOST, mode].join(' · ');
     }
     const items = shown.map((entry) => rows.get(entry.id).item);

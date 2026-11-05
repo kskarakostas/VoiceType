@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createHistory, MAX_HISTORY } from '../../../src/background/history.js';
+import { EDIT_MODE } from '../../../src/shared/defaults.js';
 
 /** chrome.storage.session stand-in over a Map; a value goes in and out by copy, as in Chrome. */
 function fakeArea(seed = {}) {
@@ -110,6 +111,22 @@ describe('createHistory', () => {
     expect((await history.lastFor('mail.example.com')).text).toBe('sub');
     expect(await history.lastFor('other.example.com')).toBeNull();
     expect(await history.lastFor('ample.com')).toBeNull();
+  });
+
+  it('lastFor marks an edit', async () => {
+    const history = createHistory({ area: fakeArea() });
+    await put(history, entry('plain'));
+    expect((await history.lastFor('example.com')).edit).toBe(false);
+    await put(history, { ...entry('edited'), mode: EDIT_MODE });
+    expect((await history.lastFor('example.com')).edit).toBe(true);
+  });
+
+  it('the mark stays out of what is stored', async () => {
+    const area = fakeArea();
+    const history = createHistory({ area });
+    await put(history, entry('plain'));
+    await history.lastFor('example.com');
+    expect(area.map.get('history')[0]).not.toHaveProperty('edit');
   });
 
   it('lastFor(null) is null even with a null-host entry', async () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runDictation } from '../../../src/background/pipeline.js';
-import { freshSettings } from '../../../src/shared/defaults.js';
+import { EDIT_INSTRUCTIONS, editInput } from '../../../src/background/edit-prompt.js';
+import { freshSettings, EDIT_MODE } from '../../../src/shared/defaults.js';
 import { ProviderError } from '../../../src/background/providers/errors.js';
 
 function fakeAdapters({ sttText = 'raw words', refineText = 'refined words' } = {}) {
@@ -200,5 +201,76 @@ describe('runDictation', () => {
     const result = await runDictation({ ...base, modeKey: 'email', settings: settingsWith() }, adapters);
     expect(result.text).toBe('raw words');
     expect(result.warning).toBe('Mode not applied: Text model failed. Raw transcript inserted.');
+  });
+});
+
+describe('runDictation for an edit', () => {
+  const edit = { ...base, modeKey: EDIT_MODE, editText: 'the selected words' };
+  const STT_COST = 0.00225;
+
+  it('an edit sends EDIT_INSTRUCTIONS and editInput to refine', async () => {
+    const adapters = fakeAdapters({ sttText: ' make it shorter ', refineText: ' shorter ' });
+    const result = await runDictation({ ...edit, settings: settingsWith() }, adapters);
+    expect(adapters.openai.refine).toHaveBeenCalledExactlyOnceWith({
+      key: 'sk-test', instructions: EDIT_INSTRUCTIONS, text: editInput('make it shorter', 'the selected words'), signal: expect.any(AbortSignal),
+    });
+    expect(result).toMatchObject({ raw: 'make it shorter', text: 'shorter', textModel: 'gpt-6-luna', warning: null, failed: false });
+    expect(result.cost).toBeCloseTo(STT_COST + 0.0001 + 0.0001, 6);
+  });
+
+  it('transcribes as a dictation and shares one signal with the refine', async () => {
+    const adapters = fakeAdapters();
+    await runDictation({ ...edit, settings: settingsWith() }, adapters);
+    const stt = adapters.openai.transcribe.mock.calls[0][0];
+    expect(stt).toMatchObject({ languages: ['el', 'en'], keywords: ['Palowise', 'Νόησις'] });
+    expect(adapters.openai.refine.mock.calls[0][0].signal).toBe(stt.signal);
+  });
+
+  it('uses the Gemini adapter when the provider is gemini', async () => {
+    const adapters = fakeAdapters();
+    await runDictation({ ...edit, settings: settingsWith({ provider: 'gemini' }) }, adapters);
+    expect(adapters.gemini.refine.mock.calls[0][0].instructions).toBe(EDIT_INSTRUCTIONS);
+    expect(adapters.openai.refine).not.toHaveBeenCalled();
+  });
+
+  it("the active mode's prompt does not apply", async () => {
+    const adapters = fakeAdapters();
+    const settings = settingsWith({ activeMode: 'email' });
+    await runDictation({ ...edit, modeKey: 'email', settings }, adapters);
+    expect(adapters.openai.refine.mock.calls[0][0].instructions).toBe(EDIT_INSTRUCTIONS);
+    expect(settings.modes).not.toHaveProperty(EDIT_MODE);
+  });
+
+  it('a failing refine returns failed with the stt cost', async () => {
+    const adapters = fakeAdapters();
+    adapters.openai.refine.mockRejectedValueOnce(new ProviderError('Provider echoed the selected words'));
+    const result = await runDictation({ ...edit, settings: settingsWith() }, adapters);
+    expect(result).toMatchObject({ raw: 'raw words', text: 'raw words', textModel: null, warning: null, failed: true });
+    expect(result.cost).toBeCloseTo(STT_COST, 6);
+  });
+
+  it('an empty refine returns failed, with the text model billed', async () => {
+    const adapters = fakeAdapters({ refineText: '  ' });
+    const result = await runDictation({ ...edit, settings: settingsWith() }, adapters);
+    expect(result).toMatchObject({ text: 'raw words', textModel: null, warning: null, failed: true });
+    expect(result.cost).toBeCloseTo(STT_COST + 0.0001 + 0.0001, 6);
+  });
+
+  it.each([['undefined', undefined], ['a number', { text: 7 }]])('a malformed refine answer returns failed: %s', async (_name, answer) => {
+    const adapters = fakeAdapters();
+    adapters.openai.refine.mockResolvedValueOnce(answer);
+    expect((await runDictation({ ...edit, settings: settingsWith() }, adapters)).failed).toBe(true);
+  });
+
+  it('no speech throws as a dictation does', async () => {
+    const adapters = fakeAdapters({ sttText: '  ' });
+    await expect(runDictation({ ...edit, settings: settingsWith() }, adapters)).rejects.toMatchObject({ name: 'ProviderError', code: 'empty', message: 'No speech detected.' });
+    expect(adapters.openai.refine).not.toHaveBeenCalled();
+  });
+
+  it('a dictation never fails this way: a failing mode keeps the transcript', async () => {
+    const adapters = fakeAdapters();
+    adapters.openai.refine.mockRejectedValueOnce(new Error('boom'));
+    expect(await runDictation({ ...base, modeKey: 'email', settings: settingsWith() }, adapters)).toMatchObject({ text: 'raw words', failed: false });
   });
 });

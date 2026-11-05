@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createRouter, createValidateKey, senderKind, userMessage } from '../../../src/background/router.js';
 import { MSG } from '../../../src/shared/messages.js';
-import { freshSettings, SETTINGS_VERSION } from '../../../src/shared/defaults.js';
+import { freshSettings, MAX_EDIT_CHARS, SETTINGS_VERSION } from '../../../src/shared/defaults.js';
 import { emptyLog } from '../../../src/background/usage.js';
 import { ProviderError } from '../../../src/background/providers/errors.js';
 import { createStorage } from '../../../src/background/storage.js';
@@ -46,7 +46,7 @@ beforeEach(() => {
     },
     history: {
       list: vi.fn(async () => [ENTRY]),
-      lastFor: vi.fn(async (host) => (host === ENTRY.host ? ENTRY : null)),
+      lastFor: vi.fn(async (host) => (host === ENTRY.host ? { ...ENTRY, edit: false } : null)),
       clear: vi.fn(async () => {}),
     },
     identify: vi.fn((sender) => sender?.kind ?? 'unknown'),
@@ -317,7 +317,7 @@ describe('history', () => {
     { kind: 'content', origin, url, tab: { id: 7, url: topUrl, ...(incognito === undefined ? {} : { incognito }) }, frameId: 3 });
 
   it('GET_LAST_DICTATION answers from the sender tab host only', async () => {
-    expect(await handle({ action: MSG.GET_LAST_DICTATION, host: 'other.com' }, pageOf('https://www.example.com/page'))).toEqual({ entry: { raw: 'raw words', text: 'final words' } });
+    expect(await handle({ action: MSG.GET_LAST_DICTATION, host: 'other.com' }, pageOf('https://www.example.com/page'))).toEqual({ entry: { raw: 'raw words', text: 'final words', edit: false } });
     expect(deps.history.lastFor).toHaveBeenCalledTimes(1);
     expect(deps.history.lastFor).toHaveBeenCalledWith('example.com');
     expect(await handle({ action: MSG.GET_LAST_DICTATION, host: 'example.com' }, pageOf('https://other.com/'))).toEqual({ entry: null });
@@ -330,7 +330,7 @@ describe('history', () => {
 
   describe('a frame reads its own site alone (V28)', () => {
     const FIRST_PARTY = 'https://example.com/page';
-    const ANSWER = { entry: { raw: 'raw words', text: 'final words' } };
+    const ANSWER = { entry: { raw: 'raw words', text: 'final words', edit: false } };
     const rows = [
       ['a same-site frame', pageOf(FIRST_PARTY, { url: 'https://example.com/frame' }), ANSWER],
       ['www and bare host are one site', pageOf('https://www.example.com/', { origin: 'https://example.com' }), ANSWER],
@@ -387,9 +387,14 @@ describe('history', () => {
     });
   });
 
-  it('GET_LAST_DICTATION returns raw and text alone', async () => {
+  it('GET_LAST_DICTATION marks an edit', async () => {
+    deps.history.lastFor.mockResolvedValueOnce({ ...ENTRY, edit: true });
+    expect((await handle({ action: MSG.GET_LAST_DICTATION }, pageOf('https://example.com/'))).entry.edit).toBe(true);
+  });
+
+  it('GET_LAST_DICTATION returns raw, text and edit alone', async () => {
     const { entry } = await handle({ action: MSG.GET_LAST_DICTATION }, pageOf('https://example.com/'));
-    expect(Object.keys(entry).sort()).toEqual(['raw', 'text']);
+    expect(Object.keys(entry).sort()).toEqual(['edit', 'raw', 'text']);
   });
 
   it('GET_LAST_DICTATION is for content senders', async () => {
@@ -426,6 +431,47 @@ describe('history', () => {
 
   it('a page reads no keepHistory from GET_SETTINGS', async () => {
     expect(await handle({ action: MSG.GET_SETTINGS }, CONTENT)).not.toHaveProperty('keepHistory');
+  });
+});
+
+describe('START_RECORDING with edit text', () => {
+  const SELECTED = 'the selected words';
+
+  it('hands the text to the recorder', async () => {
+    expect(await handle({ action: MSG.START_RECORDING, edit: { text: SELECTED } }, CONTENT)).toEqual({ ok: true });
+    expect(deps.recorder.start.mock.calls[0][2]).toMatchObject({ editText: SELECTED });
+  });
+
+  it('takes a selection of exactly MAX_EDIT_CHARS', async () => {
+    const text = 'x'.repeat(MAX_EDIT_CHARS);
+    await handle({ action: MSG.START_RECORDING, edit: { text } }, CONTENT);
+    expect(deps.recorder.start.mock.calls[0][2].editText).toBe(text);
+  });
+
+  it('a dictation has no edit text', async () => {
+    await handle({ action: MSG.START_RECORDING }, CONTENT);
+    expect(deps.recorder.start.mock.calls[0][2].editText ?? null).toBeNull();
+  });
+
+  it.each([
+    ['a number', { text: 7 }],
+    ['an array', { text: ['a'] }],
+    ['null text', { text: null }],
+    ['no text', {}],
+    ['a bare string', 'text'],
+    ['null', null],
+    ['empty', { text: '' }],
+    ['over MAX_EDIT_CHARS', { text: 'x'.repeat(MAX_EDIT_CHARS + 1) }],
+  ])('START_RECORDING refuses edit text that is not a string, empty or over MAX_EDIT_CHARS with reason badEdit: %s', async (_name, edit) => {
+    const reply = await handle({ action: MSG.START_RECORDING, edit }, CONTENT);
+    expect(reply).toEqual({ ok: false, reason: 'badEdit', error: expect.any(String) });
+    expect(reply.error).not.toContain('xxx');
+    expect(deps.recorder.start).not.toHaveBeenCalled();
+  });
+
+  it.each([['the popup', POPUP], ['the offscreen document', OFFSCREEN], ['a stranger', STRANGER]])('an extension sender cannot start: %s', async (_name, sender) => {
+    expect(await handle({ action: MSG.START_RECORDING, edit: { text: SELECTED } }, sender)).toEqual(NOT_ALLOWED);
+    expect(deps.recorder.start).not.toHaveBeenCalled();
   });
 });
 

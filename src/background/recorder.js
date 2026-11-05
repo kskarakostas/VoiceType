@@ -3,6 +3,7 @@
 // every path so a closed tab or a lost frame never leaves the microphone on or the next start busy.
 import { MSG } from '../shared/messages.js';
 import { ruleFor } from '../shared/sites.js';
+import { EDIT_MODE } from '../shared/defaults.js';
 
 const BUSY = 'VoiceType is busy in another tab. Try again in a moment.';
 const IN_OTHER_FIELD = 'VoiceType is recording in another field of this page. Click back into it to stop.';
@@ -25,6 +26,7 @@ export const COPY_TIMEOUT_MS = 1000;
  * `unseen`: its frame reported the indicator out of sight, so frame 0 is mirroring it,
  * `mirrorLost`: frame 0 had no receiver for the last mirror message, and `host` and `incognito`,
  * for the history: the frame's site as the router worked it out (V26), and whether the tab is incognito.
+ * `editText` is the selection of an edit, null for a dictation. It stays out of the `session` getter.
  * @typedef {import('../shared/messages.js').StartResponse} StartResponse
  */
 
@@ -35,11 +37,11 @@ export const COPY_TIMEOUT_MS = 1000;
  *   toTab: (endpoint: Endpoint, message: object) => Promise<boolean>,
  *   openPermissionPage: () => Promise<void>,
  *   getSettings: () => Promise<import('../shared/defaults.js').Settings>,
- *   dictate: (input: { audioBase64: string, mimeType: string, modeKey: string, durationSec: number, host: string|null, incognito: boolean }) => Promise<import('../shared/messages.js').DictationMessage>,
+ *   dictate: (input: { audioBase64: string, mimeType: string, modeKey: string, durationSec: number, host: string|null, incognito: boolean, editText: string|null }) => Promise<import('../shared/messages.js').DictationMessage>,
  * }} deps
  */
 export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermissionPage, getSettings, dictate }) {
-  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null, sounds: boolean, alwaysCopy: boolean, unseen: boolean, mirrorLost: boolean, liveAt: number, host: string|null, incognito: boolean })} */
+  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null, sounds: boolean, alwaysCopy: boolean, unseen: boolean, mirrorLost: boolean, liveAt: number, host: string|null, incognito: boolean, editText: string|null })} */
   let session = null;
   /** @type {Endpoint|null} */
   let pendingPermission = null;
@@ -158,7 +160,8 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       session = null;
       return fail('noKey', NO_KEY);
     }
-    s.modeKey = ruleFor(settings, tabUrl).mode ?? settings.activeMode;
+    // An edit is no mode: the site rule and the active mode do not apply (V45).
+    s.modeKey = s.editText === null ? ruleFor(settings, tabUrl).mode ?? settings.activeMode : EDIT_MODE;
     s.minSec = settings.minRecordingTime;
     s.sounds = settings.sounds === true;
     s.alwaysCopy = settings.alwaysCopy === true;
@@ -207,10 +210,10 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     /**
      * @param {Endpoint} endpoint
      * @param {string} [tabUrl] The top-level page; its site rule can fix the session's mode.
-     * @param {{ host?: string|null, incognito?: boolean }} [site] For the history; `host` is the frame's site, not the page's.
+     * @param {{ host?: string|null, incognito?: boolean, editText?: string|null }} [site] For the history; `host` is the frame's site, not the page's. `editText` makes this an edit.
      * @returns {Promise<StartResponse>}
      */
-    async start(endpoint, tabUrl, { host = null, incognito = false } = {}) {
+    async start(endpoint, tabUrl, { host = null, incognito = false, editText = null } = {}) {
       if (session) {
         if (!owns(endpoint) || session.state === 'processing') return fail('busy', refusal(endpoint));
         // The same frame asked again: recording already, or share the start in flight.
@@ -220,7 +223,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       const s = {
         endpoint: { ...endpoint }, state: 'starting', modeKey: 'default', minSec: 0,
         captureId: crypto.randomUUID(), stopRequested: false, starting: null, sounds: false, alwaysCopy: false,
-        unseen: false, mirrorLost: false, liveAt: 0, host, incognito,
+        unseen: false, mirrorLost: false, liveAt: 0, host, incognito, editText,
       };
       session = s;
       s.starting = begin(s, tabUrl);
@@ -298,7 +301,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       } else {
         cue(s, 'stop');
         try {
-          message = await dictate({ audioBase64: payload.audioBase64, mimeType: payload.mimeType, modeKey: s.modeKey, durationSec, host: s.host, incognito: s.incognito });
+          message = await dictate({ audioBase64: payload.audioBase64, mimeType: payload.mimeType, modeKey: s.modeKey, durationSec, host: s.host, incognito: s.incognito, editText: s.editText });
         } catch {
           message = { success: false, error: 'Something went wrong. Try again.', tone: 'error' };
         }
@@ -343,8 +346,9 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     async onTabRemoved(tabId) {
       if (pendingPermission?.tabId === tabId) pendingPermission = null;
       const s = session;
-      // A processing session finishes: with no frame left, onDone copies its result.
-      if (s && s.endpoint.tabId === tabId && s.state !== 'processing') await drop(s);
+      // A processing session finishes: with no frame left, onDone copies its result. An edit's text
+      // has no field left to go back to, so it goes with the tab if the audio is still on its way (V44).
+      if (s && s.endpoint.tabId === tabId && (s.state !== 'processing' || s.editText !== null)) await drop(s);
     },
 
     /** @returns {Session|null} */

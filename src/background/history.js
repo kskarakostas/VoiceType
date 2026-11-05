@@ -1,3 +1,5 @@
+import { EDIT_MODE } from '../shared/defaults.js';
+
 /** How many recent dictations are held (V26). */
 export const MAX_HISTORY = 20;
 
@@ -60,13 +62,15 @@ export function createHistory({ area }) {
       return read();
     },
     /**
-     * The newest entry dictated on exactly this site. A null host matches nothing (V28).
+     * The newest entry dictated on exactly this site, marked when it is an edit (V48). A null host
+     * matches nothing (V28).
      * @param {string|null} host
-     * @returns {Promise<Entry|null>}
+     * @returns {Promise<(Entry & { edit: boolean })|null>}
      */
     async lastFor(host) {
       if (host === null) return null;
-      return (await read()).find((entry) => entry.host === host) ?? null;
+      const entry = (await read()).find((candidate) => candidate.host === host);
+      return entry ? { ...entry, edit: entry.mode === EDIT_MODE } : null;
     },
     /** @returns {Promise<void>} */
     clear() {

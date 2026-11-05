@@ -237,7 +237,7 @@ describe('history wiring', () => {
   });
 
   it('answers each sender from chrome.storage.session', async () => {
-    expect(await send(fake.listeners, { action: MSG.GET_LAST_DICTATION }, AT_EXAMPLE)).toEqual({ entry: { raw: 'raw words', text: 'final words' } });
+    expect(await send(fake.listeners, { action: MSG.GET_LAST_DICTATION }, AT_EXAMPLE)).toEqual({ entry: { raw: 'raw words', text: 'final words', edit: false } });
     expect(await send(fake.listeners, { action: MSG.GET_LAST_DICTATION }, AT_OTHER)).toEqual({ entry: null });
     expect(await send(fake.listeners, { action: MSG.GET_HISTORY }, POPUP)).toEqual({ entries: [ENTRY] });
     expect(await send(fake.listeners, { action: MSG.GET_HISTORY }, AT_EXAMPLE)).toEqual({ success: false, error: 'Not allowed.' });

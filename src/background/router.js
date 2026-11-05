@@ -1,5 +1,5 @@
 import { MSG } from '../shared/messages.js';
-import { applySettingsPatch, migrateSettings, toPublicSettings, DEFAULT_SETTINGS, SETTINGS_VERSION } from '../shared/defaults.js';
+import { applySettingsPatch, migrateSettings, toPublicSettings, DEFAULT_SETTINGS, MAX_EDIT_CHARS, SETTINGS_VERSION } from '../shared/defaults.js';
 import { PROVIDERS } from '../shared/models.js';
 import { ruleFor, siteKey, withSiteRule } from '../shared/sites.js';
 import { emptyLog } from './usage.js';
@@ -9,7 +9,7 @@ import { ProviderError, redact } from './providers/errors.js';
  * @typedef {'offscreen'|'extension'|'content'|'unknown'} SenderKind
  * @typedef {{ tabId: number, frameId: number, documentId?: string }} Endpoint
  * @typedef {{
- *   start: (endpoint: Endpoint, tabUrl?: string, site?: { host?: string|null, incognito?: boolean }) => Promise<import('../shared/messages.js').StartResponse>,
+ *   start: (endpoint: Endpoint, tabUrl?: string, site?: { host?: string|null, incognito?: boolean, editText?: string|null }) => Promise<import('../shared/messages.js').StartResponse>,
  *   stop: (endpoint: Endpoint) => Promise<{ ok: boolean }>,
  *   cancel: (endpoint: Endpoint) => Promise<{ ok: boolean }>,
  *   onLevel: (level: number, captureId: string) => void,
@@ -102,6 +102,9 @@ const ACCESS = new Map([
 ]);
 
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+
+/** The `edit` of a START_RECORDING, as V44 takes it. The reply never names the text. */
+const isValidEdit = (edit) => typeof edit?.text === 'string' && edit.text.length > 0 && edit.text.length <= MAX_EDIT_CHARS;
 
 /** Own payload fields that name a settings field; anything else is dropped, never stored. */
 function pickSettingsFields(settings) {
@@ -251,7 +254,7 @@ export function createRouter({ storage, validateKey, summarize, recorder, histor
       case MSG.GET_LAST_DICTATION: {
         // The site comes from the sender, never the request: a frame reads its own site alone (V28).
         const entry = await history.lastFor(frameSite(sender));
-        return { entry: entry && { raw: entry.raw, text: entry.text } };
+        return { entry: entry && { raw: entry.raw, text: entry.text, edit: entry.edit } };
       }
 
       case MSG.GET_HISTORY:
@@ -262,7 +265,8 @@ export function createRouter({ storage, validateKey, summarize, recorder, histor
         return { success: true };
 
       case MSG.START_RECORDING:
-        return recorder.start(endpointOf(sender), sender.tab?.url, { host: frameSite(sender), incognito: sender.tab?.incognito === true });
+        if (request.edit !== undefined && !isValidEdit(request.edit)) return { ok: false, reason: 'badEdit', error: 'Could not read the selection.' };
+        return recorder.start(endpointOf(sender), sender.tab?.url, { host: frameSite(sender), incognito: sender.tab?.incognito === true, editText: request.edit?.text });
 
       case MSG.STOP_RECORDING:
         return recorder.stop(endpointOf(sender));

@@ -41,9 +41,10 @@ export const MSG = Object.freeze({
  * @typedef {{ ok: true } | { ok: false, reason: StartFailure, error: string }} StartResponse
  * @typedef {{ text: string, tone: 'info'|'success'|'warning'|'error' }} Notice
  * @typedef {{ state: 'idle'|'processing', reason?: 'maxTime'|'silence'|'ended'|'error'|'permission', notice?: Notice }} RecordingStatePayload
- * @typedef {{ success: true, text: string, raw: string, cost: number, warning: string|null, copied: boolean|null }
- *   | { success: false, error: string, tone: 'warning'|'error' }} DictationMessage
- * `copied` is null when always-copy is off.
+ * @typedef {{ success: true, text: string, raw: string, cost: number, warning: string|null, copied: boolean|null, edit?: true }
+ *   | { success: false, error: string, tone: 'warning'|'error', edit?: true, instruction?: string }} DictationMessage
+ * `copied` is null when always-copy is off. `edit` marks an edit's result. A failed edit (V46) adds
+ * `instruction`, what the user said; a failure before there is one is a plain failure.
  * @typedef {{ ok: true } | { ok: false, reason: 'needsPermission'|'denied', error: string }
  *   | { ok: false, reason: 'micError', error: string, cancelled?: true }} OffscreenStartResponse
  * Offscreen messages carry the service worker's id for one capture: a stop names the capture it
@@ -65,6 +66,6 @@ export const MSG = Object.freeze({
  * @typedef {{ seen: boolean }} FrameSight
  * What frame 0 shows for a subframe recording out of sight.
  * @typedef {{ state: 'recording'|'processing'|'idle', elapsedMs: number }} RecordingMirror
- * What a content script may know of the history: the last dictation on its own site, these two fields only.
- * @typedef {{ entry: { raw: string, text: string } | null }} LastDictation
+ * What a content script may know of the history: the last dictation on its own site, these three fields only.
+ * @typedef {{ entry: { raw: string, text: string, edit: boolean } | null }} LastDictation
  */

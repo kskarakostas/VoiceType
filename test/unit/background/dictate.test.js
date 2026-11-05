@@ -4,7 +4,8 @@ import { createStorage } from '../../../src/background/storage.js';
 import { createHistory } from '../../../src/background/history.js';
 import { applyUsage } from '../../../src/background/usage.js';
 import { userMessage } from '../../../src/background/router.js';
-import { freshSettings } from '../../../src/shared/defaults.js';
+import { runDictation } from '../../../src/background/pipeline.js';
+import { freshSettings, EDIT_MODE } from '../../../src/shared/defaults.js';
 import { ProviderError } from '../../../src/background/providers/errors.js';
 
 const input = { audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 12.4, host: 'example.com', incognito: false };
@@ -33,7 +34,7 @@ describe('createDictate', () => {
     const message = await dictate(input);
     expect(message).toEqual({ success: true, text: 'final', raw: 'raw', cost: 0.0009, warning: null });
     const { host: _host, incognito: _incognito, ...pipelineInput } = input;
-    expect(deps.runDictation).toHaveBeenCalledWith({ ...pipelineInput, settings });
+    expect(deps.runDictation).toHaveBeenCalledWith({ ...pipelineInput, settings, editText: null });
     expect(deps.storage.updateUsageLog).toHaveBeenCalledTimes(1);
     expect(deps.applyUsage).toHaveBeenCalledWith(expect.anything(), { provider: 'openai', audioSeconds: 12, cost: 0.0009, mode: 'email', words: 1 });
   });
@@ -350,5 +351,85 @@ describe('createDictate', () => {
       await dictate(input);
       expect(vi.getTimerCount()).toBe(0);
     });
+  });
+});
+
+describe('an edit', () => {
+  const SELECTED = 'the private selected words';
+  const edit = { ...input, modeKey: EDIT_MODE, editText: SELECTED };
+  const replaced = { ...result, raw: 'make it shorter', text: 'shorter', failed: false };
+  const notReplaced = { ...result, raw: 'make it shorter', text: 'make it shorter', textModel: null, failed: true };
+
+  it('hands the selected text to the pipeline and marks its message', async () => {
+    deps.runDictation.mockResolvedValueOnce(replaced);
+    expect(await dictate(edit)).toEqual({ success: true, text: 'shorter', raw: 'make it shorter', cost: 0.0009, warning: null, edit: true });
+    expect(deps.runDictation.mock.calls[0][0]).toMatchObject({ modeKey: EDIT_MODE, editText: SELECTED });
+  });
+
+  it('a failed edit logs usage and adds no history', async () => {
+    deps.runDictation.mockResolvedValueOnce(notReplaced);
+    const message = await dictate(edit);
+    expect(message).toEqual({
+      success: false, error: 'Could not edit the selection. Click here to copy what you said.', tone: 'error', edit: true, instruction: 'make it shorter',
+    });
+    expect(deps.applyUsage).toHaveBeenCalledExactlyOnceWith(expect.anything(), { provider: 'openai', audioSeconds: 12, cost: 0.0009, mode: EDIT_MODE, words: 3 });
+    expect(deps.history.add).not.toHaveBeenCalled();
+  });
+
+  it('a failed edit answers even when the usage write fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    deps.runDictation.mockResolvedValueOnce(notReplaced);
+    deps.storage.updateUsageLog.mockRejectedValueOnce(new Error('quota'));
+    expect(await dictate(edit)).toMatchObject({ success: false, edit: true, instruction: 'make it shorter' });
+  });
+
+  it("an edit's history entry has raw instruction, text replacement, mode EDIT_MODE and no selected text", async () => {
+    deps.runDictation.mockResolvedValueOnce(replaced);
+    await dictate(edit);
+    expect(deps.history.add).toHaveBeenCalledExactlyOnceWith({ raw: 'make it shorter', text: 'shorter', mode: EDIT_MODE, host: 'example.com' }, 5);
+    expect(JSON.stringify(deps.history.add.mock.calls)).not.toContain(SELECTED);
+    expect(JSON.stringify(deps.applyUsage.mock.calls)).not.toContain(SELECTED);
+  });
+
+  it('follows the rules of a dictation for the history', async () => {
+    deps.runDictation.mockResolvedValue(replaced);
+    await dictate({ ...edit, incognito: true });
+    settings.keepHistory = false;
+    await dictate(edit);
+    expect(deps.history.add).not.toHaveBeenCalled();
+    expect(deps.storage.updateUsageLog).toHaveBeenCalledTimes(2);
+  });
+
+  it('a resumed run adds no history', async () => {
+    await dictate({ ...input, resumed: true });
+    deps.runDictation.mockResolvedValueOnce(replaced);
+    await dictate({ ...edit, resumed: true });
+    expect(deps.history.add).not.toHaveBeenCalled();
+    expect(deps.storage.updateUsageLog).toHaveBeenCalledTimes(2);
+  });
+
+  it('no speech stays a plain failure: there is no instruction to copy', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    deps.runDictation.mockRejectedValueOnce(new ProviderError('No speech detected.', { code: 'empty' }));
+    expect(await dictate(edit)).toEqual({ success: false, error: 'No speech detected.', tone: 'error' });
+    expect(deps.storage.updateUsageLog).not.toHaveBeenCalled();
+  });
+
+  it('the selected text reaches no console line and no error message, through the real pipeline', async () => {
+    const lines = ['log', 'info', 'warn', 'error', 'debug'].map((name) => vi.spyOn(console, name).mockImplementation(() => {}));
+    const logged = () => JSON.stringify(lines.flatMap((spy) => spy.mock.calls.flat().map(String)));
+    const echoed = new ProviderError(`Provider echoed: ${SELECTED}`);
+    const adapters = {
+      openai: {
+        transcribe: vi.fn(async () => ({ text: 'make it shorter', usage: { kind: 'duration', seconds: 3 } })),
+        refine: vi.fn(async () => { throw echoed; }),
+      },
+    };
+    deps.runDictation = (args) => runDictation(args, adapters);
+    const message = await createDictate(deps)(edit);
+    expect(adapters.openai.refine.mock.calls[0][0].text).toContain(SELECTED);
+    expect(JSON.stringify(message)).not.toContain(SELECTED);
+    expect(message.error).toBe('Could not edit the selection. Click here to copy what you said.');
+    expect(logged()).not.toContain(SELECTED);
   });
 });
