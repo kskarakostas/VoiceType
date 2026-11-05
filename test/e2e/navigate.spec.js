@@ -124,12 +124,10 @@ async function expectClipboardOnly(page, next, nextField, { providerCalls }) {
  */
 async function refusalOf(serviceWorker) {
   const { tabId, frameId, documentId } = await serviceWorker.evaluate(() => globalThis.stopSenders.at(-1));
-  const outcome = await serviceWorker.evaluate(({ tabId, frameId, documentId }) => Promise.race([
+  return serviceWorker.evaluate(({ tabId, frameId, documentId }) => Promise.race([
     chrome.tabs.sendMessage(tabId, { action: 'vtProbe' }, { frameId, documentId }).then(() => 'delivered', (err) => String(err?.message ?? err)),
     new Promise((resolve) => { setTimeout(resolve, 1000, 'pending'); }),
   ]), { tabId, frameId, documentId });
-  console.log(`refusal, ${await serviceWorker.evaluate(() => navigator.userAgent.match(/Chrome\/\d+/)[0])}: ${outcome}`);
-  return outcome;
 }
 
 /**
