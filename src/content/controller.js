@@ -36,11 +36,13 @@ export const FOCUS_OUT_MS = 200;
 export const PROCESSING_TIMEOUT_MS = 75_000;
 /** How often processing asks the service worker about its dictation, which also keeps it awake (V52). */
 export const PING_MS = 5000;
+/** Alive replies hold processing this long at most: past it a stuck session ends as the watchdog ends it. */
+export const PROCESSING_CEILING_MS = PROCESSING_TIMEOUT_MS + 120_000;
 
 const ORPHAN_NOTICE = 'VoiceType was turned off or updated. Reload this page.';
 const NO_REPLY = 'VoiceType could not reach its background service. Try again.';
 const NO_RESPONSE = 'No response from VoiceType. Try again.';
-const LOST = Object.freeze({ text: 'VoiceType restarted and lost this recording. Try again.', tone: 'error' });
+const LOST = Object.freeze({ text: 'VoiceType restarted. Check the clipboard, or try again.', tone: 'error' });
 const HOLD_NOTICE = 'Return to the field to insert, or click here to copy.';
 const PASSWORD_NOTICE = 'VoiceType does not record in password fields.';
 const FOCUS_NOTICE = 'Click into the field you want to dictate into, then try again.';
@@ -98,6 +100,7 @@ export function createController(deps) {
   let focusTimer = null;
   let watchdog = null;
   let pinger = null;
+  let processingSince = 0;
   let orphan = false;
   /** Orphaned under a click-to-copy status: the terminal notice waits for that click (V35). */
   let orphanNoticeOwed = false;
@@ -213,6 +216,7 @@ export function createController(deps) {
 
   /** Entering processing: every way out goes through the watchdog, which stops these. */
   function startPings() {
+    if (pinger === null) processingSince = Date.now();
     deps.clearTimeout(pinger);
     pinger = deps.setTimeout(ping, PING_MS);
   }
@@ -229,8 +233,8 @@ export function createController(deps) {
     const reply = await send({ action: MSG.PROCESSING_PING });
     // Pings stopped, or a later one is out: this answer is old.
     if (pinger !== current) return;
-    if (reply?.alive === true) armWatchdog();
-    else if (reply?.alive === false) onRecordingState({ state: 'idle', notice: LOST });
+    if (reply?.alive === false) onRecordingState({ state: 'idle', notice: LOST });
+    else if (reply?.alive === true && Date.now() - processingSince < PROCESSING_CEILING_MS) armWatchdog();
   }
 
   function clearNotice() {

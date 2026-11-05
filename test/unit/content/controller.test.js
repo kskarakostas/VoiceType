@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createController, FOCUS_OUT_MS, PROCESSING_TIMEOUT_MS, PING_MS } from '../../../src/content/controller.js';
+import { createController, FOCUS_OUT_MS, PROCESSING_TIMEOUT_MS, PROCESSING_CEILING_MS, PING_MS } from '../../../src/content/controller.js';
 import { isValidInput, deepActiveElement } from '../../../src/content/fields.js';
 import { markInsertion, replaceInsertion } from '../../../src/content/insert.js';
 import { MSG } from '../../../src/shared/messages.js';
@@ -1685,7 +1685,7 @@ describe('processing watchdog', () => {
 });
 
 describe('the processing ping (V52)', () => {
-  const LOST = ['VoiceType restarted and lost this recording. Try again.', { tone: 'error', sticky: false, clickable: false }];
+  const LOST = ['VoiceType restarted. Check the clipboard, or try again.', { tone: 'error', sticky: false, clickable: false }];
   const RESULT = { action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0.012, warning: null };
   const pings = (t) => t.actions().filter((action) => action === MSG.PROCESSING_PING).length;
   const alive = (value) => ({ replies: { [MSG.PROCESSING_PING]: { alive: value } } });
@@ -1778,7 +1778,7 @@ describe('the processing ping (V52)', () => {
     expect(t.pill.setStatus).not.toHaveBeenCalled();
   });
 
-  it('a not alive reply shows "VoiceType restarted and lost this recording. Try again."', async () => {
+  it('a not alive reply shows "VoiceType restarted. Check the clipboard, or try again."', async () => {
     const t = setup(alive(false));
     await recordAndStop(t);
     await vi.advanceTimersByTimeAsync(PING_MS);
@@ -1788,6 +1788,39 @@ describe('the processing ping (V52)', () => {
     // Nothing is left of the session: the next press records.
     await t.controller.toggle();
     expect(t.controller.state).toBe('recording');
+  });
+
+  it('alive replies stop holding processing at the ceiling, and the No response path runs', async () => {
+    expect(PROCESSING_CEILING_MS).toBe(PROCESSING_TIMEOUT_MS + 120_000);
+    const t = setup(alive(true));
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PROCESSING_CEILING_MS);
+    expect(t.controller.state).toBe('processing');
+    await vi.advanceTimersByTimeAsync(PROCESSING_TIMEOUT_MS);
+    expect(t.controller.state).toBe('idle');
+    expect(lastStatus(t.pill)[0]).toBe('No response from VoiceType. Try again.');
+    await expectNoMorePings(t);
+  });
+
+  it('a repeated processing state does not move the ceiling', async () => {
+    const t = setup(alive(true));
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PROCESSING_CEILING_MS - PING_MS);
+    t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'processing' });
+    await vi.advanceTimersByTimeAsync(PING_MS + PROCESSING_TIMEOUT_MS);
+    expect(t.controller.state).toBe('idle');
+  });
+
+  it('the next processing has a ceiling of its own', async () => {
+    const t = setup(alive(true));
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PROCESSING_CEILING_MS);
+    t.controller.handleMessage(RESULT);
+    await flush();
+    await vi.advanceTimersByTimeAsync(STATUS_MS.success);
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PROCESSING_CEILING_MS - PING_MS);
+    expect(t.controller.state).toBe('processing');
   });
 
   it('a null reply changes nothing', async () => {

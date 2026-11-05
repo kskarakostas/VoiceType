@@ -379,6 +379,37 @@ describe('held audio wiring', () => {
     expect(kept.chrome.storage.session.get).toHaveBeenCalledWith('pendingDictation');
   });
 
+  describe('a worker event past the window', () => {
+    const NOW = 10_000_000;
+    /** A worker that noted a fresh record at load, with the clock moved past its window. */
+    async function noted() {
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(NOW);
+      const worker = await load({ pendingDictation: { ...STALE, at: NOW - 1000, endpoint: { tabId: 7, frameId: 0 } } });
+      await flush();
+      expect(worker.session.pendingDictation).toBeDefined();
+      clock.mockReturnValue(NOW + 120_000);
+      return worker;
+    }
+
+    it('a tab closing anywhere clears the record', async () => {
+      const worker = await noted();
+      worker.listeners.tabRemoved(99);
+      await vi.waitFor(() => expect(worker.session.pendingDictation).toBeUndefined());
+    });
+
+    it('a storage change clears the record', async () => {
+      const worker = await noted();
+      worker.listeners.storageChanged({ history: {} }, 'session');
+      await vi.waitFor(() => expect(worker.session.pendingDictation).toBeUndefined());
+    });
+  });
+
+  it('a worker woken by the close of its tab clears that tab\'s fresh record', async () => {
+    const woken = await load({ pendingDictation: { ...STALE, at: Date.now() } });
+    woken.listeners.tabRemoved(1);
+    await vi.waitFor(() => expect(woken.session.pendingDictation).toBeUndefined());
+  });
+
   it('a page ping answers from the recorder', async () => {
     expect(await send(fake.listeners, { action: MSG.PROCESSING_PING }, PAGE)).toEqual({ alive: false });
   });

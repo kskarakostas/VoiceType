@@ -2244,6 +2244,29 @@ describe('ping (V52)', () => {
     await flush();
   });
 
+  it('a subframe record cleared on a ping takes down the mirror its worker left', async () => {
+    const t = setup({ record: leftBehind({ endpoint: A_CHILD, attempts: 1 }) });
+    expect(await t.recorder.ping(A_CHILD)).toEqual({ alive: false });
+    expect(t.tabMessages()).toEqual([{ endpoint: { tabId: 1, frameId: 0 }, action: MSG.RECORDING_MIRROR, state: 'idle', elapsedMs: expect.any(Number) }]);
+  });
+
+  it('a frame 0 record cleared on a ping sends no mirror', async () => {
+    const t = setup({ record: leftBehind({ attempts: 1 }) });
+    await t.recorder.ping(A);
+    expect(t.tabMessages()).toEqual([]);
+  });
+
+  it("a cleared subframe record leaves the mirror of a session in the same tab", async () => {
+    const t = setup({ record: leftBehind({ endpoint: A_CHILD }) });
+    const reading = deferred();
+    t.deps.pending.read.mockReturnValueOnce(reading.promise);
+    const ping = t.recorder.ping(A_CHILD);
+    await t.recorder.start({ tabId: 1, frameId: 9 });
+    reading.resolve(leftBehind({ endpoint: A_CHILD }));
+    expect(await ping).toEqual({ alive: false });
+    expect(t.tabMessages().filter((m) => m.action === MSG.RECORDING_MIRROR)).toEqual([]);
+  });
+
   it("a resumed run keeps the record's always-copy", async () => {
     const t = setup({ record: leftBehind({ alwaysCopy: true }) });
     await t.recorder.ping(A);
@@ -2325,6 +2348,55 @@ describe('sweep (V53)', () => {
     const t = setup({ record: leftBehind({ at: T0 - PENDING_WINDOW_MS }) });
     t.deps.pending.clear.mockRejectedValue(new Error('no storage'));
     await expect(t.recorder.sweep()).resolves.toBeUndefined();
+  });
+});
+
+describe('a tab closing and a record with no session', () => {
+  it('clears the record of that tab: it can never ping for it', async () => {
+    const t = setup({ record: leftBehind({ editText: 'old words' }) });
+    await t.recorder.sweep();
+    await t.recorder.onTabRemoved(A.tabId);
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it("leaves another tab's record", async () => {
+    const t = setup({ record: leftBehind() });
+    await t.recorder.sweep();
+    await t.recorder.onTabRemoved(B.tabId);
+    expect(t.deps.pending.store.record).not.toBeNull();
+  });
+
+  it("finds the record while the worker's first sweep is still reading: that close is what woke it", async () => {
+    const t = setup({ record: leftBehind() });
+    const reading = deferred();
+    t.deps.pending.read.mockReturnValueOnce(reading.promise);
+    const sweeping = t.recorder.sweep();
+    await t.recorder.onTabRemoved(A.tabId);
+    expect(t.deps.pending.store.record).toBeNull();
+    reading.resolve(null);
+    await sweeping;
+  });
+
+  it('reads nothing with no record noted', async () => {
+    const t = setup();
+    await t.recorder.sweep();
+    expect(t.deps.pending.read).toHaveBeenCalledTimes(1);
+    await t.recorder.onTabRemoved(A.tabId);
+    expect(t.deps.pending.read).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads nothing with a session: a start has cleared what there was', async () => {
+    const t = setup();
+    await t.recorder.start(B);
+    await t.recorder.onTabRemoved(A.tabId);
+    expect(t.deps.pending.read).not.toHaveBeenCalled();
+  });
+
+  it('a read that fails never rejects', async () => {
+    const t = setup({ record: leftBehind() });
+    await t.recorder.sweep();
+    t.deps.pending.read.mockRejectedValue(new Error('no storage'));
+    await expect(t.recorder.onTabRemoved(A.tabId)).resolves.toBeUndefined();
   });
 });
 

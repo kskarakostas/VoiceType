@@ -62,11 +62,15 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 chrome.runtime.onStartup.addListener(() => { storage.getSettings().catch(() => {}); });
 
-chrome.tabs.onRemoved.addListener((tabId) => { recorder.onTabRemoved(tabId); });
+chrome.tabs.onRemoved.addListener((tabId) => {
+  recorder.sweep();
+  recorder.onTabRemoved(tabId);
+});
 
 // Content scripts cannot read storage any more, so push key-free settings to every frame, each
 // tab with the rule of its own site only.
 chrome.storage.onChanged.addListener((changes, areaName) => {
+  recorder.sweep();
   const next = changes.settings?.newValue;
   if (areaName !== 'local' || !next || typeof next !== 'object') return;
   const migrated = migrateSettings(next);

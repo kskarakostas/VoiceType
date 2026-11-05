@@ -15,7 +15,7 @@ const RETRY_MS = 8000;
 const RESULT_MS = TRANSCRIPT_DELAY_MS + 5000;
 /** Long enough for a second landing to show: the first call's timer runs out inside it. */
 const SETTLE_MS = 7000;
-const LOST = 'VoiceType restarted and lost this recording. Try again.';
+const LOST = 'VoiceType restarted. Check the clipboard, or try again.';
 const FIELD = '#ta';
 
 test.describe.configure({ mode: 'serial' });

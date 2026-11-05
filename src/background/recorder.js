@@ -74,6 +74,8 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   let holder = null;
   /** When the next sweep looks at the pending record: 0 at once, as a new worker must; null with none noted. */
   let sweepAt = 0;
+  /** A sweep is reading: a record may be there that sweepAt does not show yet. */
+  let sweeping = false;
 
   const fail = (reason, error) => ({ ok: false, reason, error });
   const owns = (endpoint) => session !== null
@@ -432,6 +434,8 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       if (!record || !sameDocument(record.endpoint, endpoint)) return { alive: false };
       if (record.bootId === bootId) return { alive: true };
       if (session === null && record.attempts === 0 && now() - record.at < PENDING_WINDOW_MS) return resume(record);
+      // The worker that knew about frame 0's mirror is gone; a session in this tab has its own use for it.
+      if (endpoint.frameId !== 0 && session?.endpoint.tabId !== endpoint.tabId) mirror({ endpoint, liveAt: record.at }, 'idle');
       await clearRecord();
       return { alive: false };
     },
@@ -443,6 +447,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     async sweep() {
       if (sweepAt === null || now() < sweepAt) return;
       sweepAt = null;
+      sweeping = true;
       try {
         const record = await pending.read();
         if (!record) return;
@@ -450,6 +455,8 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
         else sweepAt = record.at + PENDING_WINDOW_MS;
       } catch {
         sweepAt = 0;
+      } finally {
+        sweeping = false;
       }
     },
 
@@ -485,6 +492,14 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       // A processing session finishes: with no frame left, onDone copies its result. An edit's text
       // has no field left to go back to, so it goes with the tab if the audio is still on its way (V44).
       if (s && s.endpoint.tabId === tabId && (s.state !== 'processing' || s.editText !== null)) await drop(s);
+      if (session !== null || (sweepAt === null && !sweeping)) return;
+      // No session, as after a restart, so nothing above saw this tab's record, and it can never ping for it.
+      try {
+        const record = await pending.read();
+        if (session === null && record?.endpoint.tabId === tabId) await clearRecord();
+      } catch {
+        // The next sweep takes it, past the window.
+      }
     },
 
     /** @returns {Session|null} */
