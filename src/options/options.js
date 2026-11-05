@@ -27,6 +27,7 @@ import { createWelcomeSection } from './sections/welcome.js';
  *   settings: () => Settings, loaded: () => boolean,
  *   commit: (mutate: (draft: Settings) => void, successText?: string) => Promise<boolean>,
  *   send: (message: object) => Promise<any|null>,
+ *   openSavePort: () => void,
  *   saveSiteRule: (rule: { host: string, hidePill?: boolean, mode?: string|null }) => Promise<{ success: boolean, error?: string }>,
  *   toast: (text: string, tone?: 'info'|'success'|'error') => void,
  *   typingSave: (save: () => unknown) => TypingSave,
@@ -102,6 +103,7 @@ export async function initOptions({ chrome, document, window, sections = SECTION
       },
       schedule() {
         cancel();
+        client.openSavePort();
         timer = setTimer(() => {
           timer = null;
           save();
@@ -150,6 +152,7 @@ export async function initOptions({ chrome, document, window, sections = SECTION
     loaded: state.loaded,
     commit: state.commit,
     send: client.send,
+    openSavePort: client.openSavePort,
     saveSiteRule: client.saveSiteRule,
     toast,
     typingSave,
@@ -179,17 +182,13 @@ export async function initOptions({ chrome, document, window, sections = SECTION
 
   el.version.textContent = `Version ${chrome.runtime.getManifest().version}`;
 
-  // Closing. The flush is a best effort: Chrome may drop messages a closing page sends. Chrome 140
-  // drops nearly every one, 2 of 20 landed, unless a keepalive request follows the message: then 20
-  // of 20 landed. It has to come after the message. It reads a file of the extension, so nothing
-  // leaves the machine. The page never blocks closing with beforeunload.
+  // Closing. The flush is a best effort: Chrome may drop what a closing page sends. Chrome 140
+  // dropped every runtime.sendMessage from here (0 of 30 closes landed), so a typing save opens
+  // the save port first and the commit posts on it (80 of 80 landed with the machine under load).
+  // The page never blocks closing with beforeunload.
 
   function flushTypingSaves() {
-    const saves = mounted.flatMap((section) => section.typingSaves ?? []);
-    const pending = saves.some((save) => save.pending);
-    const flushed = Promise.all(saves.map((save) => save.flush()));
-    if (pending) window.fetch('manifest.json', { keepalive: true }).catch(() => {});
-    return flushed;
+    return Promise.all(mounted.flatMap((section) => section.typingSaves ?? []).map((save) => save.flush()));
   }
 
   window.addEventListener('pagehide', flushTypingSaves);

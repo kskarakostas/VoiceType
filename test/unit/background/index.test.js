@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MSG } from '../../../src/shared/messages.js';
+import { MSG, SAVE_PORT } from '../../../src/shared/messages.js';
 import { freshSettings } from '../../../src/shared/defaults.js';
 
 /**
@@ -18,6 +18,7 @@ function fakeChrome({ accessLevel = true } = {}) {
       getContexts: vi.fn(async () => []),
       sendMessage: vi.fn(async () => ({ ok: true })),
       onMessage: on('message'),
+      onConnect: on('connect'),
       onInstalled: on('installed'),
       onStartup: on('startup'),
     },
@@ -67,11 +68,47 @@ async function send(listeners, request, sender) {
   return sendResponse.mock.calls[0][0];
 }
 
+/** Open a port the way Chrome does: `post` plays a message from the page. */
+function connect(listeners, name, sender) {
+  let onPost;
+  const port = { name, sender, postMessage: vi.fn(), onMessage: { addListener: vi.fn((fn) => { onPost = fn; }) } };
+  listeners.connect(port);
+  return { port, post: (message) => onPost?.(message) };
+}
+
 let fake;
 beforeEach(async () => { fake = await load(); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('service worker entry', () => {
+  it('saves a post on the save port and answers with its id', async () => {
+    const { port, post } = connect(fake.listeners, SAVE_PORT, POPUP);
+    post({ id: 7, message: { action: MSG.SAVE_SETTINGS, settings: { keepHistory: false } } });
+    await vi.waitFor(() => expect(port.postMessage).toHaveBeenCalledExactlyOnceWith({ id: 7, reply: { success: true } }));
+    expect(fake.store.settings.keepHistory).toBe(false);
+  });
+
+  it('holds the save port to the access rules of a message', async () => {
+    const { port, post } = connect(fake.listeners, SAVE_PORT, PAGE);
+    post({ id: 1, message: { action: MSG.SAVE_SETTINGS, settings: { keepHistory: false } } });
+    await vi.waitFor(() => expect(port.postMessage).toHaveBeenCalledExactlyOnceWith({ id: 1, reply: { success: false, error: 'Not allowed.' } }));
+    expect(fake.store.settings?.keepHistory).not.toBe(false);
+  });
+
+  it('still saves when the page has gone before the answer', async () => {
+    const { port, post } = connect(fake.listeners, SAVE_PORT, POPUP);
+    port.postMessage.mockImplementation(() => { throw new Error('Attempting to use a disconnected port object'); });
+    post({ id: 2, message: { action: MSG.SAVE_SETTINGS, settings: { keepHistory: false } } });
+    await vi.waitFor(() => expect(fake.store.settings?.keepHistory).toBe(false));
+    await flush();
+    expect(port.postMessage).toHaveBeenCalledOnce();
+  });
+
+  it('ignores a port of any other name', () => {
+    const { port } = connect(fake.listeners, 'other', POPUP);
+    expect(port.onMessage.addListener).not.toHaveBeenCalled();
+  });
+
   it('restricts storage.local to trusted contexts at load', () => {
     expect(fake.chrome.storage.local.setAccessLevel).toHaveBeenCalledWith({ accessLevel: 'TRUSTED_CONTEXTS' });
   });

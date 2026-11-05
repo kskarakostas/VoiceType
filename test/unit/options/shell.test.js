@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { initOptions } from '../../../src/options/options.js';
 import { ROUTES } from '../../../src/options/routes.js';
-import { MSG } from '../../../src/shared/messages.js';
+import { MSG, SAVE_PORT } from '../../../src/shared/messages.js';
 import { freshSettings } from '../../../src/shared/defaults.js';
 
 // jsdom replaces the global URL, so resolve paths with node:path rather than new URL().
@@ -296,26 +296,18 @@ describe('settings page context', () => {
     expect(save).toHaveBeenCalledTimes(2);
   });
 
-  it('a close with a pending save opens a keepalive request after the save', async () => {
-    const fetch = vi.spyOn(window, 'fetch').mockResolvedValue(new Response());
+  it('a typing save opens the save port, and the save at a close goes over it', async () => {
+    const chrome = fakeChrome();
+    const port = { postMessage: vi.fn(), onMessage: { addListener: vi.fn() }, onDisconnect: { addListener: vi.fn() } };
+    chrome.runtime.connect = vi.fn(() => port);
     const section = probe();
-    await start(fakeChrome(), [section.factory]);
-    const save = vi.fn();
-    section.typingSaves.push(section.ctx.typingSave(save));
+    await start(chrome, [section.factory]);
+    expect(chrome.runtime.connect).not.toHaveBeenCalled();
+    section.typingSaves.push(section.ctx.typingSave(() => section.ctx.commit((s) => { s.keepHistory = false; })));
     section.typingSaves[0].schedule();
+    expect(chrome.runtime.connect).toHaveBeenCalledExactlyOnceWith({ name: SAVE_PORT });
     window.dispatchEvent(new Event('pagehide'));
-    expect(fetch).toHaveBeenCalledExactlyOnceWith('manifest.json', { keepalive: true });
-    expect(save.mock.invocationCallOrder[0]).toBeLessThan(fetch.mock.invocationCallOrder[0]);
-    fetch.mockRestore();
-  });
-
-  it('a close with nothing pending opens no request', async () => {
-    const fetch = vi.spyOn(window, 'fetch').mockResolvedValue(new Response());
-    const section = probe();
-    await start(fakeChrome(), [section.factory]);
-    section.typingSaves.push(section.ctx.typingSave(vi.fn()));
-    window.dispatchEvent(new Event('pagehide'));
-    expect(fetch).not.toHaveBeenCalled();
-    fetch.mockRestore();
+    expect(port.postMessage).toHaveBeenCalledExactlyOnceWith({ id: expect.any(Number), message: { action: MSG.SAVE_SETTINGS, settings: { keepHistory: false } } });
+    expect(chrome.saves()).toEqual([]);
   });
 });

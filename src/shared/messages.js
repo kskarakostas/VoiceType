@@ -1,6 +1,9 @@
 // Message action names shared by background, offscreen, content and popup.
 // Every message is { action: MSG.X, ...payload }; the plan's Message contract lists who sends what.
 // For the offscreen messages the typedefs below are the contract and supersede the plan's table.
+/** The port a settings page holds while it types: a post from a closing page lands, a message may not. */
+export const SAVE_PORT = 'settings-save';
+
 export const MSG = Object.freeze({
   GET_SETTINGS: 'getSettings',
   SAVE_SETTINGS: 'saveSettings',

@@ -1,5 +1,5 @@
 // VoiceType service worker. Listeners and wiring only; logic lives in the imported modules.
-import { MSG } from '../shared/messages.js';
+import { MSG, SAVE_PORT } from '../shared/messages.js';
 import { migrateSettings, toPublicSettings } from '../shared/defaults.js';
 import { ruleFor } from '../shared/sites.js';
 import { createStorage } from './storage.js';
@@ -73,10 +73,26 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   broadcast(chrome.tabs, (tab) => ({ action: MSG.SETTINGS_CHANGED, settings: { ...pub, site: ruleFor(migrated, tab.url) } }));
 });
 
+/** @returns {Promise<object>} what the sender gets back, an error included */
+const answer = (request, sender) => handle(request, sender).then(
+  (response) => response ?? { success: false, error: 'Unknown action' },
+  (err) => ({ success: false, error: userMessage(err) }),
+);
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  handle(request, sender).then(
-    (response) => sendResponse(response ?? { success: false, error: 'Unknown action' }),
-    (err) => sendResponse({ success: false, error: userMessage(err) }),
-  );
+  answer(request, sender).then(sendResponse);
   return true; // keep the channel open for the async response
+});
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== SAVE_PORT) return;
+  port.onMessage.addListener(({ id, message }) => {
+    answer(message, port.sender).then((reply) => {
+      try {
+        port.postMessage({ id, reply });
+      } catch {
+        // The page closed after its last post, which is what the port is for.
+      }
+    });
+  });
 });

@@ -934,6 +934,22 @@ describe('dictionary page heartbeat', () => {
     input('any').dispatchEvent(new Event('input', { bubbles: true }));
   });
 
+  it('a beat reopens a save port the worker closed, while a field holds text', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome();
+    const drops = [];
+    const port = () => ({ postMessage: vi.fn(), onMessage: { addListener: vi.fn() }, onDisconnect: { addListener: (fn) => drops.push(fn) } });
+    chrome.runtime.connect = vi.fn(port);
+    await start(chrome);
+    await flush();
+    typeInto(input('any'), 'Palowise');
+    await vi.advanceTimersByTimeAsync(FIRST_BEAT_MS);
+    expect(chrome.runtime.connect).toHaveBeenCalledOnce();
+    drops[0]();
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+    expect(chrome.runtime.connect).toHaveBeenCalledTimes(2);
+  });
+
   it('the heartbeat runs only while a field holds text', async () => {
     vi.useFakeTimers();
     const chrome = fakeChrome();

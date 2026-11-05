@@ -87,14 +87,15 @@ export function createDictionarySection(ctx) {
   /** @type {Map<string, Card>} */
   const cards = new Map();
 
-  // The text in a field goes with the page's last message, and a closing page's message reaches
-  // the worker only if the worker is awake; a live page's message wakes it. Read-only.
+  // The text in a field goes with the page's last post, on the save port: it reaches the worker
+  // only if the worker is awake and the port open. A live page's message wakes the worker. Read-only.
   const firstBeat = ctx.typingSave(heartbeat);
   let beatTimer;
 
   function heartbeat() {
     ctx.clearTimer(beatTimer);
     ctx.send({ action: MSG.GET_SETTINGS });
+    ctx.openSavePort();
     beatTimer = ctx.setTimer(heartbeat, HEARTBEAT_MS);
   }
 

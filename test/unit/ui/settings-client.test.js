@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { changedFields, createSettingsClient } from '../../../src/ui/settings-client.js';
 import { freshSettings } from '../../../src/shared/defaults.js';
-import { MSG } from '../../../src/shared/messages.js';
+import { MSG, SAVE_PORT } from '../../../src/shared/messages.js';
 
 function withKeys() {
   const s = freshSettings();
@@ -13,6 +13,19 @@ function withKeys() {
 function reversed(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   return Object.fromEntries(Object.keys(value).reverse().map((k) => [k, reversed(value[k])]));
+}
+
+/** A stand-in for a runtime port: `answer` plays the worker's reply, `drop` a disconnect. */
+function fakePort() {
+  const received = [];
+  const gone = [];
+  return {
+    postMessage: vi.fn(),
+    onMessage: { addListener: (fn) => received.push(fn) },
+    onDisconnect: { addListener: (fn) => gone.push(fn) },
+    answer(reply) { for (const fn of received) fn(reply); },
+    drop() { for (const fn of gone) fn(); },
+  };
 }
 
 function fakeChrome(reply) {
@@ -139,5 +152,74 @@ describe('createSettingsClient', () => {
     expect(chrome.storage.onChanged.removeListener).toHaveBeenCalledTimes(1);
     chrome.fire({ settings: { newValue: {} } }, 'local');
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createSettingsClient save port', () => {
+  const PATCH = { keepHistory: false };
+  const SAVE = { action: MSG.SAVE_SETTINGS, settings: PATCH };
+
+  function setup() {
+    const chrome = fakeChrome({ success: true });
+    const port = fakePort();
+    chrome.runtime.connect = vi.fn(() => port);
+    return { chrome, port, client: createSettingsClient({ chrome }) };
+  }
+
+  it('sends a save by message while no port is open', async () => {
+    const { chrome, client } = setup();
+    expect(await client.save(PATCH)).toEqual({ success: true });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledExactlyOnceWith(SAVE);
+    expect(chrome.runtime.connect).not.toHaveBeenCalled();
+  });
+
+  it('opens one port however often it is asked', () => {
+    const { chrome, client } = setup();
+    client.openSavePort();
+    client.openSavePort();
+    expect(chrome.runtime.connect).toHaveBeenCalledExactlyOnceWith({ name: SAVE_PORT });
+  });
+
+  it('posts a save on the open port in the same tick and takes the reply that carries its id', async () => {
+    const { chrome, port, client } = setup();
+    client.openSavePort();
+    const first = client.save(PATCH);
+    const second = client.save({ keepHistory: true });
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    const [[{ id: firstId, message }], [{ id: secondId }]] = port.postMessage.mock.calls;
+    expect(message).toEqual(SAVE);
+    expect(secondId).not.toBe(firstId);
+    port.answer({ id: secondId, reply: { success: false, error: 'No' } });
+    port.answer({ id: firstId, reply: { success: true } });
+    expect(await first).toEqual({ success: true });
+    expect(await second).toEqual({ success: false, error: 'No' });
+  });
+
+  it('fails a save whose port goes before the reply, and reopens on request', async () => {
+    const { chrome, port, client } = setup();
+    client.openSavePort();
+    const waiting = client.save(PATCH);
+    port.drop();
+    expect(await waiting).toEqual({ success: false, error: undefined });
+    expect(await client.save(PATCH)).toEqual({ success: true });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledOnce();
+    client.openSavePort();
+    expect(chrome.runtime.connect).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to a message when the port refuses the post', async () => {
+    const { chrome, port, client } = setup();
+    client.openSavePort();
+    port.postMessage.mockImplementation(() => { throw new Error('Attempting to use a disconnected port object'); });
+    expect(await client.save(PATCH)).toEqual({ success: true });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledExactlyOnceWith(SAVE);
+  });
+
+  it('stays on messages when the port cannot open', async () => {
+    const { chrome, client } = setup();
+    chrome.runtime.connect.mockImplementation(() => { throw new Error('Extension context invalidated.'); });
+    client.openSavePort();
+    expect(await client.save(PATCH)).toEqual({ success: true });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledOnce();
   });
 });

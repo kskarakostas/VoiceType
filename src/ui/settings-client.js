@@ -1,7 +1,7 @@
 // Settings client for the trusted extension pages (popup and settings page). Pages save only the
 // top-level fields an edit changed, and re-read when storage changes, so a page left open for
 // hours never writes its stale copy over newer data from another page or the pill.
-import { MSG } from '../shared/messages.js';
+import { MSG, SAVE_PORT } from '../shared/messages.js';
 import { freshSettings } from '../shared/defaults.js';
 
 /** @typedef {import('../shared/defaults.js').Settings} Settings */
@@ -63,6 +63,51 @@ export function createSettingsClient({ chrome }) {
     }
   }
 
+  /** @type {chrome.runtime.Port|null} */
+  let savePort = null;
+  let lastPostId = 0;
+  /** @type {Map<number, (reply: any) => void>} */
+  const waiting = new Map();
+
+  /**
+   * Open the port that later saves go over. The worker's idle stop closes it, and only the next
+   * call reopens it, so a page left open does not keep the worker awake.
+   */
+  function openSavePort() {
+    if (savePort) return;
+    try {
+      savePort = chrome.runtime.connect({ name: SAVE_PORT });
+    } catch {
+      return; // Saves stay on messages.
+    }
+    savePort.onMessage.addListener(({ id, reply }) => {
+      waiting.get(id)?.(reply);
+      waiting.delete(id);
+    });
+    savePort.onDisconnect.addListener(() => {
+      savePort = null;
+      for (const answer of waiting.values()) answer(null);
+      waiting.clear();
+    });
+  }
+
+  /**
+   * @param {object} message
+   * @returns {Promise<any|null>} the reply, or null when the port went first
+   */
+  function postOnPort(message) {
+    const id = ++lastPostId;
+    return new Promise((resolve) => {
+      waiting.set(id, resolve);
+      try {
+        savePort.postMessage({ id, message });
+      } catch {
+        waiting.delete(id);
+        resolve(send(message));
+      }
+    });
+  }
+
   /** @returns {Promise<Settings|null>} full settings, or null when the reply is not settings */
   async function load() {
     const reply = await send({ action: MSG.GET_SETTINGS });
@@ -74,7 +119,8 @@ export function createSettingsClient({ chrome }) {
    * @returns {Promise<{ success: boolean, error?: string }>}
    */
   async function save(patch) {
-    const reply = await send({ action: MSG.SAVE_SETTINGS, settings: patch });
+    const message = { action: MSG.SAVE_SETTINGS, settings: patch };
+    const reply = await (savePort ? postOnPort(message) : send(message));
     return reply?.success === true ? { success: true } : { success: false, error: reply?.error };
   }
 
@@ -101,5 +147,5 @@ export function createSettingsClient({ chrome }) {
     return () => chrome.storage.onChanged.removeListener(onChanged);
   }
 
-  return { send, load, save, saveSiteRule, onExternalChange };
+  return { send, load, save, openSavePort, saveSiteRule, onExternalChange };
 }
