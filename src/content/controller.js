@@ -428,6 +428,9 @@ export function createController(deps) {
     const text = typeof message.text === 'string' ? message.text : '';
     lastResult = { text, raw: typeof message.raw === 'string' ? message.raw : text };
     insertMark = null;
+    // The entry is no longer the newest dictation: an open menu drops it until its next open (V28).
+    recent = null;
+    render();
     const result = { text, cost: finite(message.cost), warning: textOr(message.warning, null), copied: message.copied };
 
     if (bound && bound.isConnected && ownsFrameFocus(bound) && !deps.hasFocus()) {
@@ -644,6 +647,9 @@ export function createController(deps) {
       pressCopyFailed = !(await copyLast());
       return;
     }
+    // The copy failed, so lastResult is all there is of that text: only the same text may go ahead,
+    // which keeps Insert as a way out. Undo would put raw in its place.
+    if (copyPending && (action === 'undo' || recent.text !== lastResult.text)) return;
     const { raw, text } = recent;
     if (action === 'undo') {
       lastResult = { text: raw, raw };

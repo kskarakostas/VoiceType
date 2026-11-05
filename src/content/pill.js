@@ -88,6 +88,10 @@ export class Pill {
   #style = 'dot';
   /** The page zoom cancelled on `.vt`. */
   #zoom = 1;
+  /** The page zoom #anchor was read at: a place cancels a change before anyone reads the field again. */
+  #anchorZoom = 1;
+  /** A place is raising: it goes on with the box it holds, so that raise asks for no other. */
+  #placing = false;
   #state = 'idle';
   #startedAt = 0;
   #timerId = null;
@@ -174,12 +178,14 @@ export class Pill {
     this.mount();
     this.#gap = Number.isFinite(gap) && gap >= 0 ? gap : 8;
     this.#shown = true;
+    this.#anchorZoom = this.#pageZoom();
     this.#place(anchor);
   }
 
   /** @param {Box|null} anchor */
   reposition(anchor) {
     if (this.#destroyed || !this.#shown) return;
+    this.#anchorZoom = this.#pageZoom();
     this.#place(anchor);
   }
 
@@ -202,7 +208,9 @@ export class Pill {
     } catch {
       // A page can leave no root or refuse the show; z-index still holds against all but the top layer.
     }
-    if (this.#cancelZoom()) {
+    this.#cancelZoom();
+    if (!this.#placing && this.#pageZoom() !== this.#anchorZoom) {
+      this.#anchorZoom = this.#pageZoom();
       this.#handlers.onZoom?.();
       this.#replace();
     }
@@ -445,18 +453,20 @@ export class Pill {
     return this.#state !== 'idle' || !this.#els.status.hasAttribute('data-empty');
   }
 
+  #pageZoom() {
+    return this.#host.currentCSSZoom ?? 1;
+  }
+
   /**
    * Zoom multiplies down the tree, so `all: initial` on the host does not stop one on the page root,
    * and it would scale every px here. Cancelled on `.vt`, they are viewport px, like the field's box
    * and #viewport(), which the root's zoom leaves as they are.
-   * @returns {boolean} the page's zoom changed
    */
   #cancelZoom() {
-    const zoom = this.#host.currentCSSZoom ?? 1;
-    if (zoom === this.#zoom) return false;
+    const zoom = this.#pageZoom();
+    if (zoom === this.#zoom) return;
     this.#zoom = zoom;
     this.#els.wrap.style.zoom = String(1 / zoom);
-    return true;
   }
 
   /** What the pill shows changed: with its field out of view, that decides corner or hidden. */
@@ -471,7 +481,9 @@ export class Pill {
   #place(anchor, { keepMenu = false } = {}) {
     this.#anchor = anchor;
     this.#cancelZoom();
+    this.#placing = true;
     this.#syncRaising();
+    this.#placing = false;
     if (this.#style === 'minimal') {
       this.#placeIndicator();
       return;
