@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npm run build && playwright test",
-    "lint:ext": "web-ext lint --source-dir dist",
+    "lint:ext": "node scripts/lint-ext.mjs",
     "package": "version=$(node -p \"require('./manifest.json').version\") && rm -f voicetype-$version.zip && cd dist && zip -qr ../voicetype-$version.zip .",
     "screenshots": "npm run build && playwright test --config playwright.screenshots.config.js"
   },
