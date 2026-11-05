@@ -8,6 +8,11 @@ const [head, jobs = ''] = workflow.split(/^jobs:$/m);
 const [build, publish = ''] = jobs.split(/^ {2}publish:$/m);
 
 const stepWith = (text) => publish.split(/^ {6}- /m).filter((step) => step.includes(text));
+const linesOf = (text, key) =>
+  text
+    .split('\n')
+    .map((line) => line.trim().replace(/^- /, ''))
+    .filter((line) => line.startsWith(`${key}:`));
 
 describe('release workflow, workflow level', () => {
   it('grants nothing by default', () => {
@@ -21,13 +26,22 @@ describe('release workflow, workflow level', () => {
   });
 
   it('pins every action to a commit with the version as a comment', () => {
-    const uses = workflow.split('\n').filter((line) => /^\s*(- )?uses:/.test(line));
+    const uses = linesOf(workflow, 'uses');
     expect(uses.length).toBeGreaterThanOrEqual(4);
     for (const line of uses) expect(line).toMatch(/@[0-9a-f]{40} #/);
   });
 
   it('never interpolates the tag into a shell line', () => {
-    expect(workflow).not.toContain('${{ github.ref');
+    expect(workflow).not.toMatch(/github\.(event\.)?ref/);
+  });
+
+  it('names one token in the whole file', () => {
+    expect(workflow.match(/github\.token|secrets\./g)).toHaveLength(1);
+  });
+
+  it('grants one write scope in the whole file', () => {
+    expect(workflow.match(/:\s*['"]?write\b/g)).toHaveLength(1);
+    expect(workflow).not.toContain('write-all');
   });
 });
 
@@ -39,6 +53,8 @@ describe('release workflow, build job', () => {
 
   it('runs the repository code', () => {
     expect(build).toContain('run: npm ci');
+    expect(build).toContain('run: npm test');
+    expect(build).toContain('does not match manifest version');
   });
 
   it('holds no token and cannot write', () => {
@@ -77,10 +93,16 @@ describe('release workflow, publish job', () => {
     expect(publish).not.toContain('node ');
   });
 
-  it('creates the release from the tag in the environment, quoted', () => {
-    expect(publish).toContain(
+  it('uses one action, the download', () => {
+    const uses = linesOf(publish, 'uses');
+    expect(uses).toHaveLength(1);
+    expect(uses[0]).toContain('actions/download-artifact@');
+  });
+
+  it('runs one command, creating the release from the tag in the environment, quoted', () => {
+    expect(linesOf(publish, 'run')).toEqual([
       'run: gh release create "$GITHUB_REF_NAME" voicetype-*.zip --verify-tag --notes-file notes.md',
-    );
+    ]);
   });
 
   it('holds the token and the repository in that one step', () => {
