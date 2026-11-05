@@ -1125,6 +1125,35 @@ describe('readSelection', () => {
     expect(readSelection(el)).toEqual({ text: 'hree fo', start: 8, end: 15 });
   });
 
+  it('drops the line breaks a selection adds past what a contenteditable holds', () => {
+    const el = selectedEditable('hello world', 0, 5);
+    // jsdom's Selection is its range; Chrome's ends a triple-clicked paragraph in line breaks.
+    const added = vi.spyOn(Selection.prototype, 'toString').mockReturnValue('hello\n\n');
+    const snapshot = readSelection(el);
+    expect(snapshot).toEqual({ text: 'hello', start: 0, end: 5 });
+    expect(sameSelection(el, snapshot)).toBe(true);
+    added.mockRestore();
+  });
+
+  it('keeps the line breaks inside a contenteditable selection', () => {
+    const el = selectedEditable('hello world', 0, 5);
+    const added = vi.spyOn(Selection.prototype, 'toString').mockReturnValue('he\n\nllo');
+    expect(readSelection(el).text).toBe('he\n\nllo');
+    added.mockRestore();
+  });
+
+  it('keeps a line break a contenteditable holds at the end of the selection', () => {
+    const el = selectedEditable('one\ntwo', 0, 4);
+    expect(readSelection(el)).toEqual({ text: 'one\n', start: 0, end: 4 });
+    const added = vi.spyOn(Selection.prototype, 'toString').mockReturnValue('one\n\n');
+    expect(readSelection(el).text).toBe('one\n');
+    added.mockRestore();
+  });
+
+  it('keeps the line breaks of a selection in a form field', () => {
+    expect(readSelection(selectedTextarea('one\n\ntwo', 0, 5)).text).toBe('one\n\n');
+  });
+
   it('reads a role=textbox that is no contenteditable', () => {
     document.body.innerHTML = '<div id="box" role="textbox">hello world</div>';
     const el = document.getElementById('box');
@@ -1251,6 +1280,37 @@ describe('insertText over a selection', () => {
     selectRange(el.firstChild.firstChild, 4, el.lastChild.firstChild, 5);
     expect(await insertText(el, 'four', replacing({ execCommand: editableExec }))).toBe('inserted');
     expect(el.textContent).toBe('one four');
+  });
+
+  it('ends a triple-clicked paragraph at its text, so the next paragraph stays apart', async () => {
+    const el = editable('<p>one</p><p>two</p>');
+    el.focus();
+    selectRange(el.firstChild.firstChild, 0, el.lastChild, 0);
+    vi.spyOn(Selection.prototype, 'toString').mockReturnValue('one\n\n');
+    const selected = [];
+    const exec = vi.fn((text) => {
+      const range = document.getSelection().getRangeAt(0);
+      selected.push([range.endContainer, range.endOffset]);
+      return editableExec(text);
+    });
+    expect(await insertText(el, 'four', replacing({ execCommand: exec }))).toBe('inserted');
+    expect(selected).toEqual([[el.firstChild.firstChild, 3]]);
+    expect(el.textContent).toBe('fourtwo');
+    expect(el.children).toHaveLength(2);
+  });
+
+  it('leaves the end of a selection that adds no line break, an image in it included', async () => {
+    const el = editable('one<img alt="">');
+    el.focus();
+    selectRange(el.firstChild, 0, el, 2);
+    const selected = [];
+    const exec = vi.fn((text) => {
+      const range = document.getSelection().getRangeAt(0);
+      selected.push([range.endContainer, range.endOffset]);
+      return editableExec(text);
+    });
+    expect(await insertText(el, 'four', replacing({ execCommand: exec }))).toBe('inserted');
+    expect(selected).toEqual([[el, 2]]);
   });
 
   it('a replacement that is a substring of the selection is verified', async () => {

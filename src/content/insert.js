@@ -212,9 +212,9 @@ export async function replaceInsertion(el, { start, end, length }, text, raw, de
 
 /**
  * The selection inside a field: offsets in text units, a contenteditable's as `editableSplice`
- * counts them, and the text. For a contenteditable that text keeps its line breaks. Null for a
- * caret, whitespace, a selection not wholly inside el, an input type with no selection API
- * (email) and Google Docs (V42).
+ * counts them, and the text. For a contenteditable that text keeps its line breaks, not ones the
+ * selection adds after the field's own text. Null for a caret, whitespace, a selection not wholly
+ * inside el, an input type with no selection API (email) and Google Docs (V42).
  * @param {Element} el
  * @param {{ hostname?: string }} [deps]
  * @returns {{ text: string, start: number, end: number }|null}
@@ -244,8 +244,39 @@ function formSelection(el) {
 function editableSelection(el) {
   const offsets = selectionOffsets(el);
   if (!offsets || offsets.start === offsets.end) return null;
+  const selection = selectionFor(el);
   // Not range.toString(): that runs paragraphs together, and the text model would read one word.
-  return { text: selectionFor(el).toString(), ...offsets };
+  const text = selection.toString();
+  // V45 would put these back around the replacement.
+  const added = addedBreaks(selection);
+  return { text: added > 0 ? text.slice(0, -added) : text, ...offsets };
+}
+
+/**
+ * How many line breaks the selection's text ends in past those the field holds there: a triple
+ * click runs to the next block, which adds them.
+ * @param {Selection} selection
+ */
+function addedBreaks(selection) {
+  const breaks = (text) => /[\r\n]*$/.exec(text)[0].length;
+  return breaks(selection.toString()) - breaks(selection.getRangeAt(0).toString());
+}
+
+/**
+ * Ends a selection that runs to the next block at its last text. The text and the offsets stay the
+ * same, and a write over it no longer pulls that block up into this one.
+ * @param {Element} el
+ */
+function endAtText(el) {
+  const sel = selectionFor(el);
+  if (!sel || sel.rangeCount === 0 || addedBreaks(sel) <= 0) return;
+  const range = sel.getRangeAt(0);
+  const walker = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let last = null;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.data && range.comparePoint(node, node.data.length) === 0) last = node;
+  }
+  if (last) sel.extend(last, last.data.length);
 }
 
 /** Focuses the target, fixes the caret and records the state every rung is judged against. */
@@ -254,8 +285,9 @@ function prepare(target, text, deps) {
   const prior = editable ? rangeInside(target) : null;
   try { target.focus({ preventScroll: true }); } catch { /* some hosts throw on focus */ }
   if (editable) placeCaret(target, prior);
-  const before = readValue(target);
   const replacing = deps.replacing === true;
+  if (editable && replacing) endAtText(target);
+  const before = readValue(target);
   return {
     target,
     text,

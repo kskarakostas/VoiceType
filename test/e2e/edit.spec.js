@@ -309,6 +309,48 @@ test('a selection across paragraphs goes with its line breaks and is replaced wh
   expect(JSON.parse(refineCalls[0].input).selected_text).toMatch(/^line\n+second$/);
 });
 
+test('a triple click on a paragraph goes without the line breaks the selection adds and leaves no blank paragraph', async () => {
+  const page = await openPage();
+  const field = page.locator('#ce');
+  await focusField(page, field);
+  await field.evaluate((el) => {
+    el.replaceChildren(...['first line', 'second line'].map((text) => {
+      const p = document.createElement('p');
+      p.textContent = text;
+      return p;
+    }));
+  });
+  await field.locator('p').first().click({ clickCount: 3 });
+
+  await editByVoice(page);
+
+  await expect.poll(() => pillStatus(page)).toMatch(/^Done /);
+  expect(JSON.parse(refineCalls[0].input).selected_text).toBe('first line');
+  expect(await fieldText(field)).toBe(`${EDITED}second line`);
+  expect(await field.locator('p').allTextContents()).toEqual([EDITED, 'second line']);
+
+  await page.keyboard.press('Control+z');
+
+  await expect.poll(() => field.locator('p').allTextContents()).toEqual(['first line', 'second line']);
+});
+
+test('a triple click on a line of a preformatted contenteditable keeps the line break the field holds', async () => {
+  const page = await openPage();
+  const field = page.locator('#ce');
+  await focusField(page, field);
+  await field.evaluate((el) => {
+    el.style.whiteSpace = 'pre-wrap';
+    el.textContent = 'first line\nsecond line';
+  });
+  await field.click({ clickCount: 3, position: { x: 30, y: 16 } });
+
+  await editByVoice(page);
+
+  await expect.poll(() => pillStatus(page)).toMatch(/^Done /);
+  expect(JSON.parse(refineCalls[0].input).selected_text).toBe('first line\n');
+  expect((await fieldText(field)).replace(/\n/g, '')).toBe(`${EDITED}second line`);
+});
+
 for (const [name, selector] of [FIELDS[0], FIELDS[2]]) {
   test(`right-to-left text in ${name} goes as selected and is replaced in place`, async () => {
     const page = await openPage();
