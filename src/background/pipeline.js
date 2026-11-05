@@ -39,6 +39,18 @@ function asSentence(text) {
 }
 
 /**
+ * The replacement with the selection's leading and trailing whitespace around it, since a double
+ * click can select a trailing space (V45).
+ * @param {string} selection
+ * @param {string} replacement
+ */
+function withOuterSpace(selection, replacement) {
+  const lead = selection.slice(0, selection.length - selection.trimStart().length);
+  const rest = selection.slice(lead.length);
+  return `${lead}${replacement}${rest.slice(rest.trimEnd().length)}`;
+}
+
+/**
  * What the text model is asked: the fixed edit request, or the mode's prompt over the transcript.
  * @param {{ raw: string, modeKey: string, settings: import('../shared/defaults.js').Settings, editText: string|null }} args
  * @returns {{ instructions: string, text: string }|null} Null means speech to text only.
@@ -92,7 +104,7 @@ export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeK
       // Part of an edit would overwrite the whole selection (V45); a mode keeps what it got.
       const cutEdit = editText !== null && out.complete === false;
       if (refinedText && !cutEdit) {
-        text = refinedText;
+        text = editText === null ? refinedText : withOuterSpace(editText, refinedText);
         refined = true;
       } else {
         warning = 'Mode returned nothing. Raw transcript inserted.';

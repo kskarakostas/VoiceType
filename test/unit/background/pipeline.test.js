@@ -276,6 +276,33 @@ describe('runDictation for an edit', () => {
     expect(await runDictation({ ...edit, settings: settingsWith() }, adapters)).toMatchObject({ text: 'done', failed: false });
   });
 
+  describe("a selection's outer whitespace", () => {
+    it.each([
+      ['a trailing space', 'word ', 'new ', 'new '],
+      ['a leading newline', '\nword', 'new', '\nnew'],
+      ['both, mixed', ' \t\nword \n', 'new', ' \t\nnew \n'],
+      ['none', 'word', 'new', 'new'],
+      ['a selection all inside, its inner whitespace no business of ours', 'two words', 'three new words', 'three new words'],
+      ['nothing but whitespace, put back once', '  ', 'new', '  new'],
+    ])('%s', async (_name, editText, refineText, expected) => {
+      const adapters = fakeAdapters({ refineText });
+      const result = await runDictation({ ...edit, editText, settings: settingsWith() }, adapters);
+      expect(result).toMatchObject({ text: expected, failed: false });
+    });
+
+    it('still reaches the model as selected', async () => {
+      const adapters = fakeAdapters();
+      await runDictation({ ...edit, editText: ' word\n', settings: settingsWith() }, adapters);
+      expect(adapters.openai.refine.mock.calls[0][0].text).toBe(editInput('raw words', ' word\n'));
+    });
+
+    it('a failed edit is untouched', async () => {
+      const adapters = fakeAdapters({ refineText: '' });
+      const result = await runDictation({ ...edit, editText: ' word ', settings: settingsWith() }, adapters);
+      expect(result).toMatchObject({ text: 'raw words', failed: true });
+    });
+  });
+
   it('no speech throws as a dictation does', async () => {
     const adapters = fakeAdapters({ sttText: '  ' });
     await expect(runDictation({ ...edit, settings: settingsWith() }, adapters)).rejects.toMatchObject({ name: 'ProviderError', code: 'empty', message: 'No speech detected.' });

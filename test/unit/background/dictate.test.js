@@ -383,6 +383,20 @@ describe('an edit', () => {
     expect(await dictate(edit)).toMatchObject({ success: false, edit: true, instruction: 'make it shorter' });
   });
 
+  it("the history holds the text the field gets, the selection's outer whitespace included", async () => {
+    settings.keepHistory = true;
+    const adapters = {
+      openai: {
+        transcribe: vi.fn(async () => ({ text: 'make it shorter', usage: { kind: 'duration', seconds: 3 } })),
+        refine: vi.fn(async () => ({ text: 'shorter', usage: { inputTokens: 1, outputTokens: 1 } })),
+      },
+    };
+    deps.runDictation = (args) => runDictation(args, adapters);
+    const message = await createDictate(deps)({ ...edit, editText: '\nword ' });
+    expect(message.text).toBe('\nshorter ');
+    expect(deps.history.add.mock.calls[0][0].text).toBe(message.text);
+  });
+
   it("an edit's history entry has raw instruction, text replacement, mode EDIT_MODE and no selected text", async () => {
     deps.runDictation.mockResolvedValueOnce(replaced);
     await dictate(edit);

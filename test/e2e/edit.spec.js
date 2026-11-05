@@ -185,6 +185,19 @@ test('an edit replaces the selection in a field in a cross-origin frame', async 
 });
 
 for (const [name, selector] of [FIELDS[0], FIELDS[1], FIELDS[2]]) {
+  test(`a selected trailing space stays in ${name}`, async () => {
+    const page = await openPage();
+    const field = page.locator(selector);
+    await prepare(page, field, 'keep this word', 5, 10);
+
+    await editByVoice(page);
+
+    // An editor may hold the space as a no-break space.
+    await expect.poll(async () => (await fieldText(field)).replace(/\u00A0/g, ' ')).toBe(`keep ${EDITED} word`);
+    await expect.poll(() => pillStatus(page)).toMatch(/^Done /);
+    expect(JSON.parse(refineCalls[0].input).selected_text).toBe('this ');
+  });
+
   test(`Ctrl+Z restores ${name}`, async () => {
     const page = await openPage();
     const field = page.locator(selector);
