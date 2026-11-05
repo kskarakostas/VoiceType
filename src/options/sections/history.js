@@ -3,6 +3,7 @@
 // (V27, V29). Entry text is set with textContent only.
 import { MSG } from '../../shared/messages.js';
 import { createInlineConfirm } from '../../ui/form.js';
+import { sameList } from '../../ui/lists.js';
 
 /** @typedef {import('../options.js').PageContext} PageContext */
 /** @typedef {import('../options.js').Section} Section */
@@ -13,8 +14,6 @@ const OFF_TEXT = 'History is off.';
 const EMPTY_TEXT = 'No dictations yet.';
 const LOAD_ERROR = 'Could not load history.';
 const COPY_ERROR = 'Could not copy.';
-
-const sameList = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 /**
  * @param {PageContext} ctx

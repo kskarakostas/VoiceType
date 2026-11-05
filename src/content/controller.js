@@ -1,9 +1,10 @@
 // The in-page state machine: which field the pill follows, the recording state as this frame
 // sees it, and where a finished transcript goes. Side effects arrive through deps.
 import { MSG } from '../shared/messages.js';
-import { formatCost } from '../shared/pricing.js';
+import { finite } from '../shared/numbers.js';
 import { isPasswordField } from './fields.js';
 import { normalizeForCompare } from './insert.js';
+import { createPlacement } from './placement.js';
 import { STATUS_MS } from './pill.js';
 
 /**
@@ -36,11 +37,9 @@ export const PROCESSING_TIMEOUT_MS = 75_000;
 const ORPHAN_NOTICE = 'VoiceType was turned off or updated. Reload this page.';
 const NO_REPLY = 'VoiceType could not reach its background service. Try again.';
 const NO_RESPONSE = 'No response from VoiceType. Try again.';
-const CLICK_TO_COPY = 'Could not insert. Click here to copy the text.';
 const HOLD_NOTICE = 'Return to the field to insert, or click here to copy.';
 const PASSWORD_NOTICE = 'VoiceType does not record in password fields.';
 const FOCUS_NOTICE = 'Click into the field you want to dictate into, then try again.';
-const NOT_COPIED = ' Not copied.';
 const STILL_PROCESSING = 'Still processing';
 const AUTO_STOP = Object.freeze({
   maxTime: { text: 'Max time reached', tone: 'info' },
@@ -49,7 +48,6 @@ const AUTO_STOP = Object.freeze({
 });
 const DEFAULT_GAP = 8;
 
-const finite = (value) => (Number.isFinite(value) ? value : 0);
 const textOr = (value, fallback) => (typeof value === 'string' && value ? value : fallback);
 
 /**
@@ -75,8 +73,6 @@ export function createController(deps) {
   let lastResult = null;
   /** The newest dictation of this site as of this menu open: `{ raw, text, refined }`, or null (V28). */
   let recent = null;
-  /** Where the last verified insert in a form field lies, for Undo AI edit (V31): `{ el, start, end, length, text, raw }`. */
-  let insertMark = null;
   /** A result for a field that kept this frame's focus while another frame or window had it. */
   let held = null;
   /** The last valid field focused in this frame (D12 across frames). */
@@ -427,7 +423,7 @@ export function createController(deps) {
     }
     const text = typeof message.text === 'string' ? message.text : '';
     lastResult = { text, raw: typeof message.raw === 'string' ? message.raw : text };
-    insertMark = null;
+    clearMark();
     // The entry is no longer the newest dictation: an open menu drops it until its next open (V28).
     recent = null;
     render();
@@ -468,94 +464,23 @@ export function createController(deps) {
     start();
   }
 
-  /**
-   * @param {Element|null} bound
-   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null, unpaid?: boolean }} result
-   */
-  function place(bound, result) {
-    return whileLanding(() => placeResult(bound, result));
-  }
-
   /** True while el is the field the user is in: still in the document, focused, this frame included. */
   const hasLiveFocus = (el) => Boolean(el?.isConnected) && deepActiveElement() === el && deps.hasFocus();
 
-  /**
-   * The mark for text just inserted into el. A field that cannot be read gets none, so Undo
-   * copies: the insert itself went well and still has its status to report.
-   * @param {Element} el
-   * @param {string} text
-   */
-  function markFor(el, text) {
-    try {
-      const mark = markInsertion(el, text);
-      return mark && { ...mark, el, text, raw: lastResult.raw };
-    } catch {
-      return null;
-    }
-  }
+  const { place, undoEdit, clearMark } = createPlacement({
+    pill,
+    insertText,
+    copyText,
+    markInsertion,
+    replaceInsertion,
+    isValidInput,
+    hasLiveFocus,
+    notify,
+    inactive,
+    whileLanding,
+    lastRaw: () => lastResult.raw,
+  });
 
-  /**
-   * Say how an insert ended.
-   * @param {import('./insert.js').InsertOutcome} outcome
-   * @param {() => void} inserted says it for a verified insert
-   */
-  function reportInsert(outcome, inserted) {
-    if (outcome === 'inserted') {
-      pill.setState('done');
-      inserted();
-    } else if (outcome === 'unverified') {
-      pill.setState('done');
-      notify('Could not confirm the insert. The text is also on the clipboard.', { tone: 'warning' });
-    } else if (outcome === 'clipboard') {
-      pill.setState('done');
-      notify('Copied to clipboard. The field could not be edited.', { tone: 'warning' });
-    } else {
-      pill.setState('error');
-      notify(CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true });
-    }
-  }
-
-  /**
-   * D12: the text goes into the field bound at REC start only while that field has focus,
-   * this frame included; otherwise to the clipboard.
-   * @param {Element|null} bound
-   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null, unpaid?: boolean }} result
-   *   copied: the worker's always-copy outcome, false when that copy failed;
-   *   unpaid: a history action, so a verified insert has no cost to report (V30)
-   */
-  async function placeResult(bound, { text, cost, warning, copied: alwaysCopied, unpaid = false }) {
-    if (hasLiveFocus(bound)) {
-      let outcome;
-      try {
-        outcome = await insertText(bound, text);
-      } catch {
-        // A paid transcript is never dropped: the click-to-copy status keeps it.
-        outcome = 'failed';
-      }
-      if (inactive()) return;
-      if (outcome === 'inserted') insertMark = markFor(bound, text);
-      reportInsert(outcome, () => {
-        const suffix = alwaysCopied === false ? NOT_COPIED : '';
-        if (unpaid) notify('Inserted.', { tone: 'success' });
-        else if (warning) notify(`${warning}${suffix}`, { tone: 'warning' });
-        else notify(`Done ${formatCost(cost)}${suffix}`, { tone: 'success' });
-      });
-      return;
-    }
-
-    const copied = await copyText(text);
-    if (inactive()) return;
-    if (!copied) {
-      pill.setState('error');
-      notify(CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true });
-    } else if (bound) {
-      pill.setState('done');
-      notify('The field lost focus. Text copied to clipboard.', { tone: 'warning' });
-    } else {
-      pill.setState('done');
-      notify('Copied to clipboard.', { tone: 'info' });
-    }
-  }
 
   /** Deliver the held result once: into its field if that has focus now, else the clipboard. */
   async function deliverHeld() {
@@ -662,40 +587,6 @@ export function createController(deps) {
   }
 
   /**
-   * V31: in place only over the exact text inserted here, in the field that still has the focus.
-   * Anything else copies raw. Text the mark no longer covers is never searched for.
-   * @param {string} raw
-   * @param {string} text
-   */
-  async function undoEdit(raw, text) {
-    const mark = insertMark;
-    insertMark = null;
-    const inPlace = mark?.text === text && mark.raw === raw && isValidInput(mark.el) && hasLiveFocus(mark.el);
-    let outcome = null;
-    if (inPlace) {
-      try {
-        outcome = await replaceInsertion(mark.el, mark, text, raw);
-      } catch {
-        outcome = 'failed';
-      }
-      if (inactive()) return;
-    }
-    if (outcome) {
-      reportInsert(outcome, () => notify('Original text restored.', { tone: 'success' }));
-      return;
-    }
-    const copied = await copyText(raw);
-    if (inactive()) return;
-    if (copied) {
-      pill.setState('done');
-      notify('Original text copied.', { tone: 'info' });
-    } else {
-      pill.setState('error');
-      notify(CLICK_TO_COPY, { tone: 'error', sticky: true, clickable: true });
-    }
-  }
-
-  /**
    * Send a menu choice. The menu re-renders from the SETTINGS_CHANGED push that follows a save.
    * @param {object} message
    */
@@ -773,7 +664,7 @@ export function createController(deps) {
     held = null;
     lastField = null;
     recent = null;
-    insertMark = null;
+    clearMark();
     pill.destroy();
   }
 

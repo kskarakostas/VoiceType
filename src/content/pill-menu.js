@@ -1,5 +1,6 @@
 // The sections of the pill's menu. User data (mode names and icons) is only ever set with textContent.
 import { formatChord } from '../shared/chord.js';
+import { finite } from '../shared/numbers.js';
 import { formatCost } from '../shared/pricing.js';
 import { PROVIDERS } from '../shared/models.js';
 import { TARGET_LANGUAGES, orderedModeKeys } from '../shared/defaults.js';
@@ -11,9 +12,6 @@ import { TARGET_LANGUAGES, orderedModeKeys } from '../shared/defaults.js';
  * @typedef {{ el: (tag: string, className?: string, attrs?: Record<string, string>) => HTMLElement,
  *   icon: (name: string, className?: string) => SVGSVGElement, doc: Document }} MenuHelpers
  */
-
-/** @param {number} value */
-const finite = (value) => (Number.isFinite(value) ? value : 0);
 
 /** @param {Window|null} win */
 function isMac(win) {

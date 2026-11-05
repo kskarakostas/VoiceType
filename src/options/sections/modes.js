@@ -2,6 +2,7 @@
 // modes, both ported from the 2.2 popup unchanged in behaviour, and the Translate target, the way
 // to change it without a pill menu. Changes save through ctx.commit.
 import { TARGET_LANGUAGES, orderedModeKeys } from '../../shared/defaults.js';
+import { sameList } from '../../ui/lists.js';
 
 /** @typedef {import('../options.js').PageContext} PageContext */
 /** @typedef {import('../options.js').Section} Section */
@@ -12,8 +13,6 @@ const ICON_PATHS = {
   edit: ['M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3Z', 'm13.5 8.5 3 3'],
   check: ['m5 12.5 4.5 4.5L19 7.5'],
 };
-
-const sameList = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 function setText(node, text) {
   if (node.textContent !== text) node.textContent = text;

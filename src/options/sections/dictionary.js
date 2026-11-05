@@ -7,6 +7,7 @@ import {
 } from '../../shared/dictionary.js';
 import { MSG } from '../../shared/messages.js';
 import { createInlineConfirm } from '../../ui/form.js';
+import { sameList } from '../../ui/lists.js';
 import { MAX_IMPORT_BYTES, importDictionaryCsv, serializeDictionary } from '../dictionary-csv.js';
 
 /** @typedef {import('../options.js').PageContext} PageContext */
@@ -21,8 +22,6 @@ const EXPORT_FILE_NAME = 'voicetype-dictionary.csv';
 const EXPORT_TYPE = 'text/csv;charset=utf-8';
 /** Long enough for the browser to start the download. */
 const REVOKE_DELAY_MS = 1000;
-
-const sameList = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 /**
  * @param {{ reason: 'duplicate'|'tooLong'|'full', group?: string }} refusal

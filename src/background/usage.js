@@ -1,4 +1,5 @@
 // Usage log v2. Pure functions; storage is handled by storage.js.
+import { finite } from '../shared/numbers.js';
 
 export const RETENTION_DAYS = 90;
 const PROVIDER_KEYS = ['openai', 'gemini'];
@@ -58,7 +59,6 @@ export function emptyLog() {
   return { version: 2, daily: {}, total: emptyBucket() };
 }
 
-const finite = (v) => (Number.isFinite(v) ? v : 0);
 const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 
 /** Add n to record[key], reading own properties only so a mode named 'constructor' counts from 0. */
