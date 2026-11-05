@@ -573,6 +573,54 @@ describe('popup Copy last (V29)', () => {
     expect(writeText).not.toHaveBeenCalled();
   });
 
+  it('a newer entry after opening: Copy last copies it', async () => {
+    const writeText = stubClipboard();
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: [OLDER] }, { entries: [NEWER, OLDER] });
+    await start(chrome);
+    chrome.fire({ history: { newValue: [] } }, 'session');
+    await flush();
+    $('copy-last').click();
+    await flush();
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(NEWER.text);
+  });
+
+  it('the store emptied after opening: the button disables', async () => {
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: [NEWER] }, { entries: [] });
+    await start(chrome);
+    expect($('copy-last').disabled).toBe(false);
+    chrome.fire({ history: {} }, 'session');
+    await flush();
+    expect($('copy-last').disabled).toBe(true);
+  });
+
+  it.each([
+    ['another area', { history: { newValue: [] } }, 'local'],
+    ['another session key', { other: { newValue: 1 } }, 'session'],
+  ])('%s does not read history again', async (_name, changes, area) => {
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: [NEWER] });
+    await start(chrome);
+    const reads = () => chrome.sent.filter((m) => m.action === MSG.GET_HISTORY).length;
+    chrome.fire(changes, area);
+    await flush();
+    expect(reads()).toBe(1);
+  });
+
+  it('a slow reply does not bring back what a newer read emptied', async () => {
+    let answerSlow;
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: [] }, new Promise((resolve) => { answerSlow = resolve; }), { entries: [] });
+    await start(chrome);
+    chrome.fire({ history: {} }, 'session');
+    chrome.fire({ history: {} }, 'session');
+    await flush();
+    answerSlow({ entries: [NEWER] });
+    await flush();
+    expect($('copy-last').disabled).toBe(true);
+  });
+
   it('a rejected clipboard write shows a toast and throws nothing', async () => {
     const unhandled = vi.fn();
     process.on('unhandledRejection', unhandled);

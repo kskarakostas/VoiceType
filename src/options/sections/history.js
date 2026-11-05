@@ -22,7 +22,9 @@ const sameList = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]
  */
 export function createHistorySection(ctx) {
   const { $, document } = ctx;
-  const el = { keep: $('keep-history'), list: $('history-list'), empty: $('history-empty'), clear: $('clear-history') };
+  const el = {
+    keep: $('keep-history'), list: $('history-list'), empty: $('history-empty'), clear: $('clear-history'), heading: $('h-history'),
+  };
   // Rows are kept per entry and updated in place: a reload under a press never replaces the button.
   const rows = new Map();
   /** @type {Entry[]|null} null when the list could not be read */
@@ -119,6 +121,9 @@ export function createHistorySection(ctx) {
         return;
       }
       await load();
+      // A disabled button drops the focus to the body. Focus the user moved elsewhere stays there.
+      const { activeElement } = document;
+      if (el.clear.disabled && (activeElement === el.clear || activeElement === document.body)) el.heading.focus();
       ctx.toast('History cleared', 'success');
     },
   });

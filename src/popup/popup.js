@@ -35,6 +35,7 @@ export async function initPopup({ chrome, document, window }) {
 
   let toastTimer;
   let lastText = null;
+  let lastLoads = 0;
 
   function toast(text, tone = 'info') {
     el.toast.textContent = text;
@@ -111,8 +112,11 @@ export async function initPopup({ chrome, document, window }) {
     el.todayCost.textContent = formatCost(today.estimatedCost || 0);
   }
 
+  // Only the newest load paints: a slow reply must not bring back text a clear removed.
   async function loadLast() {
+    const id = ++lastLoads;
     const reply = await client.send({ action: MSG.GET_HISTORY });
+    if (id !== lastLoads) return;
     lastText = reply?.entries?.[0]?.text ?? null;
     renderCopyLast();
   }
@@ -125,6 +129,9 @@ export async function initPopup({ chrome, document, window }) {
   }
   await block.start();
   await loadUsage();
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'session' && Object.hasOwn(changes, 'history')) loadLast();
+  });
   await loadLast();
 
   return {

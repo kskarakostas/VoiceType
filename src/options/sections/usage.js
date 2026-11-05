@@ -1,4 +1,4 @@
-// Settings, Usage and data: the usage table with Refresh and Clear history, and Reset to defaults.
+// Settings, Usage and data: the usage table with Refresh and Clear usage history, and Reset to defaults.
 // Ported from the 2.2 popup unchanged in behaviour, except that Reset follows V21: it keeps the
 // keys, provider, spoken languages, dictionary, site rules and keepHistory (V27), and resets every
 // other field.

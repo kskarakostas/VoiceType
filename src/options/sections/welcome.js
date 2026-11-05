@@ -10,6 +10,9 @@ import { PROVIDERS } from '../../shared/models.js';
 
 const UNKNOWN = 'Unknown';
 const MIC_TEXT = { granted: 'Allowed', prompt: 'Not allowed yet', denied: 'Blocked' };
+const MIC_ASKS = 'Chrome asks once, for VoiceType itself, in a new tab.';
+/** The wording of DENIED in src/background/recorder.js. */
+const MIC_BLOCKED = 'Microphone blocked for VoiceType. Allow it at chrome://settings/content/microphone.';
 const OPEN_ERROR = 'Could not open the microphone page.';
 
 /**
@@ -20,7 +23,7 @@ export function createWelcomeSection(ctx) {
   const { $, mac } = ctx;
   const el = {
     keyStatus: $('welcome-key-status'), keyState: $('welcome-key-state'),
-    micStatus: $('welcome-mic-status'), micState: $('welcome-mic-state'), allowMic: $('welcome-allow-mic'),
+    micStatus: $('welcome-mic-status'), micState: $('welcome-mic-state'), micHint: $('welcome-mic-hint'), allowMic: $('welcome-allow-mic'),
     hotkey: $('welcome-hotkey'),
   };
 
@@ -40,6 +43,8 @@ export function createWelcomeSection(ctx) {
     const granted = state === 'granted';
     el.micStatus.dataset.ready = String(granted);
     el.micState.textContent = MIC_TEXT[state] ?? UNKNOWN;
+    el.micHint.textContent = state === 'denied' ? MIC_BLOCKED : MIC_ASKS;
+    el.micHint.hidden = granted;
     el.allowMic.hidden = granted;
   }
 

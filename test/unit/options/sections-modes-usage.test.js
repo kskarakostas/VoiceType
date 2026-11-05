@@ -169,7 +169,7 @@ describe('settings page usage', () => {
     expect($('usage-today-sessions').textContent).toBe('4');
   });
 
-  it('Clear history needs two clicks', async () => {
+  it('Clear usage history needs two clicks', async () => {
     vi.useFakeTimers();
     const chrome = fakeChrome();
     await start(chrome, 'settings/usage');
@@ -185,7 +185,7 @@ describe('settings page usage', () => {
     // Home and the table on mount, then the table after clearing.
     expect(chrome.count(MSG.GET_USAGE)).toBe(3);
     expect($('toast').textContent).toBe('Usage history cleared');
-    expect(button.textContent).toBe('Clear history');
+    expect(button.textContent).toBe('Clear usage history');
   });
 
   it('a double click does not clear usage history', async () => {
@@ -199,7 +199,7 @@ describe('settings page usage', () => {
     expect(button.textContent).toBe('Click again to clear usage history');
   });
 
-  it('Clear history toasts success only on { success: true }', async () => {
+  it('Clear usage history toasts success only on { success: true }', async () => {
     vi.useFakeTimers();
     const chrome = fakeChrome();
     chrome.script(MSG.CLEAR_USAGE, { success: false }, undefined);

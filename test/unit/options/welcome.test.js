@@ -10,6 +10,8 @@ import { freshSettings } from '../../../src/shared/defaults.js';
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/options/options.html'), 'utf8');
 const KEY = 'sk-proj-abcdefgh1234';
 const INSTRUCTION = 'click into any text field on a web page and press it';
+const ASKS = 'Chrome asks once, for VoiceType itself, in a new tab.';
+const BLOCKED = 'Microphone blocked for VoiceType. Allow it at chrome://settings/content/microphone.';
 
 function storedSettings(fields = {}) {
   return { ...freshSettings(), provider: 'openai', keys: { openai: '', gemini: '' }, ...fields };
@@ -147,6 +149,41 @@ describe('Welcome: microphone', () => {
     expect($('welcome-mic-state').textContent).toBe('Unknown');
     expect(micDone()).toBe(false);
     expect($('welcome-allow-mic').hidden).toBe(false);
+  });
+
+  it('the hint fits the state: asks in the prompt state, how to unblock when Blocked, none when Allowed', async () => {
+    const expected = { prompt: [ASKS, false], denied: [BLOCKED, false], granted: [null, true] };
+    for (const [state, [text, hidden]] of Object.entries(expected)) {
+      stubNavigator('permissions', { query: vi.fn(async () => fakeStatus(state)) });
+      document.body.innerHTML = new DOMParser().parseFromString(HTML, 'text/html').body.innerHTML;
+      await open();
+      expect($('welcome-mic-hint').hidden, state).toBe(hidden);
+      if (text) expect($('welcome-mic-hint').textContent, state).toBe(text);
+    }
+  });
+
+  it('keeps the hint when the state is unknown', async () => {
+    stubNavigator('permissions', undefined);
+    await open();
+    expect($('welcome-mic-hint').hidden).toBe(false);
+    expect($('welcome-mic-hint').textContent).toBe(ASKS);
+  });
+
+  it('the hint follows a state change', async () => {
+    const status = fakeStatus('prompt');
+    stubNavigator('permissions', { query: vi.fn(async () => status) });
+    await open();
+    status.set('denied');
+    expect($('welcome-mic-hint').textContent).toBe(BLOCKED);
+    status.set('granted');
+    expect($('welcome-mic-hint').hidden).toBe(true);
+    status.set('prompt');
+    expect($('welcome-mic-hint').hidden).toBe(false);
+    expect($('welcome-mic-hint').textContent).toBe(ASKS);
+  });
+
+  it('the Blocked hint has the wording of the recorder notice', () => {
+    expect(readFileSync(join(import.meta.dirname, '../../../src/background/recorder.js'), 'utf8')).toContain(`'${BLOCKED}'`);
   });
 
   it('the Allow button opens permission.html', async () => {

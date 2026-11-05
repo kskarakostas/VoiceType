@@ -207,6 +207,61 @@ describe('settings page History (V29)', () => {
     expect($('toast').textContent).toBe('History cleared');
   });
 
+  it('a confirmed Clear moves the focus to the page heading, as the button goes disabled', async () => {
+    vi.useFakeTimers();
+    await start(fakeChrome({ history: [entry()] }));
+    const clear = $('clear-history');
+    clear.focus();
+    clear.click();
+    await vi.advanceTimersByTimeAsync(CONFIRM_GUARD_MS);
+    clear.click();
+    await flush();
+    expect(clear.disabled).toBe(true);
+    expect(document.activeElement).toBe($('h-history'));
+  });
+
+  it('a Clear that fails leaves the focus on the button', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome({ history: [entry()] });
+    chrome.script(MSG.CLEAR_HISTORY, { success: false });
+    await start(chrome);
+    const clear = $('clear-history');
+    clear.focus();
+    clear.click();
+    await vi.advanceTimersByTimeAsync(CONFIRM_GUARD_MS);
+    clear.click();
+    await flush();
+    expect(document.activeElement).toBe(clear);
+  });
+
+  it('a Clear leaves the focus alone when a newer entry keeps the button enabled', async () => {
+    vi.useFakeTimers();
+    const chrome = fakeChrome({ history: [entry()] });
+    chrome.script(MSG.CLEAR_HISTORY, { success: true });
+    await start(chrome);
+    const clear = $('clear-history');
+    clear.focus();
+    clear.click();
+    await vi.advanceTimersByTimeAsync(CONFIRM_GUARD_MS);
+    clear.click();
+    await flush();
+    expect(clear.disabled).toBe(false);
+    expect(document.activeElement).toBe(clear);
+  });
+
+  it('a Clear does not take the focus from where it moved meanwhile', async () => {
+    vi.useFakeTimers();
+    await start(fakeChrome({ history: [entry()] }));
+    const clear = $('clear-history');
+    clear.focus();
+    clear.click();
+    await vi.advanceTimersByTimeAsync(CONFIRM_GUARD_MS);
+    clear.click();
+    $('keep-history').focus();
+    await flush();
+    expect(document.activeElement).toBe($('keep-history'));
+  });
+
   it('a Clear that fails says so and keeps the list', async () => {
     vi.useFakeTimers();
     const chrome = fakeChrome({ history: [entry()] });
