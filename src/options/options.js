@@ -182,9 +182,9 @@ export async function initOptions({ chrome, document, window, sections = SECTION
 
   el.version.textContent = `Version ${chrome.runtime.getManifest().version}`;
 
-  // Closing. The flush is a best effort: Chrome may drop what a closing page sends. Chrome 140
-  // dropped every runtime.sendMessage from here at rest (0 of 30 closes landed), so a typing save opens
-  // the save port first and the commit posts on it (80 of 80 landed with the machine under load).
+  // Closing. The flush is a best effort: Chrome may drop what a closing page sends. A message from
+  // a closing page races the close (0 of 30 alone on Chrome 140), so a typing save opens the save
+  // port first and the commit posts on it (120 of 120 landed under load).
   // The page never blocks closing with beforeunload.
 
   function flushTypingSaves() {

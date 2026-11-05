@@ -49,7 +49,7 @@ const FOCUS_NOTICE = 'Click into the field you want to dictate into, then try ag
 const STILL_PROCESSING = 'Still processing';
 const EDIT_START = 'Say how to change the selection.';
 const NO_SELECTION = 'Select the text to edit first.';
-const TOO_LONG = `Selection too long to edit (${MAX_EDIT_CHARS.toLocaleString('en-US')} characters at most).`;
+const TOO_LONG = 'Selection too long to edit (10,000 characters at most).';
 const AUTO_STOP = Object.freeze({
   maxTime: { text: 'Max time reached', tone: 'info' },
   silence: { text: 'Stopped after silence', tone: 'info' },

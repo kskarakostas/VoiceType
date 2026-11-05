@@ -3295,6 +3295,7 @@ describe('edit', () => {
       expect(t.controller.editPress()).toBe(true);
       await flush();
       expect(lastStatus(t.pill)).toEqual(TOO_LONG);
+      expect(TOO_LONG[0]).toContain(MAX_EDIT_CHARS.toLocaleString('en-US'));
       expect(t.sent).toEqual([]);
       expect(t.controller.state).toBe('idle');
     });
