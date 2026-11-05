@@ -445,8 +445,8 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     },
 
     /**
-     * Clear a record nobody pings for (V53): every worker start and every message comes here, and
-     * storage is read only when a record was noted. Never rejects.
+     * Clear a record nobody pings for (V53): every worker start, message, tab close and storage
+     * change comes here, and storage is read only when a record was noted. Never rejects.
      */
     async sweep() {
       if (sweepAt === null || now() < sweepAt) return;
