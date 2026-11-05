@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { MSG } from '../../../src/shared/messages.js';
-import { FOCUS_OUT_MS } from '../../../src/content/controller.js';
+import { FOCUS_OUT_MS, PING_MS } from '../../../src/content/controller.js';
 
 // A path, not a URL literal: jsdom replaces the global URL, and the web transform rewrites
 // `new URL('<literal>', import.meta.url)` into a dev-server address.
@@ -230,6 +230,53 @@ describe('orphan detection', () => {
     await flush();
     expect(t.sent().filter((a) => a === MSG.START_RECORDING)).toHaveLength(2);
     expect(shadow().querySelector('.rec').getAttribute('aria-label')).toBe('Stop recording');
+  });
+
+  it('a failed send with isAlive false orphans, whatever the error says', async () => {
+    let alive = true;
+    const t = installChrome();
+    document.getElementById('field').focus();
+    await loadInstance({ isAlive: () => alive });
+    t.chrome.runtime.sendMessage.mockRejectedValue(new Error('Could not establish connection. Receiving end does not exist.'));
+    alive = false;
+    shadow().querySelector('.rec').click();
+    await flush();
+    expect(statusText()).toBe(ORPHAN);
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it('a failed send with the context alive changes nothing for the next one', async () => {
+    const t = installChrome();
+    document.getElementById('field').focus();
+    await loadInstance({ isAlive: () => true });
+    t.chrome.runtime.sendMessage.mockRejectedValueOnce(new Error('The message port closed before a response was received.'));
+    shadow().querySelector('.rec').click();
+    await flush();
+    expect(statusText()).not.toBe(ORPHAN);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed ping on a context that went away reads the orphan notice', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let alive = true;
+      const t = installChrome();
+      document.getElementById('field').focus();
+      const loading = loadInstance({ isAlive: () => alive });
+      await vi.advanceTimersByTimeAsync(10);
+      await loading;
+      const rec = () => shadow().querySelector('.rec');
+      rec().click();
+      await vi.advanceTimersByTimeAsync(10);
+      rec().click();
+      await vi.advanceTimersByTimeAsync(10);
+      t.chrome.runtime.sendMessage.mockRejectedValue(new Error('Could not establish connection. Receiving end does not exist.'));
+      alive = false;
+      await vi.advanceTimersByTimeAsync(PING_MS);
+      expect(statusText()).toBe(ORPHAN);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('an orphaned instance lets the hotkey through', async () => {

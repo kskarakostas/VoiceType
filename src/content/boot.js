@@ -87,8 +87,9 @@ export function boot({
   }
 
   /**
-   * Message the service worker. Resolves null on any failure; an invalidated extension
-   * context (reloaded or updated extension) turns this copy into the terminal notice.
+   * Message the service worker. Resolves null on any failure; an invalidated extension context
+   * (reloaded or updated extension, crashed process) turns this copy into the terminal notice. Some
+   * of those fail with another error first, so a failure also asks whether the context is alive.
    * @param {object} message
    * @returns {Promise<any|null>}
    */
@@ -97,7 +98,7 @@ export function boot({
       return (await chrome.runtime.sendMessage(message)) ?? null;
     } catch (err) {
       const text = String(err?.message ?? err);
-      if (text.includes('Extension context invalidated')) becomeOrphan();
+      if (text.includes('Extension context invalidated') || !isAlive()) becomeOrphan();
       else console.warn(`VoiceType: ${text}`);
       return null;
     }

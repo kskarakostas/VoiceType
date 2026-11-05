@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createController, FOCUS_OUT_MS, PROCESSING_TIMEOUT_MS } from '../../../src/content/controller.js';
+import { createController, FOCUS_OUT_MS, PROCESSING_TIMEOUT_MS, PING_MS } from '../../../src/content/controller.js';
 import { isValidInput, deepActiveElement } from '../../../src/content/fields.js';
 import { markInsertion, replaceInsertion } from '../../../src/content/insert.js';
 import { MSG } from '../../../src/shared/messages.js';
@@ -1626,7 +1626,7 @@ describe('processing watchdog', () => {
     expect(t.pill.setState).toHaveBeenLastCalledWith('error');
     expect(lastStatus(t.pill)).toEqual(NO_RESPONSE);
     await t.controller.toggle();
-    expect(t.actions()).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING, MSG.START_RECORDING]);
+    expect(t.actions().filter((action) => action !== MSG.PROCESSING_PING)).toEqual([MSG.START_RECORDING, MSG.STOP_RECORDING, MSG.START_RECORDING]);
   });
 
   it('an auto-stop enters processing with the watchdog, and every RECORDING_STATE re-arms it', async () => {
@@ -1681,6 +1681,158 @@ describe('processing watchdog', () => {
     expect(t.deps.insertText).toHaveBeenCalledWith($('a'), 'hello');
     expect(t.deps.copyText).not.toHaveBeenCalled();
     expect(lastStatus(t.pill)).toEqual(DONE);
+  });
+});
+
+describe('the processing ping (V52)', () => {
+  const LOST = ['VoiceType restarted and lost this recording. Try again.', { tone: 'error', sticky: false, clickable: false }];
+  const RESULT = { action: MSG.DICTATION_RESULT, success: true, text: 'hello', raw: 'hello', cost: 0.012, warning: null };
+  const pings = (t) => t.actions().filter((action) => action === MSG.PROCESSING_PING).length;
+  const alive = (value) => ({ replies: { [MSG.PROCESSING_PING]: { alive: value } } });
+  /** Pings keep coming for as long as the test waits: none means they stopped. */
+  async function expectNoMorePings(t) {
+    const before = pings(t);
+    await vi.advanceTimersByTimeAsync(PING_MS * 20);
+    expect(pings(t)).toBe(before);
+  }
+
+  it('pings every 5 s while processing and stops on every exit', async () => {
+    expect(PING_MS).toBe(5000);
+    const t = setup();
+    await recordAndStop(t);
+    expect(pings(t)).toBe(0);
+    await vi.advanceTimersByTimeAsync(PING_MS - 1);
+    expect(pings(t)).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(pings(t)).toBe(1);
+    await vi.advanceTimersByTimeAsync(PING_MS * 2);
+    expect(pings(t)).toBe(3);
+
+    t.controller.handleMessage(RESULT);
+    await flush();
+    await expectNoMorePings(t);
+  });
+
+  it('an auto-stop pings too', async () => {
+    const t = setup();
+    $('a').focus();
+    await t.controller.toggle();
+    t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'processing', reason: 'silence' });
+    await vi.advanceTimersByTimeAsync(PING_MS);
+    expect(pings(t)).toBe(1);
+    t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'idle' });
+    await expectNoMorePings(t);
+  });
+
+  it('a repeated processing state keeps one chain of pings', async () => {
+    const t = setup();
+    await recordAndStop(t);
+    t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'processing' });
+    await vi.advanceTimersByTimeAsync(PING_MS);
+    expect(pings(t)).toBe(1);
+  });
+
+  it('a ping whose reply never comes does not stop the next', async () => {
+    const t = setup({ replies: { [MSG.PROCESSING_PING]: () => new Promise(() => {}) } });
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PING_MS * 3);
+    expect(pings(t)).toBe(3);
+  });
+
+  it.each([
+    ['a stop with no session', (t) => t.controller.handleMessage({ action: MSG.RECORDING_STATE, state: 'idle' })],
+    ['the orphan notice', (t) => t.controller.orphaned()],
+    ['teardown', (t) => t.controller.teardown()],
+    ['a failed result', (t) => t.controller.handleMessage({ action: MSG.DICTATION_RESULT, success: false, error: 'No.' })],
+  ])('stops on %s', async (_, exit) => {
+    const t = setup();
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PING_MS);
+    exit(t);
+    await flush();
+    await expectNoMorePings(t);
+  });
+
+  it('stops when the watchdog gives up', async () => {
+    const t = setup();
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PROCESSING_TIMEOUT_MS);
+    expect(t.controller.state).toBe('idle');
+    await expectNoMorePings(t);
+  });
+
+  it('stops when a stop finds no session in the worker', async () => {
+    const t = setup({ replies: { [MSG.STOP_RECORDING]: { ok: false } } });
+    $('a').focus();
+    await t.controller.toggle();
+    await t.controller.toggle();
+    expect(t.controller.state).toBe('idle');
+    await expectNoMorePings(t);
+  });
+
+  it('an alive reply re-arms the watchdog', async () => {
+    const t = setup(alive(true));
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PROCESSING_TIMEOUT_MS * 3);
+    expect(t.controller.state).toBe('processing');
+    expect(t.pill.setStatus).not.toHaveBeenCalled();
+  });
+
+  it('a not alive reply shows "VoiceType restarted and lost this recording. Try again."', async () => {
+    const t = setup(alive(false));
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PING_MS);
+    expect(t.controller.state).toBe('idle');
+    expect(lastStatus(t.pill)).toEqual(LOST);
+    await expectNoMorePings(t);
+    // Nothing is left of the session: the next press records.
+    await t.controller.toggle();
+    expect(t.controller.state).toBe('recording');
+  });
+
+  it('a null reply changes nothing', async () => {
+    const t = setup();
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PING_MS * 2);
+    expect(t.controller.state).toBe('processing');
+    expect(t.pill.setStatus).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(PROCESSING_TIMEOUT_MS - PING_MS * 2);
+    expect(t.controller.state).toBe('idle');
+    expect(lastStatus(t.pill)[0]).toBe('No response from VoiceType. Try again.');
+  });
+
+  it('a reply with no verdict changes nothing', async () => {
+    const t = setup({ replies: { [MSG.PROCESSING_PING]: { success: false, error: 'Something went wrong. Try again.' } } });
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PING_MS);
+    expect(t.controller.state).toBe('processing');
+    expect(t.pill.setStatus).not.toHaveBeenCalled();
+  });
+
+  it('a reply after the exit changes nothing', async () => {
+    const reply = deferred();
+    const t = setup({ replies: { [MSG.PROCESSING_PING]: () => reply.promise } });
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PING_MS);
+    t.controller.handleMessage(RESULT);
+    await flush();
+    reply.resolve({ alive: false });
+    await flush();
+    expect(t.pill.setStatus.mock.calls.map(([text]) => text)).not.toContain(LOST[0]);
+  });
+
+  it('a reply about the last run does not reach the next', async () => {
+    const reply = deferred();
+    const t = setup({ replies: { [MSG.PROCESSING_PING]: () => reply.promise } });
+    await recordAndStop(t);
+    await vi.advanceTimersByTimeAsync(PING_MS);
+    t.controller.handleMessage(RESULT);
+    await flush();
+    await vi.advanceTimersByTimeAsync(STATUS_MS.success);
+    await recordAndStop(t);
+    reply.resolve({ alive: false });
+    await flush();
+    expect(t.controller.state).toBe('processing');
   });
 });
 

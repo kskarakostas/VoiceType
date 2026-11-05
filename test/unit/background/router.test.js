@@ -43,6 +43,8 @@ beforeEach(() => {
       onOffscreenError: vi.fn(async () => {}),
       onPermissionResult: vi.fn(async () => {}),
       onFrameSight: vi.fn(),
+      ping: vi.fn(async () => ({ alive: true })),
+      sweep: vi.fn(async () => {}),
     },
     history: {
       list: vi.fn(async () => [ENTRY]),
@@ -497,6 +499,27 @@ describe('recorder delegation', () => {
     expect(deps.recorder.cancel.mock.calls[0][0]).toStrictEqual(endpoint);
     await handle({ action: MSG.FRAME_SIGHT, seen: true }, sender);
     expect(deps.recorder.onFrameSight.mock.calls[0][0]).toStrictEqual(endpoint);
+  });
+
+  it('PROCESSING_PING is content only', async () => {
+    for (const sender of [POPUP, OFFSCREEN, STRANGER]) {
+      expect(await handle({ action: MSG.PROCESSING_PING }, sender)).toEqual(NOT_ALLOWED);
+    }
+    expect(deps.recorder.ping).not.toHaveBeenCalled();
+    deps.recorder.ping.mockResolvedValueOnce({ alive: false });
+    expect(await handle({ action: MSG.PROCESSING_PING }, { ...CONTENT, documentId: 'DOC' })).toEqual({ alive: false });
+    expect(deps.recorder.ping.mock.calls[0][0]).toStrictEqual({ tabId: 7, frameId: 3, documentId: 'DOC' });
+  });
+
+  it('every message sweeps, before it is handled and whoever sent it (V53)', async () => {
+    await handle({ action: MSG.GET_SETTINGS }, POPUP);
+    expect(deps.recorder.sweep).toHaveBeenCalledTimes(1);
+    await handle({ action: MSG.GET_SETTINGS }, STRANGER);
+    expect(deps.recorder.sweep).toHaveBeenCalledTimes(2);
+    await handle({ action: 'noSuchAction' }, POPUP);
+    expect(deps.recorder.sweep).toHaveBeenCalledTimes(3);
+    await handle({ action: MSG.PROCESSING_PING }, CONTENT);
+    expect(deps.recorder.sweep.mock.invocationCallOrder[3]).toBeLessThan(deps.recorder.ping.mock.invocationCallOrder[0]);
   });
 
   it('offscreen events go to the recorder with their capture id and are acknowledged', async () => {

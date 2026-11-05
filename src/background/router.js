@@ -17,6 +17,8 @@ import { ProviderError, redact } from './providers/errors.js';
  *   onOffscreenError: (payload: import('../shared/messages.js').OffscreenError) => Promise<void>,
  *   onPermissionResult: (payload: { granted: boolean }) => Promise<void>,
  *   onFrameSight: (endpoint: Endpoint, seen: boolean) => void,
+ *   ping: (endpoint: Endpoint) => Promise<{ alive: boolean }>,
+ *   sweep: () => Promise<void>,
  * }} RecorderPort
  */
 
@@ -99,6 +101,7 @@ const ACCESS = new Map([
   [MSG.GET_LAST_DICTATION, ['content']],
   [MSG.GET_HISTORY, ['extension']],
   [MSG.CLEAR_HISTORY, ['extension']],
+  [MSG.PROCESSING_PING, ['content']],
 ]);
 
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
@@ -177,6 +180,7 @@ async function saveSiteRule(storage, host, ruleOf) {
  */
 export function createRouter({ storage, validateKey, summarize, recorder, history, identify }) {
   return async function handle(request, sender) {
+    recorder.sweep();
     const action = request?.action;
     const allowed = ACCESS.get(action);
     if (!allowed) return undefined;
@@ -273,6 +277,9 @@ export function createRouter({ storage, validateKey, summarize, recorder, histor
 
       case MSG.CANCEL_RECORDING:
         return recorder.cancel(endpointOf(sender));
+
+      case MSG.PROCESSING_PING:
+        return recorder.ping(endpointOf(sender));
 
       case MSG.OFFSCREEN_LEVEL:
         recorder.onLevel(Number(request.level), request.captureId);

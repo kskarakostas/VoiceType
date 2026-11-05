@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { createRecorder, COPY_TIMEOUT_MS } from '../../../src/background/recorder.js';
+import { createRecorder, COPY_TIMEOUT_MS, PENDING_WRITE_LIMIT_MS, PENDING_WINDOW_MS } from '../../../src/background/recorder.js';
 import { MSG } from '../../../src/shared/messages.js';
 import { freshSettings, EDIT_MODE } from '../../../src/shared/defaults.js';
 
@@ -27,8 +27,30 @@ function deferred() {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-/** Recorder over fake deps. `startReply` answers OFFSCREEN_START (a value, or a function returning one). */
-function setup({ startReply = { ok: true }, settings: patch = {} } = {}) {
+/** The pending store, in memory; a record goes in and out by copy, as in Chrome. */
+function fakePending(seed = null) {
+  const store = { record: seed };
+  return {
+    store,
+    save: vi.fn(async (record) => { store.record = structuredClone(record); }),
+    read: vi.fn(async () => structuredClone(store.record)),
+    clear: vi.fn(async () => { store.record = null; }),
+  };
+}
+
+const BOOT = 'boot-now';
+const T0 = 1_000_000;
+/** What a worker before this one left for frame A. */
+const leftBehind = (over = {}) => ({
+  captureId: 'c-old', endpoint: { ...A }, modeKey: 'email', host: 'example.com', incognito: false, sounds: true, alwaysCopy: false,
+  audioBase64: 'QUJD', mimeType: 'audio/webm', durationSec: 4.2, editText: null, bootId: 'boot-old', at: T0 - 5000, attempts: 0, ...over,
+});
+
+/**
+ * Recorder over fake deps. `startReply` answers OFFSCREEN_START (a value, or a function returning
+ * one); `record` is what the pending store holds at the start.
+ */
+function setup({ startReply = { ok: true }, settings: patch = {}, record = null } = {}) {
   const settings = { ...freshSettings(), activeMode: 'email', autoStopSilenceSec: 3, ...patch };
   if (!patch.keys) settings.keys = { openai: 'sk-test-123456', gemini: '' };
   const deps = {
@@ -41,6 +63,9 @@ function setup({ startReply = { ok: true }, settings: patch = {} } = {}) {
     openPermissionPage: vi.fn(async () => {}),
     getSettings: vi.fn(async () => settings),
     dictate: vi.fn(async () => ({ ...DICTATION })),
+    pending: fakePending(record),
+    bootId: BOOT,
+    now: vi.fn(() => T0),
   };
   const recorder = createRecorder(deps);
   const offscreenMessages = () => deps.toOffscreen.mock.calls.map(([message]) => message);
@@ -779,7 +804,7 @@ describe('results', () => {
     let sessionAtDelivery = 'unset';
     deps.toTab.mockImplementation(async () => { sessionAtDelivery = recorder.session; return true; });
     await recorder.onDone(done({ captureId: id() }));
-    expect(deps.dictate).toHaveBeenCalledWith({ audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 4.2, host: null, incognito: false, editText: null });
+    expect(deps.dictate).toHaveBeenCalledWith({ audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 4.2, host: null, incognito: false, editText: null, resumed: false });
     expect(tabMessages()).toEqual([{ endpoint: A_CHILD, action: MSG.DICTATION_RESULT, ...RESULT }]);
     expect(sessionAtDelivery).toBeNull();
     expect(recorder.session).toBeNull();
@@ -1784,5 +1809,541 @@ describe('an edit', () => {
     await t.recorder.stop(A);
     await t.recorder.onDone(done({ captureId: t.id() }));
     expect(t.copies()).toEqual([]);
+  });
+});
+
+describe('a repeated start in the same frame', () => {
+  const SELECTED = 'the selected text';
+  const STILL = { ok: false, reason: 'busy', error: 'VoiceType is still working on this page. Try again in a moment.' };
+
+  it('of the same kind joins the recording', async () => {
+    const t = setup();
+    await t.recorder.start(A, undefined, { editText: SELECTED });
+    expect(await t.recorder.start(A, undefined, { editText: SELECTED })).toEqual({ ok: true });
+  });
+
+  it('an edit never joins a dictation (V44)', async () => {
+    const t = setup();
+    await t.recorder.start(A);
+    expect(await t.recorder.start(A, undefined, { editText: SELECTED })).toEqual(STILL);
+    expect(t.recorder.session.state).toBe('recording');
+  });
+
+  it('a dictation never joins an edit, nor an edit another selection', async () => {
+    const t = setup();
+    await t.recorder.start(A, undefined, { editText: SELECTED });
+    expect(await t.recorder.start(A)).toEqual(STILL);
+    expect(await t.recorder.start(A, undefined, { editText: 'other text' })).toEqual(STILL);
+  });
+
+  it('neither joins a start still in flight', async () => {
+    const opening = deferred();
+    const t = setup({ startReply: () => opening.promise });
+    const first = t.recorder.start(A);
+    expect(await t.recorder.start(A, undefined, { editText: SELECTED })).toEqual(STILL);
+    opening.resolve({ ok: true });
+    expect(await first).toEqual({ ok: true });
+  });
+});
+
+describe('held audio (V51)', () => {
+  const finished = (t, over = {}) => t.recorder.onDone(done({ captureId: t.id(), ...over }));
+  async function recorded(t, ...args) {
+    await t.recorder.start(A, ...args);
+    await t.recorder.stop(A);
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it('onDone saves the record before the provider call', async () => {
+    const t = setup({ settings: { sounds: true, alwaysCopy: true } });
+    t.deps.dictate.mockImplementation(async () => {
+      expect(t.deps.pending.store.record).not.toBeNull();
+      return { ...DICTATION };
+    });
+    const endpoint = { ...A, documentId: 'doc-1' };
+    await t.recorder.start(endpoint, undefined, { host: 'example.com', incognito: true, editText: 'old words' });
+    await t.recorder.stop(endpoint);
+    await finished(t);
+    expect(t.deps.pending.save).toHaveBeenCalledTimes(1);
+    expect(t.deps.pending.save).toHaveBeenCalledWith({
+      captureId: t.id(), endpoint, modeKey: EDIT_MODE, host: 'example.com', incognito: true, sounds: true, alwaysCopy: true,
+      audioBase64: 'QUJD', mimeType: 'audio/webm', durationSec: 4.2, editText: 'old words', bootId: BOOT, at: T0, attempts: 0,
+    });
+    expect(t.deps.pending.save.mock.invocationCallOrder[0]).toBeLessThan(t.deps.dictate.mock.invocationCallOrder[0]);
+  });
+
+  it('a hung or failing save lets the dictation run after 500 ms', async () => {
+    expect(PENDING_WRITE_LIMIT_MS).toBe(500);
+    vi.useFakeTimers();
+    const hung = setup();
+    hung.deps.pending.save.mockImplementation(() => new Promise(() => {}));
+    await recorded(hung);
+    const running = finished(hung);
+    await vi.advanceTimersByTimeAsync(PENDING_WRITE_LIMIT_MS - 1);
+    expect(hung.deps.dictate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await running;
+    expect(hung.deps.dictate).toHaveBeenCalledTimes(1);
+    expect(hung.result()).toEqual({ endpoint: A, action: MSG.DICTATION_RESULT, ...RESULT });
+
+    const failing = setup();
+    failing.deps.pending.save.mockRejectedValue(new Error('Session storage quota bytes exceeded.'));
+    await recorded(failing);
+    const warn = vi.spyOn(console, 'warn');
+    await finished(failing);
+    expect(failing.deps.dictate).toHaveBeenCalledTimes(1);
+    expect(failing.result()).toEqual({ endpoint: A, action: MSG.DICTATION_RESULT, ...RESULT });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a too-short recording saves nothing', async () => {
+    const t = setup({ settings: { minRecordingTime: 2 } });
+    await recorded(t);
+    await finished(t, { durationSec: 1 });
+    expect(t.deps.pending.save).not.toHaveBeenCalled();
+    expect(t.deps.dictate).not.toHaveBeenCalled();
+  });
+
+  it('the record is cleared after delivery, not before', async () => {
+    const t = setup();
+    let heldAtDelivery;
+    t.deps.toTab.mockImplementation(async (_, message) => {
+      if (message.action === MSG.DICTATION_RESULT) heldAtDelivery = t.deps.pending.store.record !== null;
+      return true;
+    });
+    await recorded(t);
+    await finished(t);
+    await flush();
+    expect(heldAtDelivery).toBe(true);
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it('the record is cleared after the clipboard fallback', async () => {
+    const t = setup();
+    t.deps.toTab.mockImplementation(async (_, message) => message.action !== MSG.DICTATION_RESULT);
+    await recorded(t);
+    let heldAtCopy;
+    answer(t.deps, MSG.OFFSCREEN_COPY, () => {
+      heldAtCopy = t.deps.pending.store.record !== null;
+      return { ok: true };
+    });
+    await finished(t);
+    await flush();
+    expect(heldAtCopy).toBe(true);
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it('the record is cleared after a failure', async () => {
+    const t = setup();
+    t.deps.dictate.mockResolvedValue({ success: false, error: 'Network error.', tone: 'error' });
+    await recorded(t);
+    await finished(t);
+    await flush();
+    expect(t.deps.pending.store.record).toBeNull();
+
+    const threw = setup();
+    threw.deps.dictate.mockRejectedValue(new Error('boom'));
+    await recorded(threw);
+    await finished(threw);
+    await flush();
+    expect(threw.deps.pending.store.record).toBeNull();
+  });
+
+  it('the record is cleared when the send to the tab throws', async () => {
+    const t = setup();
+    t.deps.toTab.mockImplementation(async (_, message) => {
+      if (message.action === MSG.DICTATION_RESULT) throw new Error('gone');
+      return true;
+    });
+    await recorded(t);
+    await expect(finished(t)).rejects.toThrow('gone');
+    await flush();
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it('a run that ends after a new session started leaves that session alone', async () => {
+    const t = setup();
+    const landing = deferred();
+    t.deps.toTab.mockImplementation(async (endpoint, message) => {
+      if (message.action === MSG.DICTATION_RESULT && endpoint.tabId === A.tabId) await landing.promise;
+      return true;
+    });
+    await recorded(t);
+    const first = finished(t);
+    await flush();
+    await t.recorder.start(B);
+    await t.recorder.stop(B);
+    const second = deferred();
+    t.deps.dictate.mockReturnValue(second.promise);
+    const running = finished(t, { audioBase64: 'TkVX' });
+    await flush();
+    landing.resolve(true);
+    await first;
+    await flush();
+    expect(t.deps.pending.store.record).toMatchObject({ audioBase64: 'TkVX' });
+    second.resolve({ ...DICTATION });
+    await running;
+    await flush();
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it('cancel clears the record, and a cancel during the write calls no provider', async () => {
+    const t = setup();
+    const write = deferred();
+    t.deps.pending.save.mockImplementation(async (record) => { await write.promise; t.deps.pending.store.record = record; });
+    await recorded(t);
+    const running = finished(t);
+    await flush();
+    await t.recorder.cancel(A);
+    write.resolve();
+    await running;
+    await flush();
+    expect(t.deps.dictate).not.toHaveBeenCalled();
+    // The start's clear, then the cancel's.
+    expect(t.deps.pending.clear).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancel clears a record whose run is in flight', async () => {
+    const t = setup();
+    const provider = deferred();
+    t.deps.dictate.mockReturnValue(provider.promise);
+    await recorded(t);
+    const running = finished(t);
+    await flush();
+    expect(t.deps.pending.store.record).not.toBeNull();
+    await t.recorder.cancel(A);
+    await flush();
+    expect(t.deps.pending.store.record).toBeNull();
+    provider.resolve({ ...DICTATION });
+    await running;
+  });
+
+  it('the tab of an edit closing clears the record (V44)', async () => {
+    const t = setup();
+    const provider = deferred();
+    t.deps.dictate.mockReturnValue(provider.promise);
+    await recorded(t, undefined, { editText: 'old words' });
+    const running = finished(t);
+    await flush();
+    await t.recorder.onTabRemoved(A.tabId);
+    await flush();
+    expect(t.deps.pending.store.record).toBeNull();
+    provider.resolve({ ...DICTATION });
+    await running;
+  });
+
+  it('the tab of a dictation closing keeps the record until its run ends', async () => {
+    const t = setup();
+    const provider = deferred();
+    t.deps.dictate.mockReturnValue(provider.promise);
+    await recorded(t);
+    const running = finished(t);
+    await flush();
+    await t.recorder.onTabRemoved(A.tabId);
+    await flush();
+    expect(t.deps.pending.store.record).not.toBeNull();
+    provider.resolve({ ...DICTATION });
+    await running;
+    await flush();
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+});
+
+describe('ping (V52)', () => {
+  const documentA = { ...A, documentId: 'doc-1' };
+  const run = (t) => t.deps.dictate.mock.calls;
+
+  it('alive with the session', async () => {
+    const t = setup();
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    expect(await t.recorder.ping(A)).toEqual({ alive: true });
+    expect(t.deps.pending.read).not.toHaveBeenCalled();
+  });
+
+  it("alive with this worker's record after free", async () => {
+    const t = setup();
+    const landing = deferred();
+    t.deps.toTab.mockImplementation((_, message) => (message.action === MSG.DICTATION_RESULT ? landing.promise : Promise.resolve(true)));
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    const running = t.recorder.onDone(done({ captureId: t.id() }));
+    await flush();
+    expect(t.recorder.session).toBeNull();
+    expect(await t.recorder.ping(A)).toEqual({ alive: true });
+    expect(run(t)).toHaveLength(1);
+    landing.resolve(true);
+    await running;
+  });
+
+  it("with another worker's fresh record resumes once, writes attempts 1 first, and runs dictate with resumed true", async () => {
+    const t = setup({ record: leftBehind() });
+    t.deps.dictate.mockImplementation(async () => {
+      expect(t.deps.pending.store.record).toMatchObject({ attempts: 1, bootId: BOOT });
+      return { ...DICTATION };
+    });
+    expect(await t.recorder.ping(A)).toEqual({ alive: true });
+    await flush();
+    expect(t.deps.pending.save).toHaveBeenCalledWith(leftBehind({ attempts: 1, bootId: BOOT }));
+    expect(run(t)).toHaveLength(1);
+    expect(run(t)[0][0]).toEqual({
+      audioBase64: 'QUJD', mimeType: 'audio/webm', modeKey: 'email', durationSec: 4.2, host: 'example.com', incognito: false, editText: null, resumed: true,
+    });
+    expect(t.result()).toEqual({ endpoint: A, action: MSG.DICTATION_RESULT, ...RESULT });
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it('a resumed session plays no stop cue, and the last cue as any run', async () => {
+    const t = setup({ record: leftBehind() });
+    await t.recorder.ping(A);
+    await flush();
+    expect(t.cues()).toEqual(['done']);
+  });
+
+  it('does not wait for the resumed run', async () => {
+    const t = setup({ record: leftBehind() });
+    t.deps.dictate.mockReturnValue(new Promise(() => {}));
+    expect(await t.recorder.ping(A)).toEqual({ alive: true });
+    expect(t.recorder.session).toEqual({ endpoint: A, state: 'processing', modeKey: 'email', minSec: 0 });
+  });
+
+  it('a second ping during that run does not start a third', async () => {
+    const t = setup({ record: leftBehind() });
+    const provider = deferred();
+    t.deps.dictate.mockReturnValue(provider.promise);
+    await t.recorder.ping(A);
+    await flush();
+    expect(await t.recorder.ping(A)).toEqual({ alive: true });
+    await flush();
+    expect(run(t)).toHaveLength(1);
+    expect(t.deps.pending.save).toHaveBeenCalledTimes(1);
+    provider.resolve({ ...DICTATION });
+    await flush();
+  });
+
+  it('two pings at once start one run', async () => {
+    const t = setup({ record: leftBehind() });
+    const replies = await Promise.all([t.recorder.ping(A), t.recorder.ping(A)]);
+    await flush();
+    expect(replies).toEqual([{ alive: true }, { alive: true }]);
+    expect(run(t)).toHaveLength(1);
+  });
+
+  it('a ping after the resumed session freed still finds the record its own', async () => {
+    const t = setup({ record: leftBehind() });
+    const landing = deferred();
+    t.deps.toTab.mockImplementation((_, message) => (message.action === MSG.DICTATION_RESULT ? landing.promise : Promise.resolve(true)));
+    await t.recorder.ping(A);
+    await flush();
+    expect(t.recorder.session).toBeNull();
+    expect(await t.recorder.ping(A)).toEqual({ alive: true });
+    expect(run(t)).toHaveLength(1);
+    landing.resolve(true);
+    await flush();
+  });
+
+  it('a start while attempts 1 is being written is busy, so no second session', async () => {
+    const write = deferred();
+    const t = setup({ record: leftBehind() });
+    t.deps.pending.save.mockImplementation(async (record) => { await write.promise; t.deps.pending.store.record = record; });
+    const ping = t.recorder.ping(A);
+    await flush();
+    expect(await t.recorder.start(B)).toEqual(BUSY);
+    write.resolve();
+    expect(await ping).toEqual({ alive: true });
+    await flush();
+    expect(run(t)).toHaveLength(1);
+  });
+
+  it('attempts 1 not written runs nothing: a third call must stay impossible', async () => {
+    const t = setup({ record: leftBehind() });
+    t.deps.pending.save.mockRejectedValue(new Error('quota'));
+    expect(await t.recorder.ping(A)).toEqual({ alive: false });
+    await flush();
+    expect(run(t)).toHaveLength(0);
+    expect(t.recorder.session).toBeNull();
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it('with attempts 1 clears and is not alive', async () => {
+    const t = setup({ record: leftBehind({ attempts: 1 }) });
+    expect(await t.recorder.ping(A)).toEqual({ alive: false });
+    expect(t.deps.pending.store.record).toBeNull();
+    expect(run(t)).toHaveLength(0);
+  });
+
+  it('past the window clears and is not alive', async () => {
+    expect(PENDING_WINDOW_MS).toBe(120_000);
+    const fresh = setup({ record: leftBehind({ at: T0 - PENDING_WINDOW_MS + 1 }) });
+    expect(await fresh.recorder.ping(A)).toEqual({ alive: true });
+    await flush();
+
+    const t = setup({ record: leftBehind({ at: T0 - PENDING_WINDOW_MS }) });
+    expect(await t.recorder.ping(A)).toEqual({ alive: false });
+    expect(t.deps.pending.store.record).toBeNull();
+    expect(run(t)).toHaveLength(0);
+  });
+
+  it('for another endpoint leaves the record and is not alive', async () => {
+    const t = setup({ record: leftBehind() });
+    expect(await t.recorder.ping(B)).toEqual({ alive: false });
+    expect(await t.recorder.ping(A_CHILD)).toEqual({ alive: false });
+    expect(t.deps.pending.store.record).toEqual(leftBehind());
+    expect(run(t)).toHaveLength(0);
+  });
+
+  it('from another document of the frame leaves the record and is not alive', async () => {
+    const t = setup({ record: leftBehind({ endpoint: documentA }) });
+    expect(await t.recorder.ping({ ...A, documentId: 'doc-2' })).toEqual({ alive: false });
+    expect(t.deps.pending.store.record).not.toBeNull();
+    expect(await t.recorder.ping(documentA)).toEqual({ alive: true });
+  });
+
+  it('with no session and no record is not alive', async () => {
+    const t = setup();
+    expect(await t.recorder.ping(A)).toEqual({ alive: false });
+  });
+
+  it("with another frame's session clears this frame's record: the retry gave way (V53)", async () => {
+    const t = setup({ record: leftBehind() });
+    const reading = deferred();
+    t.deps.pending.read.mockReturnValueOnce(reading.promise);
+    const ping = t.recorder.ping(A);
+    await t.recorder.start(B);
+    reading.resolve(leftBehind());
+    expect(await ping).toEqual({ alive: false });
+    await flush();
+    expect(run(t)).toHaveLength(0);
+  });
+
+  it('a read that fails rejects, for the router to answer with no verdict', async () => {
+    const t = setup();
+    t.deps.pending.read.mockRejectedValue(new Error('no storage'));
+    await expect(t.recorder.ping(A)).rejects.toThrow('no storage');
+  });
+
+  it('a resumed edit sends editText', async () => {
+    const t = setup({ record: leftBehind({ editText: 'old words', modeKey: EDIT_MODE }) });
+    await t.recorder.ping(A);
+    await flush();
+    expect(run(t)[0][0]).toMatchObject({ editText: 'old words', modeKey: EDIT_MODE, resumed: true });
+  });
+
+  it('a resumed edit whose tab closes clears the record (V44)', async () => {
+    const t = setup({ record: leftBehind({ editText: 'old words', modeKey: EDIT_MODE }) });
+    const provider = deferred();
+    t.deps.dictate.mockReturnValue(provider.promise);
+    await t.recorder.ping(A);
+    await flush();
+    await t.recorder.onTabRemoved(A.tabId);
+    await flush();
+    expect(t.deps.pending.store.record).toBeNull();
+    expect(t.recorder.session).toBeNull();
+    provider.resolve({ ...DICTATION });
+    await flush();
+  });
+
+  it("a resumed run keeps the record's always-copy", async () => {
+    const t = setup({ record: leftBehind({ alwaysCopy: true }) });
+    await t.recorder.ping(A);
+    await flush();
+    expect(t.copies()).toEqual([{ action: MSG.OFFSCREEN_COPY, text: 'final' }]);
+  });
+
+  it("a resumed subframe takes frame 0's mirror down with it: nobody else knows it is up", async () => {
+    const t = setup({ record: leftBehind({ endpoint: A_CHILD }) });
+    await t.recorder.ping(A_CHILD);
+    await flush();
+    expect(t.tabMessages()).toContainEqual({ endpoint: { tabId: 1, frameId: 0 }, action: MSG.RECORDING_MIRROR, state: 'idle', elapsedMs: expect.any(Number) });
+  });
+
+  it('a reply never carries the audio', async () => {
+    const t = setup({ record: leftBehind() });
+    expect(JSON.stringify(await t.recorder.ping(A))).not.toContain('QUJD');
+  });
+});
+
+describe('sweep (V53)', () => {
+  const at = (t, ms) => t.deps.now.mockReturnValue(ms);
+
+  it('clears a stale record, keeps a fresh one, and a later sweep past the window clears it', async () => {
+    const stale = setup({ record: leftBehind({ at: T0 - PENDING_WINDOW_MS }) });
+    await stale.recorder.sweep();
+    expect(stale.deps.pending.store.record).toBeNull();
+
+    const t = setup({ record: leftBehind({ at: T0 - 1000 }) });
+    await t.recorder.sweep();
+    expect(t.deps.pending.store.record).not.toBeNull();
+    at(t, T0 - 1000 + PENDING_WINDOW_MS - 1);
+    await t.recorder.sweep();
+    expect(t.deps.pending.store.record).not.toBeNull();
+    at(t, T0 - 1000 + PENDING_WINDOW_MS);
+    await t.recorder.sweep();
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it('reads storage only when a fresh record was noted', async () => {
+    const t = setup();
+    await t.recorder.sweep();
+    expect(t.deps.pending.read).toHaveBeenCalledTimes(1);
+    await t.recorder.sweep();
+    at(t, T0 + PENDING_WINDOW_MS * 2);
+    await t.recorder.sweep();
+    expect(t.deps.pending.read).toHaveBeenCalledTimes(1);
+  });
+
+  it('a read of a fresh record waits for its window', async () => {
+    const t = setup({ record: leftBehind({ at: T0 - 1000 }) });
+    await t.recorder.sweep();
+    await t.recorder.sweep();
+    expect(t.deps.pending.read).toHaveBeenCalledTimes(1);
+  });
+
+  it("notes this worker's own record too: one still held past the window goes", async () => {
+    const t = setup();
+    await t.recorder.sweep();
+    t.deps.dictate.mockReturnValue(new Promise(() => {}));
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    t.recorder.onDone(done({ captureId: t.id() }));
+    await flush();
+    at(t, T0 + PENDING_WINDOW_MS);
+    await t.recorder.sweep();
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it('a read that fails never rejects, and the next message tries again', async () => {
+    const t = setup({ record: leftBehind({ at: T0 - PENDING_WINDOW_MS }) });
+    t.deps.pending.read.mockRejectedValueOnce(new Error('no storage'));
+    await expect(t.recorder.sweep()).resolves.toBeUndefined();
+    await t.recorder.sweep();
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it('a clear that fails never rejects', async () => {
+    const t = setup({ record: leftBehind({ at: T0 - PENDING_WINDOW_MS }) });
+    t.deps.pending.clear.mockRejectedValue(new Error('no storage'));
+    await expect(t.recorder.sweep()).resolves.toBeUndefined();
+  });
+});
+
+describe('a start and the record (V53)', () => {
+  it('a start that gets a session clears the record', async () => {
+    const t = setup({ record: leftBehind() });
+    await t.recorder.start(B);
+    await flush();
+    expect(t.deps.pending.store.record).toBeNull();
+    expect(await t.recorder.ping(A)).toEqual({ alive: false });
+  });
+
+  it('a refused start leaves it', async () => {
+    const t = setup({ record: leftBehind() });
+    await t.recorder.start(A);
+    await flush();
+    t.deps.pending.store.record = leftBehind();
+    await t.recorder.start(B);
+    await flush();
+    expect(t.deps.pending.store.record).not.toBeNull();
   });
 });

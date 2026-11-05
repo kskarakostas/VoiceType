@@ -16,6 +16,10 @@ const CANCELLED = 'Recording cancelled.';
 const FAILED_NOTICE = Object.freeze({ text: 'Recording failed. Try again.', tone: 'error' });
 const TOO_SHORT = Object.freeze({ success: false, error: 'Too short, ignored', tone: 'warning' });
 export const COPY_TIMEOUT_MS = 1000;
+/** The longest a provider call waits for its audio to be held (V51). */
+export const PENDING_WRITE_LIMIT_MS = 500;
+/** How long after a recording ended a later worker may still run it (V52). */
+export const PENDING_WINDOW_MS = 120_000;
 
 /**
  * @typedef {{ tabId: number, frameId: number, documentId?: string }} Endpoint
@@ -27,8 +31,26 @@ export const COPY_TIMEOUT_MS = 1000;
  * `mirrorLost`: frame 0 had no receiver for the last mirror message, and `host` and `incognito`,
  * for the history: the frame's site as the router worked it out (V26), and whether the tab is incognito.
  * `editText` is the selection of an edit, null for a dictation. It stays out of the `session` getter.
+ * `resumed`: a later worker rebuilt it from a pending record (V52), so it has no capture.
  * @typedef {import('../shared/messages.js').StartResponse} StartResponse
  */
+
+/** Two endpoints name one document. A frame keeps its id across a navigation, so the id alone is not enough. */
+const sameDocument = (a, b) => a.tabId === b.tabId && a.frameId === b.frameId && a.documentId === b.documentId;
+
+/**
+ * What `work` settles to, or false once `ms` have passed.
+ * @param {number} ms
+ * @param {Promise<boolean>} work
+ * @returns {Promise<boolean>}
+ */
+async function within(ms, work) {
+  let timer;
+  const expired = new Promise((resolve) => { timer = setTimeout(resolve, ms, false); });
+  const result = await Promise.race([work, expired]);
+  clearTimeout(timer);
+  return result;
+}
 
 /**
  * @param {{
@@ -37,14 +59,21 @@ export const COPY_TIMEOUT_MS = 1000;
  *   toTab: (endpoint: Endpoint, message: object) => Promise<boolean>,
  *   openPermissionPage: () => Promise<void>,
  *   getSettings: () => Promise<import('../shared/defaults.js').Settings>,
- *   dictate: (input: { audioBase64: string, mimeType: string, modeKey: string, durationSec: number, host: string|null, incognito: boolean, editText: string|null }) => Promise<import('../shared/messages.js').DictationMessage>,
+ *   dictate: (input: { audioBase64: string, mimeType: string, modeKey: string, durationSec: number, host: string|null, incognito: boolean, editText: string|null, resumed: boolean }) => Promise<import('../shared/messages.js').DictationMessage>,
+ *   pending: ReturnType<import('./pending.js').createPending>,
+ *   bootId: string,
+ *   now: () => number,
  * }} deps
  */
-export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermissionPage, getSettings, dictate }) {
-  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null, sounds: boolean, alwaysCopy: boolean, unseen: boolean, mirrorLost: boolean, liveAt: number, host: string|null, incognito: boolean, editText: string|null })} */
+export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermissionPage, getSettings, dictate, pending, bootId, now }) {
+  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null, sounds: boolean, alwaysCopy: boolean, unseen: boolean, mirrorLost: boolean, liveAt: number, host: string|null, incognito: boolean, editText: string|null, resumed: boolean })} */
   let session = null;
   /** @type {Endpoint|null} */
   let pendingPermission = null;
+  /** The session whose run the pending record is: a run ending clears that record, never a newer one. */
+  let holder = null;
+  /** When the next sweep looks at the pending record: 0 at once, as a new worker must; null with none noted. */
+  let sweepAt = 0;
 
   const fail = (reason, error) => ({ ok: false, reason, error });
   const owns = (endpoint) => session !== null
@@ -77,6 +106,24 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     mirror(s, 'idle');
   }
 
+  /** Forget the pending record. Never rejects: what fails to clear goes with the browser session or a later worker's sweep. */
+  function clearRecord() {
+    holder = null;
+    sweepAt = null;
+    return pending.clear().catch(() => {});
+  }
+
+  /** A run is over, its audio with it. */
+  const release = (s) => (holder === s ? clearRecord() : Promise.resolve());
+
+  /**
+   * Write the pending record, at most PENDING_WRITE_LIMIT_MS. Errors go unlogged: nothing about
+   * this record reaches a log line.
+   * @param {import('./pending.js').PendingRecord} record
+   * @returns {Promise<boolean>} true when it landed in time
+   */
+  const write = (record) => within(PENDING_WRITE_LIMIT_MS, pending.save(record).then(() => true, () => false));
+
   /** Play a cue when the session has sounds on. Fire and forget: a cue never delays or fails a dictation. */
   function cue(s, name) {
     if (!s.sounds) return;
@@ -89,14 +136,9 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
    * @returns {Promise<boolean>} True only when the offscreen document confirmed the copy.
    */
   async function copyResult(text) {
-    let timer;
-    const expired = new Promise((resolve) => { timer = setTimeout(resolve, COPY_TIMEOUT_MS, false); });
-    const copied = ensureOffscreen()
+    return within(COPY_TIMEOUT_MS, ensureOffscreen()
       .then(() => toOffscreen({ action: MSG.OFFSCREEN_COPY, text }))
-      .then((reply) => reply?.ok === true, () => false);
-    const result = await Promise.race([copied, expired]);
-    clearTimeout(timer);
-    return result;
+      .then((reply) => reply?.ok === true, () => false));
   }
 
   /** Stop a capture without a result. The microphone is released; errors are irrelevant here. */
@@ -115,6 +157,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   async function drop(s) {
     if (session !== s) return;
     free(s);
+    release(s);
     await discard(s.captureId);
   }
 
@@ -136,6 +179,67 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       // The offscreen document is gone, so no audio will ever arrive.
       await failSession(s);
     }
+  }
+
+  /** End a session with this result. The record goes last: until the result is out, it is what a ping finds. */
+  async function land(s, message) {
+    free(s);
+    try {
+      const delivered = await toTab(s.endpoint, { action: MSG.DICTATION_RESULT, ...message });
+      // The tab closed or left for a page without us: the clipboard is what is left for a paid transcript.
+      if (!delivered && message.success && !message.copied) await copyResult(message.text);
+    } finally {
+      release(s);
+    }
+  }
+
+  /**
+   * The provider step and the delivery, for a capture that just finished or a record a later worker resumed.
+   * @param {NonNullable<typeof session>} s
+   * @param {{ audioBase64: string, mimeType: string, durationSec: number }} audio
+   */
+  async function run(s, { audioBase64, mimeType, durationSec }) {
+    /** @type {import('../shared/messages.js').DictationMessage} */
+    let message;
+    try {
+      message = await dictate({ audioBase64, mimeType, modeKey: s.modeKey, durationSec, host: s.host, incognito: s.incognito, editText: s.editText, resumed: s.resumed });
+    } catch {
+      message = { success: false, error: 'Something went wrong. Try again.', tone: 'error' };
+    }
+    const live = session === s;
+    if (live) cue(s, message.success ? 'done' : 'error');
+    if (message.success) {
+      message = { ...message, copied: live && s.alwaysCopy ? await copyResult(message.text) : null };
+    }
+    await land(s, message);
+  }
+
+  /**
+   * Run another worker's record again, once (V52). The session is taken before the first wait, so
+   * no start and no other ping gets between the read and this run. Attempts 1 goes to storage first:
+   * if it does not land, the next worker would read attempts 0 and make a third call.
+   * @param {import('./pending.js').PendingRecord} record
+   * @returns {Promise<{ alive: boolean }>}
+   */
+  async function resume(record) {
+    const { endpoint, modeKey, host, incognito, sounds, alwaysCopy, editText, captureId, at } = record;
+    const s = {
+      endpoint, state: /** @type {const} */ ('processing'), modeKey, minSec: 0,
+      captureId, stopRequested: false, starting: null, sounds, alwaysCopy,
+      // The worker that knew about frame 0's mirror is gone: a subframe takes down what may be up.
+      unseen: endpoint.frameId !== 0, mirrorLost: false, liveAt: at, host, incognito, editText, resumed: true,
+    };
+    session = s;
+    holder = s;
+    const claimed = await write({ ...record, attempts: 1, bootId });
+    if (session !== s) return { alive: false }; // its tab closed during the write
+    if (!claimed) {
+      free(s);
+      await release(s);
+      return { alive: false };
+    }
+    run(s, record).catch(() => {});
+    return { alive: true };
   }
 
   /**
@@ -216,6 +320,8 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     async start(endpoint, tabUrl, { host = null, incognito = false, editText = null } = {}) {
       if (session) {
         if (!owns(endpoint) || session.state === 'processing') return fail('busy', refusal(endpoint));
+        // The worker kept a session this frame lost track of: an edit never joins a dictation, nor the reverse (V44).
+        if (editText !== session.editText) return fail('busy', STILL_WORKING);
         // The same frame asked again: recording already, or share the start in flight.
         return session.state === 'recording' ? { ok: true } : session.starting;
       }
@@ -223,9 +329,11 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       const s = {
         endpoint: { ...endpoint }, state: 'starting', modeKey: 'default', minSec: 0,
         captureId: crypto.randomUUID(), stopRequested: false, starting: null, sounds: false, alwaysCopy: false,
-        unseen: false, mirrorLost: false, liveAt: 0, host, incognito, editText,
+        unseen: false, mirrorLost: false, liveAt: 0, host, incognito, editText, resumed: false,
       };
       session = s;
+      // The retry gives way to the new recording; its page reads the lost notice at the next ping (V53).
+      clearRecord();
       s.starting = begin(s, tabUrl);
       return s.starting;
     },
@@ -294,27 +402,55 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       }
       s.state = 'processing';
       const durationSec = Number(payload?.durationSec) || 0;
-      /** @type {import('../shared/messages.js').DictationMessage} */
-      let message;
       if (durationSec < s.minSec) {
-        message = TOO_SHORT;
-      } else {
-        cue(s, 'stop');
-        try {
-          message = await dictate({ audioBase64: payload.audioBase64, mimeType: payload.mimeType, modeKey: s.modeKey, durationSec, host: s.host, incognito: s.incognito, editText: s.editText });
-        } catch {
-          message = { success: false, error: 'Something went wrong. Try again.', tone: 'error' };
-        }
-        const live = session === s;
-        if (live) cue(s, message.success ? 'done' : 'error');
-        if (message.success) {
-          message = { ...message, copied: live && s.alwaysCopy ? await copyResult(message.text) : null };
-        }
+        await land(s, TOO_SHORT);
+        return;
       }
-      free(s);
-      const delivered = await toTab(s.endpoint, { action: MSG.DICTATION_RESULT, ...message });
-      // The tab closed or left for a page without us: the clipboard is what is left for a paid transcript.
-      if (!delivered && message.success && !message.copied) await copyResult(message.text);
+      cue(s, 'stop');
+      const { audioBase64, mimeType } = payload;
+      const at = now();
+      const { captureId, endpoint, modeKey, host, incognito, sounds, alwaysCopy, editText } = s;
+      holder = s;
+      sweepAt = at + PENDING_WINDOW_MS;
+      // Landed or not, the dictation goes ahead: a failed write costs it its recovery and nothing else (V51).
+      await write({ captureId, endpoint, modeKey, host, incognito, sounds, alwaysCopy, audioBase64, mimeType, durationSec, editText, bootId, at, attempts: 0 });
+      if (session !== s) return; // cancelled, or an edit's tab closed, during the write: no provider call
+      await run(s, { audioBase64, mimeType, durationSec });
+    },
+
+    /**
+     * A processing frame asking whether its dictation still exists (V52). The message also resets
+     * the worker's idle timer, which is what holds a resumed run.
+     * @param {Endpoint} endpoint
+     * @returns {Promise<{ alive: boolean }>}
+     */
+    async ping(endpoint) {
+      const mine = () => session !== null && sameDocument(session.endpoint, endpoint);
+      const record = mine() ? null : await pending.read();
+      // After the read too: a ping that overlapped this one may have resumed the record meanwhile.
+      if (mine()) return { alive: true };
+      if (!record || !sameDocument(record.endpoint, endpoint)) return { alive: false };
+      if (record.bootId === bootId) return { alive: true };
+      if (session === null && record.attempts === 0 && now() - record.at < PENDING_WINDOW_MS) return resume(record);
+      await clearRecord();
+      return { alive: false };
+    },
+
+    /**
+     * Clear a record nobody pings for (V53): every worker start and every message comes here, and
+     * storage is read only when a record was noted. Never rejects.
+     */
+    async sweep() {
+      if (sweepAt === null || now() < sweepAt) return;
+      sweepAt = null;
+      try {
+        const record = await pending.read();
+        if (!record) return;
+        if (now() - record.at >= PENDING_WINDOW_MS) await clearRecord();
+        else sweepAt = record.at + PENDING_WINDOW_MS;
+      } catch {
+        sweepAt = 0;
+      }
     },
 
     /** @param {import('../shared/messages.js').OffscreenError} payload */

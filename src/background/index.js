@@ -8,6 +8,7 @@ import { runDictation, ADAPTERS } from './pipeline.js';
 import { applyUsage, summarize } from './usage.js';
 import { createDictate } from './dictate.js';
 import { createHistory } from './history.js';
+import { createPending } from './pending.js';
 import { createRecorder } from './recorder.js';
 import { createOffscreenClient } from './offscreen-client.js';
 import { broadcast, reinject, sendToFrame } from './tabs.js';
@@ -31,7 +32,11 @@ const recorder = createRecorder({
   openPermissionPage: async () => { await chrome.tabs.create({ url: chrome.runtime.getURL('permission.html') }); },
   getSettings: () => storage.getSettings(),
   dictate: createDictate({ storage, history, runDictation, applyUsage, userMessage }),
+  pending: createPending({ area: chrome.storage.session }),
+  bootId: crypto.randomUUID(),
+  now: Date.now,
 });
+recorder.sweep();
 
 // Built from the id: URL parsers outside Chrome give chrome-extension: URLs an opaque 'null' origin,
 // which content scripts in sandboxed frames also report.

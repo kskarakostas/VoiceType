@@ -32,6 +32,7 @@ function fakeChrome({ accessLevel = true } = {}) {
       session: {
         get: vi.fn(async (key) => ({ [key]: structuredClone(session[key]) })),
         set: vi.fn(async (items) => { Object.assign(session, structuredClone(items)); }),
+        remove: vi.fn(async (key) => { delete session[key]; }),
       },
       onChanged: on('storageChanged'),
     },
@@ -52,8 +53,9 @@ const OTHER_PAGE = { id: 'abc', origin: 'https://example.org', url: 'https://exa
 const POPUP = { id: 'abc', origin: 'chrome-extension://abc', url: 'chrome-extension://abc/popup.html' };
 const OFFSCREEN = { id: 'abc', origin: 'chrome-extension://abc', url: 'chrome-extension://abc/offscreen.html' };
 
-async function load(options) {
+async function load({ pendingDictation, ...options } = {}) {
   const fake = fakeChrome(options);
+  if (pendingDictation) fake.session.pendingDictation = pendingDictation;
   vi.stubGlobal('chrome', fake.chrome);
   vi.resetModules();
   await import('../../../src/background/index.js');
@@ -354,5 +356,42 @@ describe('recording wiring', () => {
     const res = await send(fake.listeners, { action: MSG.START_RECORDING }, PAGE);
     expect(res.reason).toBe('needsPermission');
     expect(fake.chrome.tabs.create).toHaveBeenCalledWith({ url: 'chrome-extension://abc/permission.html' });
+  });
+});
+
+describe('held audio wiring', () => {
+  const STALE = { captureId: 'c', endpoint: { tabId: 1, frameId: 0 }, audioBase64: 'QUJD', bootId: 'gone', at: 1000, attempts: 0 };
+
+  beforeEach(() => {
+    fake.store.settings = { ...freshSettings(), keys: { openai: 'sk-secret-123456', gemini: '' } };
+  });
+
+  it('a worker sweeps at load', async () => {
+    const stale = await load({ pendingDictation: STALE });
+    await vi.waitFor(() => expect(stale.session.pendingDictation).toBeUndefined());
+  });
+
+  it('keeps a fresh record at load, in the session area', async () => {
+    const record = { ...STALE, at: Date.now() };
+    const kept = await load({ pendingDictation: record });
+    await flush();
+    expect(kept.session.pendingDictation).toEqual(record);
+    expect(kept.chrome.storage.session.get).toHaveBeenCalledWith('pendingDictation');
+  });
+
+  it('a page ping answers from the recorder', async () => {
+    expect(await send(fake.listeners, { action: MSG.PROCESSING_PING }, PAGE)).toEqual({ alive: false });
+  });
+
+  it('a page ping resumes a record left by an earlier worker, under a boot id of this worker', async () => {
+    fake.store.settings = undefined;
+    const record = { ...STALE, at: Date.now(), modeKey: 'default', host: null, incognito: false, sounds: false, alwaysCopy: false, mimeType: 'audio/webm', durationSec: 2, editText: null };
+    const resumed = await load({ pendingDictation: record });
+    expect(await send(resumed.listeners, { action: MSG.PROCESSING_PING }, PAGE)).toEqual({ alive: true });
+    await vi.waitFor(() => expect(resumed.chrome.storage.session.set).toHaveBeenCalled());
+    const { pendingDictation } = resumed.chrome.storage.session.set.mock.calls[0][0];
+    expect(pendingDictation).toMatchObject({ attempts: 1 });
+    expect(pendingDictation.bootId).not.toBe('gone');
+    expect(pendingDictation.bootId).toEqual(expect.any(String));
   });
 });

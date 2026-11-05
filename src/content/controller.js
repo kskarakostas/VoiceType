@@ -34,10 +34,13 @@ import { STATUS_MS } from './pill.js';
 export const FOCUS_OUT_MS = 200;
 /** Processing with no word from the service worker for this long: it stopped or restarted. */
 export const PROCESSING_TIMEOUT_MS = 75_000;
+/** How often processing asks the service worker about its dictation, which also keeps it awake (V52). */
+export const PING_MS = 5000;
 
 const ORPHAN_NOTICE = 'VoiceType was turned off or updated. Reload this page.';
 const NO_REPLY = 'VoiceType could not reach its background service. Try again.';
 const NO_RESPONSE = 'No response from VoiceType. Try again.';
+const LOST = Object.freeze({ text: 'VoiceType restarted and lost this recording. Try again.', tone: 'error' });
 const HOLD_NOTICE = 'Return to the field to insert, or click here to copy.';
 const PASSWORD_NOTICE = 'VoiceType does not record in password fields.';
 const FOCUS_NOTICE = 'Click into the field you want to dictate into, then try again.';
@@ -94,6 +97,7 @@ export function createController(deps) {
   let statusTimer = null;
   let focusTimer = null;
   let watchdog = null;
+  let pinger = null;
   let orphan = false;
   /** Orphaned under a click-to-copy status: the terminal notice waits for that click (V35). */
   let orphanNoticeOwed = false;
@@ -190,6 +194,7 @@ export function createController(deps) {
     deps.clearTimeout(watchdog);
     watchdog = deps.setTimeout(() => {
       watchdog = null;
+      stopPings();
       if (inactive() || state !== 'processing') return;
       // target stays bound, so a result that still arrives goes to the field under D12.
       state = 'idle';
@@ -203,6 +208,29 @@ export function createController(deps) {
   function clearWatchdog() {
     deps.clearTimeout(watchdog);
     watchdog = null;
+    stopPings();
+  }
+
+  /** Entering processing: every way out goes through the watchdog, which stops these. */
+  function startPings() {
+    deps.clearTimeout(pinger);
+    pinger = deps.setTimeout(ping, PING_MS);
+  }
+
+  function stopPings() {
+    deps.clearTimeout(pinger);
+    pinger = null;
+  }
+
+  /** Scheduled on the send, not the reply: a reply that never comes must not end the pings. */
+  async function ping() {
+    const current = deps.setTimeout(ping, PING_MS);
+    pinger = current;
+    const reply = await send({ action: MSG.PROCESSING_PING });
+    // Pings stopped, or a later one is out: this answer is old.
+    if (pinger !== current) return;
+    if (reply?.alive === true) armWatchdog();
+    else if (reply?.alive === false) onRecordingState({ state: 'idle', notice: LOST });
   }
 
   function clearNotice() {
@@ -338,6 +366,7 @@ export function createController(deps) {
     // The start status asked for words, and they are in.
     if (snapshot) clearNotice();
     armWatchdog();
+    startPings();
     const reply = await send({ action: MSG.STOP_RECORDING });
     if (inactive() || state !== 'processing' || reply?.ok === true) return;
     // The service worker holds no session for this frame, so no result is coming for a stop.
@@ -426,6 +455,7 @@ export function createController(deps) {
       stopQueued = false;
       pill.setState('processing');
       armWatchdog();
+      startPings();
       const notice = Object.hasOwn(AUTO_STOP, message.reason) ? AUTO_STOP[message.reason] : null;
       if (notice) notify(notice.text, { tone: notice.tone });
       return;
@@ -486,8 +516,8 @@ export function createController(deps) {
     // The entry is no longer the newest dictation: an open menu drops it until its next open (V28).
     recent = null;
     render();
-    // A worker answers a repeated start from a recording frame with ok, keeping that session's kind, so
-    // a result with no edit mark can reach an edit's frame: it is not this selection's replacement.
+    // A result with no edit mark can reach an edit's frame, an earlier dictation's landing late: it
+    // is not this selection's replacement.
     const edit = message.edit === true;
     const result = { text, cost: finite(message.cost), warning: textOr(message.warning, null), copied: message.copied, edit: edit || selection !== null, selection: edit ? selection : null };
 
