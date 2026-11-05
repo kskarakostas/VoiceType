@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 // No YAML parser exists and none may be added, so the file is read as text by job section.
+// Limit: being text, this does not cover YAML spellings outside this file's style, and the first
+// real run of the workflow is the release itself.
 const workflow = readFileSync(new URL('../../../.github/workflows/release.yml', import.meta.url), 'utf8');
 
 const [head, jobs = ''] = workflow.split(/^jobs:$/m);
@@ -36,7 +38,7 @@ describe('release workflow, workflow level', () => {
   });
 
   it('names one token in the whole file', () => {
-    expect(workflow.match(/github\.token|secrets\./g)).toHaveLength(1);
+    expect(workflow.match(/github\.token|\bsecrets\b/gi)).toHaveLength(1);
   });
 
   it('grants one write scope in the whole file', () => {
@@ -53,8 +55,9 @@ describe('release workflow, build job', () => {
 
   it('runs the repository code', () => {
     expect(build).toContain('run: npm ci');
-    expect(build).toContain('run: npm test');
+    expect(linesOf(build, 'run')).toContain('run: npm test');
     expect(build).toContain('does not match manifest version');
+    expect(build).toContain('exit 1');
   });
 
   it('holds no token and cannot write', () => {
