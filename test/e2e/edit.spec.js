@@ -9,9 +9,11 @@ import {
 import { EDIT_INSTRUCTIONS } from '../../src/background/edit-prompt.js';
 
 const EDITED = 'edited text';
+const TWO_LINES = 'edited one\nedited two';
 const EDIT_HOTKEY = 'Control+Shift+KeyE';
 const SAY = 'Say how to change the selection.';
 const SELECT_FIRST = 'Select the text to edit first.';
+const NOT_EDITABLE = 'Copied to clipboard. The field could not be edited.';
 const CHANGED = 'Selection changed. Result copied to clipboard.';
 const EDIT_FAILED = 'Could not edit the selection. Click here to copy what you said.';
 const SENTINEL = 'clipboard before the copy';
@@ -126,6 +128,25 @@ async function editByVoice(page, target = page, during = async () => {}) {
   await page.keyboard.press(EDIT_HOTKEY);
 }
 
+/**
+ * Runs body with the text model answering text.
+ * @param {string} text
+ * @param {() => Promise<void>} body
+ */
+async function withRefine(text, body) {
+  const answer = (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ output: [{ type: 'message', content: [{ type: 'output_text', text }] }], usage: { input_tokens: 10, output_tokens: 5 } }),
+  });
+  await context.route(REFINE_URL, answer);
+  try {
+    await body();
+  } finally {
+    await context.unroute(REFINE_URL, answer);
+  }
+}
+
 const FIELDS = [
   ['a textarea', '#ta'],
   ['an input', '#text'],
@@ -178,6 +199,23 @@ for (const [name, selector] of [FIELDS[0], FIELDS[1], FIELDS[2]]) {
 }
 
 for (const [name, selector] of [FIELDS[0], FIELDS[2]]) {
+  test(`one Ctrl+Z restores ${name} after a two-line replacement`, async () => {
+    await withRefine(TWO_LINES, async () => {
+      const page = await openPage();
+      const field = page.locator(selector);
+      await prepare(page, field, 'keep this word', 5, 9);
+      await editByVoice(page);
+      await expect.poll(() => pillStatus(page)).toMatch(/^Done /);
+      const placed = await fieldText(field);
+      expect(placed.startsWith('keep edited one')).toBe(true);
+      expect(placed.endsWith('edited two word')).toBe(true);
+
+      await page.keyboard.press('Control+z');
+
+      await expect.poll(() => fieldText(field)).toBe('keep this word');
+    });
+  });
+
   test(`a replacement inside the selection reads as placed, in ${name}`, async () => {
     const page = await openPage();
     const field = page.locator(selector);
@@ -258,6 +296,46 @@ test('a selection across paragraphs goes with its line breaks and is replaced wh
   expect(JSON.parse(refineCalls[0].input).selected_text).toMatch(/^line\n+second$/);
 });
 
+for (const [name, selector] of [FIELDS[0], FIELDS[2]]) {
+  test(`right-to-left text in ${name} goes as selected and is replaced in place`, async () => {
+    const page = await openPage();
+    const field = page.locator(selector);
+    await field.evaluate((el) => { el.dir = 'rtl'; });
+    await prepare(page, field, 'שלום עולם יפה', 5, 9);
+
+    await editByVoice(page);
+
+    await expect.poll(() => fieldText(field)).toBe(`שלום ${EDITED} יפה`);
+    expect(JSON.parse(refineCalls[0].input).selected_text).toBe('עולם');
+  });
+}
+
+test('a selection across inline nodes goes whole and is replaced whole', async () => {
+  const page = await openPage();
+  const field = page.locator('#ce');
+  await focusField(page, field);
+  await field.evaluate((el) => {
+    el.replaceChildren();
+    const bold = document.createElement('b');
+    bold.textContent = 'this';
+    const italic = document.createElement('i');
+    italic.textContent = 'word';
+    el.append('keep ', bold, ' middle ', italic, ' now');
+    const selection = document.getSelection();
+    const range = document.createRange();
+    range.setStart(bold.firstChild, 1);
+    range.setEnd(italic.firstChild, 2);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+
+  await editByVoice(page);
+
+  await expect.poll(() => fieldText(field)).toBe(`keep t${EDITED}rd now`);
+  await expect.poll(() => pillStatus(page)).toMatch(/^Done /);
+  expect(JSON.parse(refineCalls[0].input).selected_text).toBe('his middle wo');
+});
+
 test('the active mode and a site mode do not apply to an edit', async () => {
   await seedSettings(serviceWorker, DUMMY_KEY, { activeMode: 'email', siteRules: { localhost: { hidePill: false, mode: 'email' } } });
   const page = await openPage();
@@ -323,6 +401,35 @@ test('the same word elsewhere in a contenteditable is not the selection', async 
   await expect.poll(() => pillStatus(page)).toBe(CHANGED);
   expect(await fieldText(field)).toBe('word and word');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(EDITED);
+});
+
+test('a selection the page moves between rungs ends at the clipboard and the field stays', async () => {
+  await withRefine(TWO_LINES, async () => {
+    const page = await openPage();
+    await page.evaluate((text) => navigator.clipboard.writeText(text), SENTINEL);
+    const field = page.locator('#ce');
+    const text = 'keep this word and more';
+    await prepare(page, field, text, 5, 9);
+    // The synthetic paste is the first rung of a multi-line text; this page answers it late.
+    await field.evaluate((el, from) => {
+      el.addEventListener('paste', () => {
+        setTimeout(() => {
+          const range = document.createRange();
+          range.setStart(el.firstChild, from);
+          range.setEnd(el.firstChild, from + 'more'.length);
+          const selection = document.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }, 20);
+      });
+    }, text.indexOf('more'));
+
+    await editByVoice(page);
+
+    await expect.poll(() => pillStatus(page)).toBe(NOT_EDITABLE);
+    expect(await fieldText(field)).toBe(text);
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(TWO_LINES);
+  });
 });
 
 test('text the page rewrites at the same offsets is copied over, not replaced', async () => {

@@ -31,7 +31,8 @@ const isTrustedEvent = (event) => event.isTrusted === true;
  *   isTrusted?: (event: Event) => boolean,
  *   replacing?: boolean,
  * }} InsertDeps
- * `replacing`: the text goes over a selection the caller checked, so only the exact result counts.
+ * `replacing`: the text goes over a selection the caller checked, so only the exact result counts,
+ * and the ladder ends at the clipboard if that selection moves under it.
  */
 
 /**
@@ -254,6 +255,7 @@ function prepare(target, text, deps) {
   try { target.focus({ preventScroll: true }); } catch { /* some hosts throw on focus */ }
   if (editable) placeCaret(target, prior);
   const before = readValue(target);
+  const replacing = deps.replacing === true;
   return {
     target,
     text,
@@ -261,7 +263,8 @@ function prepare(target, text, deps) {
     nBefore: normalizeForCompare(before),
     nText: normalizeForCompare(text),
     nExpected: null,
-    replacing: deps.replacing === true,
+    replacing,
+    selection: replacing ? readSelection(target) : null,
     trusted: false,
     prevented: false,
     exec: deps.execCommand ?? ((t) => target.ownerDocument.execCommand('insertText', false, t)),
@@ -337,9 +340,12 @@ async function editableLadder(run) {
 
 /**
  * Runs one rung. `act` returns false when it did nothing observable, which skips the wait;
- * otherwise the page gets `settle` to react before the read-back.
+ * otherwise the page gets `settle` to react before the read-back. A rung writes at the live
+ * selection, and the last rung's wait gave the page time to move it, so a replacement checks it
+ * here, in the same task as `act`: 'moved' ends the ladder at the clipboard.
  */
 async function attempt(run, act) {
+  if (run.replacing && !sameSelection(run.target, run.selection)) return 'moved';
   run.trusted = false;
   run.prevented = false;
   if (act()) await run.settle(() => judge(run) === 'inserted');

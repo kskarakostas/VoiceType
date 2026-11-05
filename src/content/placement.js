@@ -119,7 +119,8 @@ export function createPlacement(deps) {
   }
   /**
    * @param {Element|null} bound
-   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null, unpaid?: boolean }} result
+   * @param {{ text: string, cost: number, warning: string|null, copied: boolean|null, unpaid?: boolean,
+   *   edit?: boolean, selection?: ReturnType<typeof import('./insert.js').readSelection> }} result
    */
   function place(bound, result) {
     return whileLanding(() => placeResult(bound, result));

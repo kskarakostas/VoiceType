@@ -380,19 +380,16 @@ export function createController(deps) {
    */
   function pressEdit() {
     const active = deepActiveElement();
-    // A status for a chord the page keeps. A pending click-to-copy stays, as for a refused start.
-    const refuse = (text) => {
+    // A pending click-to-copy stays, as for a refused start.
+    const refuse = (text, { claimed = false } = {}) => {
       if (!copyPending) notify(text, { tone: 'info' });
-      return false;
+      return claimed;
     };
     if (isPasswordField(active)) return refuse(PASSWORD_NOTICE);
     if (!deps.hasFocus() || !isValidInput(active)) return false;
     const selection = readSelection(active);
     if (!selection) return refuse(NO_SELECTION);
-    if (selection.text.length > MAX_EDIT_CHARS) {
-      refuse(TOO_LONG);
-      return true;
-    }
+    if (selection.text.length > MAX_EDIT_CHARS) return refuse(TOO_LONG, { claimed: true });
     pressStarted = true;
     start({ selection });
     return true;

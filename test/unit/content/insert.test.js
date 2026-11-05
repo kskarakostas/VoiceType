@@ -1324,6 +1324,107 @@ describe('insertText over a selection', () => {
     expect(el.value).toBe('HELLO THERE');
   });
 
+  describe('a selection that moves between rungs', () => {
+    /** A settle that gives the page its moment: on the first wait the selection goes elsewhere. */
+    function movingOnce(move) {
+      let moved = false;
+      return async (check) => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (!moved) {
+          moved = true;
+          move();
+        }
+        return check();
+      };
+    }
+    const MORE = 'keep this word and more'.indexOf('more');
+
+    it('ends the ladder at the clipboard before exec, on the paste-first path', async () => {
+      const el = selectedEditable('keep this word and more', 5, 9);
+      const t = replacing({
+        execCommand: vi.fn(editableExec),
+        createPasteEvent: fakePasteEvent,
+        settle: movingOnce(() => selectRange(el.firstChild, MORE, el.firstChild, MORE + 4)),
+      });
+      expect(await insertText(el, 'edited one\nedited two', t)).toBe('clipboard');
+      expect(t.execCommand).not.toHaveBeenCalled();
+      expect(el.textContent).toBe('keep this word and more');
+      expect(t.writeClipboard).toHaveBeenCalledWith('edited one\nedited two');
+    });
+
+    it('ends the ladder before the raw rung', async () => {
+      const el = selectedEditable('keep this word and more', 5, 9);
+      const t = replacing({ settle: movingOnce(() => selectRange(el.firstChild, MORE, el.firstChild, MORE + 4)) });
+      expect(await insertText(el, 'there', t)).toBe('clipboard');
+      expect(el.textContent).toBe('keep this word and more');
+      expect(t.writeClipboard).toHaveBeenCalledWith('there');
+    });
+
+    it('ends the ladder before the beforeinput rung', async () => {
+      const el = selectedEditable('keep this word and more', 5, 9);
+      const dispatch = vi.fn((target, event) => target.dispatchEvent(event));
+      const t = replacing({
+        dispatch,
+        createPasteEvent: fakePasteEvent,
+        settle: movingOnce(() => selectRange(el.firstChild, MORE, el.firstChild, MORE + 4)),
+      });
+      expect(await insertText(el, 'there', t)).toBe('clipboard');
+      expect(dispatch.mock.calls.map(([, event]) => event.type)).toEqual(['paste']);
+    });
+
+    it('ends the ladder when the selection collapses', async () => {
+      const el = selectedEditable('keep this word and more', 5, 9);
+      const t = replacing({ settle: movingOnce(() => setCaret(el.firstChild, 2)) });
+      expect(await insertText(el, 'there', t)).toBe('clipboard');
+      expect(el.textContent).toBe('keep this word and more');
+    });
+
+    it('ends the ladder in a form field before the setter rung', async () => {
+      const el = selectedTextarea('keep this word and more', 5, 9);
+      const t = replacing({
+        execCommand: vi.fn(() => true),
+        settle: movingOnce(() => el.setSelectionRange(MORE, MORE + 4)),
+      });
+      expect(await insertText(el, 'there', t)).toBe('clipboard');
+      expect(el.value).toBe('keep this word and more');
+      expect(t.writeClipboard).toHaveBeenCalledWith('there');
+    });
+
+    it('text the page changed under the same offsets stops at that rung, unverified and copied', async () => {
+      const el = selectedTextarea('keep this word', 5, 9);
+      const t = replacing({
+        execCommand: vi.fn(() => true),
+        settle: movingOnce(() => {
+          el.value = 'keep that word';
+          el.setSelectionRange(5, 9);
+        }),
+      });
+      expect(await insertText(el, 'there', t)).toBe('unverified');
+      expect(el.value).toBe('keep that word');
+      expect(t.writeClipboard).toHaveBeenCalledWith('there');
+    });
+
+    it('a selection that stays lets every rung run', async () => {
+      const el = selectedEditable('keep this word', 5, 9);
+      const t = replacing({ execCommand: vi.fn(editableExec), createPasteEvent: fakePasteEvent });
+      expect(await insertText(el, 'edited one\nedited two', t)).toBe('inserted');
+      expect(t.execCommand).toHaveBeenCalledTimes(1);
+      expect(el.textContent).toBe('keep edited one\nedited two word');
+    });
+
+    it('a dictation run is untouched: the next rung writes at the live selection, as in 3.1', async () => {
+      const el = selectedEditable('keep this word and more', 5, 9);
+      const t = deps({
+        execCommand: vi.fn(editableExec),
+        createPasteEvent: fakePasteEvent,
+        settle: movingOnce(() => selectRange(el.firstChild, MORE, el.firstChild, MORE + 4)),
+      });
+      expect(await insertText(el, 'edited one\nedited two', t)).toBe('inserted');
+      expect(t.execCommand).toHaveBeenCalledTimes(1);
+      expect(el.textContent).toBe('keep this word and edited one\nedited two');
+    });
+  });
+
   it('a raw rung replaces a selection in a plain contenteditable', async () => {
     const el = selectedEditable('hello world', 6, 11);
     expect(await insertText(el, 'there', replacing())).toBe('inserted');
