@@ -14,10 +14,11 @@ VoiceType collects and processes the following data **locally on your device**:
 
 1. **Audio Data**: Temporarily recorded for transcription purposes
 2. **API Keys**: Your OpenAI or Google Gemini API keys, stored in plain text in Chrome's local extension storage
-3. **Settings**: Your preferences (provider, modes, recording limits, silence auto-stop, hotkey, spoken languages, pill style, sounds, always-copy)
+3. **Settings**: Your preferences (provider, modes, Translate target language, recording limits, silence auto-stop, hotkey, spoken languages, pill style, sounds, always-copy, keep recent dictations)
 4. **Dictionary**: The terms you add, by language
 5. **Site Rules**: The hostnames you add a rule for, with that rule (Hide pill, mode). VoiceType stores only the sites you set a rule on
-6. **Usage Statistics**: Session counts, audio duration, word counts, modes used, and estimated costs per day. Word counts are numbers; no transcript is kept
+6. **Usage Statistics**: Session counts, audio duration, word counts, modes used, and estimated costs per day. Word counts are numbers; the statistics hold no transcript
+7. **Recent dictations**: With Keep recent dictations on, which is the default, the text of your last 20 dictations, the transcript before a mode changed it, the mode, the site and the time. Off, none of this is kept. A dictation in an incognito tab is never kept
 
 ### What We Do NOT Collect
 
@@ -35,6 +36,7 @@ VoiceType collects and processes the following data **locally on your device**:
 - No data is sent to our servers (we don't have any servers)
 - Your dictionary and site rules are stored locally. Dictionary terms leave this device only with a recording, as described below; site rules never do
 - Usage statistics are stored locally and never transmitted
+- Recent dictations are held in Chrome's session storage, in memory, not on disk, and never leave this device. Only VoiceType's service worker and extension pages can read that store. A web page's in-page script can ask for the newest dictation of its own site, when you open the pill menu; a frame from another site gets nothing
 
 ## Data Transmission
 
@@ -66,13 +68,14 @@ Your use of these services is subject to their terms and privacy policies.
 - **Access to all sites** (`<all_urls>`): the in-page script that shows the pill runs on every site so you can dictate anywhere. VoiceType uses the host permission itself to put that script back into tabs that are already open when VoiceType is installed or updated. The same permission is what lets the background service worker call the OpenAI and Gemini APIs. The script looks only at the field you focus and dictate into; it does not read or send page content.
 - **scripting**: the re-injection described above.
 - **offscreen**: the extension document that records the microphone. It also plays the optional sounds and copies results.
-- **storage**: settings, keys, dictionary, site rules and usage statistics on this device.
+- **storage**: settings, keys, dictionary, site rules and usage statistics on this device, and recent dictations in memory.
 - **clipboardWrite**: copying a result to the clipboard with no click: for Always copy the result, and for text VoiceType cannot insert. Chrome describes it as "Modify data you copy and paste". VoiceType does not read the clipboard. Always copy the result is off by default.
 
 ## Data Retention
 
 - Audio recordings are processed in memory and immediately discarded after transcription. Closing the tab or navigating it away while it records cancels the recording without sending it. Switching to another tab does not: the recording goes on until you stop it or it reaches the maximum length, and that audio is sent
 - Settings, API keys, your dictionary and site rules persist until you clear them or uninstall the extension
+- Recent dictations: at most 20, gone when you close the browser, or when the extension is reloaded, updated or turned off, or when you clear them or turn them off
 - Usage statistics: daily history is trimmed to 90 days each time a dictation is logged; all-time totals are kept until you clear them
 
 ## Your Rights
@@ -81,6 +84,7 @@ You can:
 
 - **Clear your API keys** at any time through the extension settings
 - **Clear usage statistics** on the settings page under Usage and data
+- **Clear recent dictations**, or turn them off, on the History page of the settings page
 - **Remove dictionary terms and site rules** on the Dictionary and Sites pages of the settings page
 - **Uninstall the extension** to remove all stored data
 

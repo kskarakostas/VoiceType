@@ -62,6 +62,9 @@ Keep names and jargon by language, up to 100 terms, with CSV import and export.
 ### 🌐 Site Rules
 Hide the pill on a site, or give a site its own mode.
 
+### 🕘 History
+Your last 20 dictations stay in memory until you close the browser: insert or copy the last one, or undo a mode's edit. One switch turns it off.
+
 ### 🎨 Pill Styles
 Dot (the default), Pill or Minimal. Optional sounds, and an option to also copy every result.
 
@@ -147,7 +150,7 @@ Keys stay in your browser's local extension storage, readable only by VoiceType'
 | **Instruct** | 💡 | Ask AI questions, get responses in the text field |
 
 - A mode with instructions sends the transcript through the provider's text model (`gpt-6-luna` or `gemini-3.8-flash`), which adds a small text cost. Default ships with none; give it instructions and it does the same.
-- Translate's target language (English, Greek, Spanish, French or German) is picked in the pill menu while Translate is the active mode. Minimal has no menu, so pick it on Dot or Pill.
+- Translate's target language (English, Greek, Spanish, French or German) is set under **Modes, Translate to**, or in the pill menu while Translate is the active mode.
 - Add your own modes on the settings page under **Modes, Add mode**: an icon, a name and instructions for the text model. Empty instructions mean plain transcription. `{{targetLanguage}}` in the instructions is replaced with Translate's target language.
 
 ---
@@ -192,7 +195,7 @@ Then in Chrome 140 or newer:
 
 ### 3. Configure & Go
 
-1. Pin the VoiceType icon from the puzzle piece menu and click it, then **Add API key**. The settings page opens at **Provider**
+1. A first install opens a **Welcome** page: it shows whether you have a key, the microphone and your hotkey. Pin the VoiceType icon from the puzzle piece menu and click it, then **Add API key**. The settings page opens at **Provider**
 2. Using Gemini? Select **Gemini** at the top of that page first. Paste your API key. It saves on its own
 3. Open a web page (VoiceType does not run on Chrome's own pages or its extension pages) and click into a text field, then hold `Ctrl+Shift+Space` while you speak, or point at the dot beside the field and click **REC**
 4. The first time, VoiceType opens a tab asking for the microphone. Choose **Allow while visiting the site**, then start again
@@ -246,25 +249,36 @@ Blocked it by mistake? Open `chrome://settings/content/microphone`, find VoiceTy
 
 ## ⚙️ Settings and Quick Panel
 
-Click the VoiceType icon for the quick panel: status, provider, active mode, **This site** (Hide pill and Mode on this site), today's sessions and cost, and **Open settings**.
+Click the VoiceType icon for the quick panel: status, provider, active mode, **This site** (Hide pill and Mode on this site), today's sessions and cost, **Copy last** and **Open settings**.
 
-The settings page opens in a tab, also from **Extension options** on `chrome://extensions`. **Home**, **Modes** and **Dictionary** come first, then Settings: **Provider**, **Recording**, **Speech**, **Sites**, **Appearance**, **Sound and clipboard**, **Usage and data**.
+The settings page opens in a tab, also from **Extension options** on `chrome://extensions`. **Home**, **Modes**, **Dictionary** and **History** come first, then Settings: **Provider**, **Recording**, **Speech**, **Sites**, **Appearance**, **Sound and clipboard**, **Usage and data**.
 
 - **Recording**
   - **Minimum length** (0.5, 1, 2 or 3 s; default 1 s): shorter recordings are discarded as accidental clicks, and the pill says "Too short, ignored".
   - **Maximum length** (30 s to 5 min; default 2 min): recording stops at this length, the pill says "Max time reached", and what you said is transcribed.
   - **Silence auto-stop** (Off, 2, 3 or 5 s; default Off): once you have spoken, recording stops after this much silence.
 - **Sites**: **Hide pill** removes the idle pill on a site; the hotkey still records there, with a small indicator at the bottom of the page. **Mode** gives a site its own mode. The rule goes by hostname, without `www.`; subdomains need their own rule. On a site with a mode, a mode picked in the pill menu updates that site; **Use active mode** clears it.
+- **History**: your last 20 dictations with time, site and mode. **Copy** takes the text, **Copy original** the transcript from before a mode changed it. **Keep recent dictations** is on by default; turning it off clears them. A dictation in an incognito tab is not kept.
 - **Appearance**
   - **Dot** (default): a small dot beside the field that opens into the bar when you point at it.
   - **Pill**: the full bar beside the field, always in view.
   - **Minimal**: nothing until you record, then a small indicator at the bottom of the page. Start and stop with the hotkey. There is no menu on the page.
 - **Sound and clipboard**: **Play sounds** gives short tones for start, stop, done and error. **Always copy the result** also copies every dictation. Both are off by default.
 - Every change saves on its own; there is no Save button. A new mode is saved with **Create mode**, a new site rule with **Add**.
-- **Clear history** and **Reset to defaults** need two separate clicks: the first changes the button's label, the second confirms. A double click or a held Enter does not confirm them.
-- **Reset to defaults** keeps your API keys, provider, spoken languages, dictionary and site rules. Custom modes are deleted, so a site rule that uses one loses its mode.
+- **Clear** on History, **Clear usage history** and **Reset to defaults** need two separate clicks: the first changes the button's label, the second confirms. A double click or a held Enter does not confirm them.
+- **Reset to defaults** keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice. Custom modes are deleted, so a site rule that uses one loses its mode.
 
 If the frame you dictate in is out of sight, hidden or covered, VoiceType shows the small indicator at the bottom of the page, in every style. It also stays on top of modal dialogs, popovers and fullscreen elements. Under a modal dialog it can be seen but not clicked: use the hotkey, or close the dialog to click a "click here to copy" status.
+
+---
+
+## 🕘 Last Dictation
+
+Open the pill menu on a site where you dictated: **Last dictation** offers **Insert**, **Copy** and, when a mode changed the text, **Undo AI edit**. Minimal has no menu; use **Copy last** in the quick panel.
+
+- **Insert** goes to the field focused when you click. With no field, or in a password field, the text goes to the clipboard.
+- **Undo AI edit** puts the original transcript back in a text field or text box when the inserted text is still exactly where it landed; one `Ctrl+Z` brings the edit back. Anything else, a rich editor included, copies the original and says so.
+- The menu only offers what was dictated on this site. A frame from another site on the page gets nothing.
 
 ---
 
@@ -281,7 +295,7 @@ Spoken languages live under **Settings, Speech**, the dictionary on its own page
 - Product names, people's names, jargon, acronyms. Write each exactly as it should appear, such as `Noesis`. Enter adds a term; commas split.
 - Groups by language only organize your terms: every term of every group goes with every dictation.
 - Up to 100 terms of up to 64 characters each, and each term only once.
-- **Export CSV** writes `language,term` rows. **Import CSV** takes that format or a one-column list, merges into your groups and skips terms you already have. A file with an error, or one that would pass 100 terms, imports nothing.
+- **Export CSV** writes `language,term` rows. A term starting with `=`, `+`, `-` or `@` gets a leading `'`, so a spreadsheet reads it as text; import removes it. **Import CSV** takes that format or a one-column list, merges into your groups and skips terms you already have. A file with an error, or one that would pass 100 terms, imports nothing.
 - A term makes the provider more likely to hear it, not certain to. A name that sounds like a common word (Noesis and "noises") is recognized more often but can still slip.
 
 ---
@@ -377,6 +391,7 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 - ✅ Audio sent directly to OpenAI/Google (not our servers)
 - ✅ Site rules and your dictionary stay on this device; dictionary terms go to the provider with each recording
 - ✅ The `clipboardWrite` permission lets VoiceType copy results with no click, for **Always copy the result** and for text it cannot insert. It never reads the clipboard
+- ✅ Recent dictations stay in memory, not on disk, and go at browser close. A page's pill only gets the newest one dictated on that site
 - ✅ No analytics or tracking
 - ✅ Fully open source
 
@@ -391,6 +406,8 @@ npm run build       # bundle into dist/
 npm run watch       # rebuild on change
 npm run test:e2e    # build, then the Playwright smoke in Chromium
 npm run screenshots # build, then retake screenshots/light and screenshots/dark
+npm run lint:ext    # web-ext lint on dist/; two Firefox-only errors are exempt
+npm run package     # zip dist/ as voicetype-<version>.zip
 ```
 
 The end-to-end smoke loads `dist/` into Playwright's Chromium with a fake microphone, stubs the provider endpoints and blocks every other https request, so it needs no API key. Install its browser once with `npx playwright install --no-shell chromium` (add `--with-deps` on a fresh Linux machine). `npm run screenshots` uses the same setup with `test/fixtures/demo.html`, a sample key and sample usage history.
