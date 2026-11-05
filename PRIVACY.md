@@ -19,15 +19,15 @@ VoiceType collects and processes the following data **locally on your device**:
 5. **Site Rules**: The hostnames you add a rule for, with that rule (Hide pill, mode). Recent dictations (item 7) also hold the site of each dictation, and a dictation being processed holds its site until it ends (see Data Storage); no other site is stored
 6. **Usage Statistics**: Session counts, audio duration, word counts, modes used, and estimated costs per day. Word counts are numbers; the statistics hold no transcript and no selected text
 7. **Recent dictations**: With Keep recent dictations on, which is the default, the text of your last 20 dictations, the transcript before a mode changed it, the mode, the site and the time. For an edit, that is the replacement and your spoken instruction, never the selected text. Off, none of this is kept. A dictation in an incognito tab is never kept, nor is one run again after a stopped service worker (see Data Storage)
-8. **Selected Text**: With the edit hotkey, the text you selected in the focused field, taken at that press and from nowhere else. It is held in memory while the edit is processing (see Data Storage) and sent as described under Data Transmission. It is not stored after that
+8. **Selected Text**: With the edit hotkey, the text you selected in the focused field, taken at that press and from nowhere else. It is held in memory from that press until the edit ends (see Data Storage) and sent as described under Data Transmission. It is not stored after that
 
 ### What We Do NOT Collect
 
 - Personal information
 - Browsing history (the site of a recent dictation, item 7, and of a dictation being processed are the only exceptions)
-- Form data or passwords (the text you select in a field goes to your provider only with the edit hotkey, item 8; a password field is refused)
+- Form data or passwords (the text you select in a field goes to your provider only with the edit hotkey, item 8; VoiceType refuses the fields it can recognize as passwords, and a page that reveals one as plain text with no marker is not recognized)
 - Any data for advertising purposes
-- Clipboard contents (VoiceType writes dictated text or an edit's result to the clipboard when it cannot insert it, when you click a Copy action, and on every dictation with Always copy the result on; it never reads the clipboard)
+- Clipboard contents (VoiceType writes dictated text or an edit's result to the clipboard when it cannot insert it or when the page does not take the result within 5 seconds, when you click a Copy action, and on every dictation with Always copy the result on; it never reads the clipboard)
 
 ## Data Storage
 
@@ -54,7 +54,7 @@ These transmissions occur only when you actively record and submit audio for tra
 - [OpenAI Privacy Policy](https://openai.com/privacy/)
 - [Google AI Privacy Policy](https://ai.google.dev/terms)
 
-Selected text is transmitted only after a press of the edit hotkey, and only from the focused field. It goes with your spoken instruction, directly to the text model of the provider you chose, never to the speech recognition model and nowhere else. If the service worker stops, as above, it is sent a second time with the recording. Dictating over a selection does not send the selection.
+Selected text is transmitted only after a press of the edit hotkey, and only from the focused field. It goes with your spoken instruction, directly to the text model of the provider you chose, never to the speech recognition model and nowhere else. If the service worker stops, as above, the dictation runs once more, so the selected text can reach the text model a second time. Dictating over a selection does not send the selection.
 
 ## Third-Party Services
 
@@ -75,11 +75,11 @@ Your use of these services is subject to their terms and privacy policies.
 - **scripting**: the re-injection described above.
 - **offscreen**: the extension document that records the microphone. It also plays the optional sounds and copies results.
 - **storage**: settings, keys, dictionary, site rules and usage statistics on this device, and recent dictations in memory, along with the audio and any selected text of a dictation being processed.
-- **clipboardWrite**: copying a result to the clipboard with no click: for Always copy the result, and for text VoiceType cannot insert. Chrome describes it as "Modify data you copy and paste". VoiceType does not read the clipboard. Always copy the result is off by default.
+- **clipboardWrite**: copying a result to the clipboard with no click: for Always copy the result, and for text VoiceType cannot insert or when the page does not take the result within 5 seconds. Chrome describes it as "Modify data you copy and paste". VoiceType does not read the clipboard. Always copy the result is off by default.
 
 ## Data Retention
 
-- Audio recordings and an edit's selected text are processed in memory and discarded once the result is delivered or copied or the dictation fails. Closing the tab or navigating it away while it records cancels the recording without sending it, and an edit's selected text goes with it, as it does with a recording too short to count. Switching to another tab does not: the recording goes on until you stop it or it reaches the maximum length, and that audio is sent, with an edit's selected text
+- Audio recordings and an edit's selected text are processed in memory and discarded once the result is delivered or copied or the dictation fails. Closing the tab or navigating it away while it records cancels the recording without sending it, and an edit's selected text goes with it, as it does with a recording too short to count. Switching to another tab does not cancel it: the recording goes on until you stop it, silence auto-stop ends it or it reaches the maximum length, and a recording held on the hotkey stops at the switch. That audio is sent, with an edit's selected text
 - Settings, API keys, your dictionary and site rules persist until you clear them or uninstall the extension
 - Recent dictations: at most 20, gone when you close the browser, or when the extension is reloaded, updated or turned off, or when you clear them or turn them off
 - Usage statistics: daily history is trimmed to 90 days each time a dictation is logged; all-time totals are kept until you clear them
