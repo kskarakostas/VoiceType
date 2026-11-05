@@ -195,16 +195,46 @@ describe('createSettingsClient save port', () => {
     expect(await second).toEqual({ success: false, error: 'No' });
   });
 
-  it('fails a save whose port goes before the reply, and reopens on request', async () => {
+  it('retries by message a save whose port goes before the reply, and reopens on request', async () => {
     const { chrome, port, client } = setup();
     client.openSavePort();
     const waiting = client.save(PATCH);
     port.drop();
-    expect(await waiting).toEqual({ success: false, error: undefined });
+    expect(await waiting).toEqual({ success: true });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledExactlyOnceWith(SAVE);
     expect(await client.save(PATCH)).toEqual({ success: true });
-    expect(chrome.runtime.sendMessage).toHaveBeenCalledOnce();
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(2);
     client.openSavePort();
     expect(chrome.runtime.connect).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries saves lost in the gap in the order they were made', async () => {
+    const { chrome, port, client } = setup();
+    client.openSavePort();
+    const first = client.save(PATCH);
+    const second = client.save({ keepHistory: true });
+    port.drop();
+    await Promise.all([first, second]);
+    expect(chrome.runtime.sendMessage.mock.calls.map(([message]) => message.settings)).toEqual([PATCH, { keepHistory: true }]);
+  });
+
+  it('a save the retry also loses reports failure, once', async () => {
+    const { chrome, port, client } = setup();
+    chrome.runtime.sendMessage.mockRejectedValue(new Error('Extension context invalidated.'));
+    client.openSavePort();
+    const waiting = client.save(PATCH);
+    port.drop();
+    expect(await waiting).toEqual({ success: false, error: undefined });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  it('a refusal on the port is an answer: no retry', async () => {
+    const { chrome, port, client } = setup();
+    client.openSavePort();
+    const waiting = client.save(PATCH);
+    port.answer({ id: port.postMessage.mock.calls[0][0].id, reply: { success: false, error: 'No' } });
+    expect(await waiting).toEqual({ success: false, error: 'No' });
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
   });
 
   it('falls back to a message when the port refuses the post', async () => {
@@ -213,6 +243,15 @@ describe('createSettingsClient save port', () => {
     port.postMessage.mockImplementation(() => { throw new Error('Attempting to use a disconnected port object'); });
     expect(await client.save(PATCH)).toEqual({ success: true });
     expect(chrome.runtime.sendMessage).toHaveBeenCalledExactlyOnceWith(SAVE);
+  });
+
+  it('a refused post whose message also fails sends once', async () => {
+    const { chrome, port, client } = setup();
+    client.openSavePort();
+    port.postMessage.mockImplementation(() => { throw new Error('Attempting to use a disconnected port object'); });
+    chrome.runtime.sendMessage.mockRejectedValue(new Error('Extension context invalidated.'));
+    expect(await client.save(PATCH)).toEqual({ success: false, error: undefined });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledOnce();
   });
 
   it('stays on messages when the port cannot open', async () => {

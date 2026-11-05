@@ -93,7 +93,7 @@ export function createSettingsClient({ chrome }) {
 
   /**
    * @param {object} message
-   * @returns {Promise<any|null>} the reply, or null when the port went first
+   * @returns {Promise<any|null>} the reply, or null when the port refused the post or went first
    */
   function postOnPort(message) {
     const id = ++lastPostId;
@@ -103,7 +103,7 @@ export function createSettingsClient({ chrome }) {
         savePort.postMessage({ id, message });
       } catch {
         waiting.delete(id);
-        resolve(send(message));
+        resolve(null);
       }
     });
   }
@@ -115,12 +115,14 @@ export function createSettingsClient({ chrome }) {
   }
 
   /**
+   * A save lost with the port is sent again by message: the port can die between a worker stop and
+   * onDisconnect. It may have landed, but a patch arriving twice is the same patch.
    * @param {Partial<Settings>} patch only the fields to change; the router merges them
    * @returns {Promise<{ success: boolean, error?: string }>}
    */
   async function save(patch) {
     const message = { action: MSG.SAVE_SETTINGS, settings: patch };
-    const reply = await (savePort ? postOnPort(message) : send(message));
+    const reply = (savePort ? await postOnPort(message) : null) ?? await send(message);
     return reply?.success === true ? { success: true } : { success: false, error: reply?.error };
   }
 
