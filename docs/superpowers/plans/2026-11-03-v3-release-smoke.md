@@ -58,7 +58,7 @@ Reload any open page after reloading the extension. Fixture pages: `http://local
 | 2.8 | H | Pick a provider with no key in the popup. | "Add API key" shows and opens Provider. | |
 | 2.9 | H | Change the mode in the popup. | The toast names it; the pill shows it within a second. | |
 | 2.10 | H | Maximum length and a spoken language: change, wait a second, close the tab. Clear on a key. | Stored. | |
-| 2.10b | M | Provider: switch provider; paste a key; Test says it works; Clear empties it, toast "Key cleared"; paste it back. Hotkey: click, press a new chord; Esc cancels while armed. | As stated, and each is there after you close and reopen the tab. | |
+| 2.10b | M | Provider: switch provider; paste a key; Test says it works; Clear empties it, toast "Key cleared"; paste it back. Hotkey: click, press a new chord; Esc cancels while armed. | As stated, and each is there after you close and reopen the tab. | pass (Atlas, Chrome 156, a dummy key and a stubbed Test call) |
 | 2.11 | H | Type a mode prompt, wait a second, Ctrl+W, reopen. Same with a key. | Both are there. | |
 | 2.12 | H | Settings page and popup open: change the mode in the popup, the maximum length on the page. | Both stay. | |
 | 2.13 | H | Reset to defaults, two clicks. | Keeps keys, provider, spoken languages, dictionary, site rules. Everything else resets; custom modes go. | |
@@ -102,7 +102,7 @@ Reload any open page after reloading the extension. Fixture pages: `http://local
 | 5.4 | H | The pill's menu on that site. | Mode marked This site, Use active mode first. A pick changes the site, not the global mode. Use active mode clears it. | |
 | 5.5 | H | A custom mode set on a site, then deleted. | The site falls back; the row goes unless it hides the pill. | |
 | 5.6 | H | The popup on chrome://extensions, a `file:` page, the new tab page. | "Not available on this page". | |
-| 5.6b | M | The popup on the Web Store. | Same. | |
+| 5.6b | M | The popup on the Web Store. | Same. | pass (Atlas, Chrome 156, past the consent page by Reject all) |
 | 5.7 | H | Add site: a full URL; the same again; `not a host`; Hide pill off with no mode; a draft left unsaved. | `example.com` row; "example.com already has a rule."; refused; "Turn on Hide pill or choose a mode."; no rule. | |
 | 5.8 | H | Change a mode in a Sites row, change it from the pill on that site, come back and toggle Hide pill on the row. | The newer mode survives. | |
 | 5.9 | H | Back to a page after the rule changed. | The current rule applies. | |
@@ -143,7 +143,7 @@ Reload any open page after reloading the extension. Fixture pages: `http://local
 | 7.6 | M | The same with Settings in a second OS window, side by side. | As 7.5. | |
 | 7.7 | H | Reduced motion. | Bars static, clock runs, no pulse, Dot opens at once, steady ring. | |
 | 7.8 | H | TinyMCE at `tiny.cloud`, each style, with and without Hide pill. | The text lands; two indicators are expected on such an editor. | |
-| 7.9 | M | Forced colors on (DevTools, Rendering, or a Windows contrast theme), by eye, on Settings, Appearance and a recording on `fields.html`. | Selected card and focus rings visible; the pill readable. | |
+| 7.9 | M | Forced colors on (DevTools, Rendering, or a Windows contrast theme), by eye, on Settings, Appearance and a recording on `fields.html`. | Selected card and focus rings visible; the pill readable. | pass (Atlas, Chrome 156, emulated forced colors, screenshots read). Selected card and focus ring show; the pill is readable. Two notes: the pill bar loses its outline, and the three style previews show the field only |
 
 ## 8. A recording in a frame out of sight (L5)
 
@@ -244,6 +244,10 @@ Run at `62a26d1` with one signing key, Chromium 153 through a local update serve
 - 2.2 keeps its offscreen document, and with one recording in the session the update waited for the next browser start (one run).
 
 An unpacked build, which is how the README installs, asks nothing. Your own check, if you ever ship to the store: a real store update.
+
+## Manual rows run by Atlas (2026-11-05)
+
+Three rows ran on `d834b00`; results are in their tables. Rows 5.9b and 9.8 could not run in a harness: see the same section of `2026-11-03-v3-l7-smoke.md`. Every other M row is still open.
 
 ## What stays manual
 
