@@ -1086,6 +1086,121 @@ function selectedEditable(html, start, end, attrs) {
   return el;
 }
 
+/**
+ * A contenteditable selection from the start of its first text node to where a shape ends it. Each
+ * end: what the selection holds of the field, its offsets, the end text node and how far into it.
+ */
+const FIRST_LI = (el) => el.querySelector('li').firstChild;
+const FIRST_P = (el) => el.querySelector('p').firstChild;
+const LAST_P = (el) => [...el.querySelectorAll('p')].at(-1);
+const END_SHAPES = [
+  ['a gap of a line break and two spaces in a list', '<ul>\n  <li>first line</li>\n  <li>second line</li>\n</ul>',
+    FIRST_LI, (el) => [el.querySelectorAll('li')[1], 0], { text: 'first line', start: 3, end: 13 }],
+  ['a gap of a line break and a tab', '<p>first line</p>\n\t<p>second line</p>',
+    FIRST_P, (el) => [LAST_P(el), 0], { text: 'first line', start: 0, end: 10 }],
+  ['a gap of a line break and two spaces', '<p>first line</p>\n  <p>second line</p>',
+    FIRST_P, (el) => [LAST_P(el), 0], { text: 'first line', start: 0, end: 10 }],
+  ['a gap of one space', '<p>first line</p> <p>second line</p>',
+    FIRST_P, (el) => [LAST_P(el), 0], { text: 'first line', start: 0, end: 10 }],
+  ['a gap of two line breaks', '<p>first line</p>\n\n<p>second line</p>',
+    FIRST_P, (el) => [LAST_P(el), 0], { text: 'first line', start: 0, end: 10 }],
+  ['a gap of a lone line break', '<p>first line</p>\n<p>second line</p>',
+    FIRST_P, (el) => [LAST_P(el), 0], { text: 'first line', start: 0, end: 10 }],
+  ['adjacent paragraphs', '<p>first line</p><p>second line</p>',
+    FIRST_P, (el) => [LAST_P(el), 0], { text: 'first line', start: 0, end: 10 }],
+  ['an end inside the gap', '<p>first line</p>\n  <p>second line</p>',
+    FIRST_P, (el) => [el.childNodes[1], 2], { text: 'first line', start: 0, end: 10 }],
+  ['an end at offset 0 of the next text', '<p>first line</p><p>second line</p>',
+    FIRST_P, (el) => [LAST_P(el).firstChild, 0], { text: 'first line', start: 0, end: 10 }],
+  ['a real trailing br', 'first line<br>second line',
+    (el) => el.firstChild, (el) => [el, 2], { text: 'first line', start: 0, end: 10 }],
+  ['a trailing image', 'first line<img alt="">',
+    (el) => el.firstChild, (el) => [el, 2], { text: 'first line', start: 0, end: 10 }],
+];
+
+describe('the end of a contenteditable selection', () => {
+  const selectShape = (html, from, to) => {
+    const el = editable(html);
+    el.focus();
+    selectRange(from(el), 0, ...to(el));
+    return el;
+  };
+
+  it.each(END_SHAPES)('stops at the last text before %s', (_, html, from, to, expected) => {
+    expect(readSelection(selectShape(html, from, to))).toEqual(expected);
+  });
+
+  it.each(END_SHAPES)('a replacement ends there too before %s, and the rest of the field stays', async (_, html, from, to, { end }) => {
+    const el = selectShape(html, from, to);
+    const last = from(el);
+    const after = el.textContent.slice(end);
+    const ends = [];
+    const exec = (text) => {
+      const range = document.getSelection().getRangeAt(0);
+      ends.push([range.endContainer, range.endOffset]);
+      return editableExec(text);
+    };
+    const outcome = await insertText(el, 'edited', deps({ replacing: true, execCommand: exec }));
+    expect(outcome).toBe('inserted');
+    expect(ends).toEqual([[last, 10]]);
+    expect(el.textContent.endsWith(`edited${after}`)).toBe(true);
+  });
+
+  it('a read leaves the selection where it was, a backward one included', () => {
+    const el = selectShape('<p>first line</p>\n  <p>second line</p>', FIRST_P, (e) => [LAST_P(e), 0]);
+    const sel = document.getSelection();
+    sel.setBaseAndExtent(LAST_P(el), 0, FIRST_P(el), 0);
+    readSelection(el);
+    expect([sel.anchorNode, sel.anchorOffset, sel.focusNode, sel.focusOffset]).toEqual([LAST_P(el), 0, FIRST_P(el), 0]);
+  });
+
+  it('a read does not touch a selection already at its end', () => {
+    const el = selectedEditable('hello world', 0, 5);
+    const move = vi.spyOn(document.getSelection(), 'setBaseAndExtent');
+    expect(readSelection(el).text).toBe('hello');
+    expect(move).not.toHaveBeenCalled();
+  });
+
+  it('same selection after the end moved to that point', () => {
+    const el = selectShape('<p>first line</p>\n  <p>second line</p>', FIRST_P, (e) => [LAST_P(e), 0]);
+    const snapshot = readSelection(el);
+    selectRange(FIRST_P(el), 0, FIRST_P(el), 10);
+    expect(sameSelection(el, snapshot)).toBe(true);
+  });
+
+  it('spaces inside the last text node stay', () => {
+    const el = selectShape('<p>first line  </p>\n<p>second line</p>', FIRST_P, (e) => [LAST_P(e), 0]);
+    expect(readSelection(el)).toEqual({ text: 'first line  ', start: 0, end: 12 });
+  });
+
+  it('a line break in the last text node stays, in a preformatted field', () => {
+    const el = editable('first line\nsecond line', 'contenteditable="true" style="white-space: pre-wrap"');
+    el.focus();
+    selectRange(el.firstChild, 0, el.firstChild, 11);
+    expect(readSelection(el)).toEqual({ text: 'first line\n', start: 0, end: 11 });
+  });
+
+  it('a page node of zero-width characters is no text', () => {
+    const el = selectShape('<p>first line</p><p>\u200B\uFEFF</p><p>second line</p>', FIRST_P, (e) => [LAST_P(e), 0]);
+    expect(readSelection(el).text).toBe('first line');
+  });
+
+  it('a selection of nothing but whitespace nodes is none', () => {
+    const el = editable('<p>\n</p><p>\t</p>');
+    el.focus();
+    selectRange(el.firstChild.firstChild, 0, el.lastChild.firstChild, 1);
+    expect(readSelection(el)).toBeNull();
+  });
+
+  it('line breaks between its blocks stay in the text', () => {
+    const el = editable('<p>one</p>\n<p>two</p>');
+    el.focus();
+    selectRange(FIRST_P(el), 0, LAST_P(el).firstChild, 3);
+    vi.spyOn(Selection.prototype, 'toString').mockReturnValue('one\n\ntwo');
+    expect(readSelection(el).text).toBe('one\n\ntwo');
+  });
+});
+
 describe('readSelection', () => {
   it('reads a textarea', () => {
     expect(readSelection(selectedTextarea('hello world', 6, 11))).toEqual({ text: 'world', start: 6, end: 11 });
@@ -1123,31 +1238,6 @@ describe('readSelection', () => {
     el.focus();
     selectRange(el.querySelector('b').firstChild, 1, el.lastChild.lastChild, 3);
     expect(readSelection(el)).toEqual({ text: 'hree fo', start: 8, end: 15 });
-  });
-
-  it('drops the line breaks a selection adds past what a contenteditable holds', () => {
-    const el = selectedEditable('hello world', 0, 5);
-    // jsdom's Selection is its range; Chrome's ends a triple-clicked paragraph in line breaks.
-    const added = vi.spyOn(Selection.prototype, 'toString').mockReturnValue('hello\n\n');
-    const snapshot = readSelection(el);
-    expect(snapshot).toEqual({ text: 'hello', start: 0, end: 5 });
-    expect(sameSelection(el, snapshot)).toBe(true);
-    added.mockRestore();
-  });
-
-  it('keeps the line breaks inside a contenteditable selection', () => {
-    const el = selectedEditable('hello world', 0, 5);
-    const added = vi.spyOn(Selection.prototype, 'toString').mockReturnValue('he\n\nllo');
-    expect(readSelection(el).text).toBe('he\n\nllo');
-    added.mockRestore();
-  });
-
-  it('keeps a line break a contenteditable holds at the end of the selection', () => {
-    const el = selectedEditable('one\ntwo', 0, 4);
-    expect(readSelection(el)).toEqual({ text: 'one\n', start: 0, end: 4 });
-    const added = vi.spyOn(Selection.prototype, 'toString').mockReturnValue('one\n\n');
-    expect(readSelection(el).text).toBe('one\n');
-    added.mockRestore();
   });
 
   it('keeps the line breaks of a selection in a form field', () => {
@@ -1280,37 +1370,6 @@ describe('insertText over a selection', () => {
     selectRange(el.firstChild.firstChild, 4, el.lastChild.firstChild, 5);
     expect(await insertText(el, 'four', replacing({ execCommand: editableExec }))).toBe('inserted');
     expect(el.textContent).toBe('one four');
-  });
-
-  it('ends a triple-clicked paragraph at its text, so the next paragraph stays apart', async () => {
-    const el = editable('<p>one</p><p>two</p>');
-    el.focus();
-    selectRange(el.firstChild.firstChild, 0, el.lastChild, 0);
-    vi.spyOn(Selection.prototype, 'toString').mockReturnValue('one\n\n');
-    const selected = [];
-    const exec = vi.fn((text) => {
-      const range = document.getSelection().getRangeAt(0);
-      selected.push([range.endContainer, range.endOffset]);
-      return editableExec(text);
-    });
-    expect(await insertText(el, 'four', replacing({ execCommand: exec }))).toBe('inserted');
-    expect(selected).toEqual([[el.firstChild.firstChild, 3]]);
-    expect(el.textContent).toBe('fourtwo');
-    expect(el.children).toHaveLength(2);
-  });
-
-  it('leaves the end of a selection that adds no line break, an image in it included', async () => {
-    const el = editable('one<img alt="">');
-    el.focus();
-    selectRange(el.firstChild, 0, el, 2);
-    const selected = [];
-    const exec = vi.fn((text) => {
-      const range = document.getSelection().getRangeAt(0);
-      selected.push([range.endContainer, range.endOffset]);
-      return editableExec(text);
-    });
-    expect(await insertText(el, 'four', replacing({ execCommand: exec }))).toBe('inserted');
-    expect(selected).toEqual([[el, 2]]);
   });
 
   it('a replacement that is a substring of the selection is verified', async () => {

@@ -212,9 +212,9 @@ export async function replaceInsertion(el, { start, end, length }, text, raw, de
 
 /**
  * The selection inside a field: offsets in text units, a contenteditable's as `editableSplice`
- * counts them, and the text. For a contenteditable that text keeps its line breaks, not ones the
- * selection adds after the field's own text. Null for a caret, whitespace, a selection not wholly
- * inside el, an input type with no selection API (email) and Google Docs (V42).
+ * counts them, and the text. For a contenteditable both go to its end at text (`endAtText`), and
+ * that text keeps its line breaks. Null for a caret, whitespace, a selection not wholly inside el,
+ * an input type with no selection API (email) and Google Docs (V42).
  * @param {Element} el
  * @param {{ hostname?: string }} [deps]
  * @returns {{ text: string, start: number, end: number }|null}
@@ -222,7 +222,12 @@ export async function replaceInsertion(el, { start, end, length }, text, raw, de
 export function readSelection(el, { hostname = frameHostname(el.ownerDocument) } = {}) {
   if (CLIPBOARD_ONLY_HOSTS.has(hostname)) return null;
   const selection = isFormField(el) ? formSelection(el) : editableSelection(el);
-  return selection && normalizeForCompare(selection.text).trim() !== '' ? selection : null;
+  return selection && hasText(selection.text) ? selection : null;
+}
+
+/** @param {string} s */
+function hasText(s) {
+  return normalizeForCompare(s).trim() !== '';
 }
 
 /**
@@ -242,51 +247,61 @@ function formSelection(el) {
 }
 
 function editableSelection(el) {
-  const offsets = selectionOffsets(el);
-  if (!offsets || offsets.start === offsets.end) return null;
-  const selection = selectionFor(el);
-  // Not range.toString(): that runs paragraphs together, and the text model would read one word.
-  const text = selection.toString();
-  // V45 would put these back around the replacement.
-  const added = addedBreaks(selection);
-  return { text: added > 0 ? text.slice(0, -added) : text, ...offsets };
+  try {
+    const range = rangeInside(el);
+    if (!range) return null;
+    endAtText(el, range);
+    const offsets = textOffsets(el, range);
+    return offsets.start === offsets.end ? null : { text: renderedText(selectionFor(el), range), ...offsets };
+  } catch {
+    return null;
+  }
 }
 
 /**
- * How many line breaks the selection's text ends in past those the field holds there: a triple
- * click runs to the next block, which adds them.
- * @param {Selection} selection
- */
-function addedBreaks(selection) {
-  const breaks = (text) => /[\r\n]*$/.exec(text)[0].length;
-  return breaks(selection.toString()) - breaks(selection.getRangeAt(0).toString());
-}
-
-/**
- * Ends a selection that runs to the next block at its last text. The text and the offsets stay the
- * same, and a write over it no longer pulls that block up into this one.
+ * Where a contenteditable selection ends (V42): its last point in a text node holding more than
+ * whitespace, the range's own end when that is one. A triple click runs on into the next block, and
+ * a write over that much pulls the block up into this one.
  * @param {Element} el
+ * @param {Range} range changed in place, and left as it is when it holds no such node
+ * @returns {Range}
  */
-function endAtText(el) {
-  const sel = selectionFor(el);
-  if (!sel || sel.rangeCount === 0 || addedBreaks(sel) <= 0) return;
-  const range = sel.getRangeAt(0);
+function endAtText(el, range) {
+  const { endContainer: end, endOffset } = range;
+  if (end.nodeType === Node.TEXT_NODE && endOffset > 0 && hasText(end.data)) return range;
   const walker = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   let last = null;
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if (node.data && range.comparePoint(node, node.data.length) === 0) last = node;
+    if (hasText(node.data) && range.comparePoint(node, node.data.length) === 0) last = node;
   }
-  if (last) sel.extend(last, last.data.length);
+  if (last) range.setEnd(last, last.data.length);
+  return range;
+}
+
+/**
+ * The text of range, which starts where the selection does. Not range.toString(): that runs
+ * paragraphs together, and the text model would read one word. Only a selection renders, so one
+ * with another end goes to range's for the read and back, in this task.
+ * @param {Selection} sel
+ * @param {Range} range
+ */
+function renderedText(sel, range) {
+  const live = sel.getRangeAt(0);
+  if (live.endContainer === range.endContainer && live.endOffset === range.endOffset) return sel.toString();
+  const { anchorNode, anchorOffset, focusNode, focusOffset } = sel;
+  sel.setBaseAndExtent(range.startContainer, range.startOffset, range.endContainer, range.endOffset);
+  const text = sel.toString();
+  sel.setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset);
+  return text;
 }
 
 /** Focuses the target, fixes the caret and records the state every rung is judged against. */
 function prepare(target, text, deps) {
   const editable = !isFormField(target);
+  const replacing = deps.replacing === true;
   const prior = editable ? rangeInside(target) : null;
   try { target.focus({ preventScroll: true }); } catch { /* some hosts throw on focus */ }
-  if (editable) placeCaret(target, prior);
-  const replacing = deps.replacing === true;
-  if (editable && replacing) endAtText(target);
+  if (editable) placeCaret(target, replacing && prior ? endAtText(target, prior) : prior);
   const before = readValue(target);
   return {
     target,
@@ -519,19 +534,24 @@ function editableSplice(el, before, text) {
 /** The current selection as text offsets into el, or null when it is not inside el or unknown. */
 function selectionOffsets(el) {
   try {
-    const sel = selectionFor(el);
-    if (!sel || sel.rangeCount === 0) return null;
-    const range = sel.getRangeAt(0);
-    if (!el.contains(range.commonAncestorContainer)) return null;
-    const prefix = el.ownerDocument.createRange();
-    prefix.selectNodeContents(el);
-    prefix.setEnd(range.startContainer, range.startOffset);
-    const start = prefix.toString().length;
-    prefix.setEnd(range.endContainer, range.endOffset);
-    return { start, end: prefix.toString().length };
+    const range = rangeInside(el);
+    return range && textOffsets(el, range);
   } catch {
     return null;
   }
+}
+
+/**
+ * @param {Element} el
+ * @param {Range} range inside el
+ */
+function textOffsets(el, range) {
+  const prefix = el.ownerDocument.createRange();
+  prefix.selectNodeContents(el);
+  prefix.setEnd(range.startContainer, range.startOffset);
+  const start = prefix.toString().length;
+  prefix.setEnd(range.endContainer, range.endOffset);
+  return { start, end: prefix.toString().length };
 }
 
 /**

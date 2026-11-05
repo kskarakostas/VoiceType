@@ -334,6 +334,30 @@ test('a triple click on a paragraph goes without the line breaks the selection a
   await expect.poll(() => field.locator('p').allTextContents()).toEqual(['first line', 'second line']);
 });
 
+for (const [name, html, block] of [
+  ['a list with blank text between its items', '<ul>\n  <li>first line</li>\n  <li>second line</li>\n</ul>', 'li'],
+  ['paragraphs with a line break and a tab between them', '<p>first line</p>\n\t<p>second line</p>', 'p'],
+]) {
+  test(`a triple click on the first block of ${name} leaves the blocks apart, and Ctrl+Z restores`, async () => {
+    const page = await openPage();
+    const field = page.locator('#ce');
+    await focusField(page, field);
+    await field.evaluate((el, source) => { el.innerHTML = source; }, html);
+    const blocks = field.locator(block);
+    await blocks.first().click({ clickCount: 3 });
+
+    await editByVoice(page);
+
+    await expect.poll(() => pillStatus(page)).toMatch(/^Done /);
+    expect(JSON.parse(refineCalls[0].input).selected_text).toBe('first line');
+    expect(await blocks.allTextContents()).toEqual([EDITED, 'second line']);
+
+    await page.keyboard.press('Control+z');
+
+    await expect.poll(() => blocks.allTextContents()).toEqual(['first line', 'second line']);
+  });
+}
+
 test('a triple click on a line of a preformatted contenteditable keeps the line break the field holds', async () => {
   const page = await openPage();
   const field = page.locator('#ce');

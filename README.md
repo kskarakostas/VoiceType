@@ -239,7 +239,7 @@ Select text in a field, press `Ctrl+Shift+E` (the Control key on a Mac too) and 
 - Plain text: the selection's formatting is not kept.
 - 10,000 characters at most. Past that the pill says "Selection too long to edit (10,000 characters at most)."
 - With nothing selected the key press goes through to the page. In a field the pill also says "Select the text to edit first." Input types with no selection support (such as email) and Google Docs read as nothing selected.
-- Password fields VoiceType can recognise are refused.
+- Password fields VoiceType can recognize are refused.
 - While VoiceType records or processes, or a result is waiting for you, this hotkey does what the dictation hotkey does then.
 
 **When an edit cannot land**
