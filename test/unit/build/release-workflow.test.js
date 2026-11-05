@@ -18,8 +18,7 @@ const linesOf = (text, key) =>
 
 describe('release workflow, workflow level', () => {
   it('grants nothing by default', () => {
-    const line = head.match(/^permissions:.*$/m);
-    if (line) expect(line[0]).toBe('permissions: {}');
+    expect(head).toMatch(/^permissions: \{\}$/m);
   });
 
   it('has both jobs', () => {
