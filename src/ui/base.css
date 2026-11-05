@@ -224,6 +224,18 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 
 .segment input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 1px; }
 
+/* Forced colors drop the background and the shadow. The adjust stays off for the text, which would
+   get a Canvas plate behind it and vanish; off, nothing forces the shadow or the ring's colour. */
+@media (forced-colors: active) {
+  .segment input:checked + span {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+    box-shadow: none;
+    outline-color: CanvasText;
+  }
+}
+
 /* Buttons */
 
 .btn {

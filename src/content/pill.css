@@ -175,6 +175,13 @@ button:focus-visible {
   box-shadow: var(--vt-shadow);
 }
 
+/* Forced colors drop the surface, the shadow and the dot's marks: the outline keeps its shape. */
+@media (forced-colors: active) {
+  .body {
+    outline: 1px solid CanvasText;
+  }
+}
+
 /* What the sight observer watches: the indicator's centre. Transparent, not opacity 0, which the
    browser's cover test skips. The z-index keeps it above the status and menu shadows. */
 .sight {
