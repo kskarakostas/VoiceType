@@ -10,6 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npm run build && playwright test",
+    "lint:ext": "web-ext lint --source-dir dist",
+    "package": "version=$(node -p \"require('./manifest.json').version\") && rm -f voicetype-$version.zip && cd dist && zip -qr ../voicetype-$version.zip .",
     "screenshots": "npm run build && playwright test --config playwright.screenshots.config.js"
   },
   "engines": {
@@ -19,6 +21,7 @@
     "@playwright/test": "1.63.0",
     "esbuild": "^0.28.2",
     "jsdom": "^29.1.1",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "web-ext": "10.8.0"
   }
 }
