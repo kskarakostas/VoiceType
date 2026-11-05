@@ -262,6 +262,20 @@ describe('runDictation for an edit', () => {
     expect((await runDictation({ ...edit, settings: settingsWith() }, adapters)).failed).toBe(true);
   });
 
+  it('an answer the provider marks incomplete returns failed, with the text model billed', async () => {
+    const adapters = fakeAdapters();
+    adapters.openai.refine.mockResolvedValueOnce({ text: 'half of the edi', usage: { inputTokens: 1000, outputTokens: 200 }, complete: false });
+    const result = await runDictation({ ...edit, settings: settingsWith() }, adapters);
+    expect(result).toMatchObject({ raw: 'raw words', text: 'raw words', textModel: null, warning: null, failed: true });
+    expect(result.cost).toBeCloseTo(STT_COST + 0.0001 + 0.0001, 6);
+  });
+
+  it('a complete answer lands', async () => {
+    const adapters = fakeAdapters();
+    adapters.openai.refine.mockResolvedValueOnce({ text: 'done', usage: { inputTokens: 1, outputTokens: 1 }, complete: true });
+    expect(await runDictation({ ...edit, settings: settingsWith() }, adapters)).toMatchObject({ text: 'done', failed: false });
+  });
+
   it('no speech throws as a dictation does', async () => {
     const adapters = fakeAdapters({ sttText: '  ' });
     await expect(runDictation({ ...edit, settings: settingsWith() }, adapters)).rejects.toMatchObject({ name: 'ProviderError', code: 'empty', message: 'No speech detected.' });
@@ -272,5 +286,13 @@ describe('runDictation for an edit', () => {
     const adapters = fakeAdapters();
     adapters.openai.refine.mockRejectedValueOnce(new Error('boom'));
     expect(await runDictation({ ...base, modeKey: 'email', settings: settingsWith() }, adapters)).toMatchObject({ text: 'raw words', failed: false });
+  });
+
+  it("a mode's refine ignores an incomplete mark, as in 3.1", async () => {
+    const adapters = fakeAdapters();
+    adapters.openai.refine.mockResolvedValueOnce({ text: 'most of the email', usage: { inputTokens: 1000, outputTokens: 200 }, complete: false });
+    expect(await runDictation({ ...base, modeKey: 'email', settings: settingsWith() }, adapters)).toMatchObject({
+      text: 'most of the email', textModel: 'gpt-6-luna', warning: null, failed: false,
+    });
   });
 });

@@ -87,7 +87,22 @@ describe('refine', () => {
     expect(url).toBe('https://api.openai.com/v1/responses');
     expect(init.headers['Content-Type']).toBe('application/json');
     expect(JSON.parse(init.body)).toEqual({ model: 'gpt-6-luna', instructions: 'Write an email.', input: 'hi team hello', reasoning: { effort: 'none' } });
-    expect(result).toEqual({ text: 'Dear team, hello.', usage: { inputTokens: 120, outputTokens: 30 } });
+    expect(result).toEqual({ text: 'Dear team, hello.', usage: { inputTokens: 120, outputTokens: 30 }, complete: true });
+  });
+
+  it.each([
+    ['completed', { status: 'completed' }, true],
+    ['no status', {}, true],
+    ['incomplete', { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } }, false],
+  ])('says whether the answer is complete: %s', async (_name, fields, complete) => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      ...fields,
+      output: [{ type: 'message', content: [{ type: 'output_text', text: 'Dear te' }] }],
+      usage: { input_tokens: 120, output_tokens: 30 },
+    }));
+    expect(await refine({ key: 'sk-test', instructions: 'x', text: 'y' })).toEqual({
+      text: 'Dear te', usage: { inputTokens: 120, outputTokens: 30 }, complete,
+    });
   });
 
   it('posts with bearer auth and passes the abort signal', async () => {

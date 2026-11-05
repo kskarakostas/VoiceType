@@ -41,7 +41,7 @@ export async function transcribe({ audioBase64, mimeType = 'audio/webm', key, la
 
 /**
  * @param {{ key: string, instructions: string, text: string, signal?: AbortSignal }} args
- * @returns {Promise<{ text: string, usage: import('../../shared/pricing.js').TextUsage }>}
+ * @returns {Promise<{ text: string, usage: import('../../shared/pricing.js').TextUsage, complete: boolean }>} `complete` is false when the provider marks the answer cut short.
  */
 export async function refine({ key, instructions, text, signal }) {
   const res = await fetch(`${BASE}/models/${PROVIDERS.gemini.text}:generateContent`, {
@@ -57,9 +57,11 @@ export async function refine({ key, instructions, text, signal }) {
   if (!res.ok) throw await httpError(res);
   const data = await res.json();
   const meta = data.usageMetadata || {};
+  const finishReason = data.candidates?.[0]?.finishReason;
   return {
     text: joinParts(data).trim(),
     usage: { inputTokens: meta.promptTokenCount || 0, outputTokens: (meta.candidatesTokenCount || 0) + (meta.thoughtsTokenCount || 0) },
+    complete: !finishReason || finishReason === 'STOP',
   };
 }
 

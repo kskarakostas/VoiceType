@@ -103,7 +103,22 @@ describe('refine', () => {
       contents: [{ parts: [{ text: 'hi team' }] }],
       generationConfig: { thinkingConfig: { thinkingLevel: 'low' } },
     });
-    expect(result).toEqual({ text: 'Dear team,', usage: { inputTokens: 100, outputTokens: 25 } });
+    expect(result).toEqual({ text: 'Dear team,', usage: { inputTokens: 100, outputTokens: 25 }, complete: true });
+  });
+
+  it.each([
+    ['STOP', { finishReason: 'STOP' }, true],
+    ['no finishReason', {}, true],
+    ['MAX_TOKENS', { finishReason: 'MAX_TOKENS' }, false],
+    ['SAFETY', { finishReason: 'SAFETY' }, false],
+  ])('says whether the answer is complete: %s', async (_name, fields, complete) => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      candidates: [{ content: { parts: [{ text: 'Dear te' }] }, ...fields }],
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20 },
+    }));
+    expect(await refine({ key: 'k', instructions: 'x', text: 'y' })).toEqual({
+      text: 'Dear te', usage: { inputTokens: 100, outputTokens: 20 }, complete,
+    });
   });
 
   it('posts with the key header only and passes the abort signal', async () => {

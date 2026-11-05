@@ -12,8 +12,8 @@ export const REQUEST_TIMEOUT_MS = 60_000;
 
 /**
  * `warning` is set when the mode step failed or returned nothing and the raw transcript
- * was kept; null otherwise. `failed` is true when an edit's text step failed or returned nothing:
- * `text` is then the instruction, which is never inserted, and `warning` is null.
+ * was kept; null otherwise. `failed` is true when an edit's text step failed, returned nothing or
+ * was cut short: `text` is then the instruction, which is never inserted, and `warning` is null.
  * @typedef {{ raw: string, text: string, provider: 'openai'|'gemini', sttModel: string,
  *             textModel: string|null, audioSeconds: number, cost: number,
  *             warning: string|null, failed: boolean }} DictationResult
@@ -89,7 +89,9 @@ export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeK
       const out = await adapter.refine({ key, ...request, signal });
       textUsage = out.usage || null;
       const refinedText = (out.text || '').trim();
-      if (refinedText) {
+      // Part of an edit would overwrite the whole selection (V45); a mode keeps what it got.
+      const cutEdit = editText !== null && out.complete === false;
+      if (refinedText && !cutEdit) {
         text = refinedText;
         refined = true;
       } else {

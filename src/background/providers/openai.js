@@ -39,7 +39,7 @@ export async function transcribe({ audioBase64, mimeType = 'audio/webm', key, la
 /**
  * Apply a mode prompt to a transcript with the text model.
  * @param {{ key: string, instructions: string, text: string, signal?: AbortSignal }} args
- * @returns {Promise<{ text: string, usage: import('../../shared/pricing.js').TextUsage }>}
+ * @returns {Promise<{ text: string, usage: import('../../shared/pricing.js').TextUsage, complete: boolean }>} `complete` is false when the provider marks the answer cut short.
  */
 export async function refine({ key, instructions, text, signal }) {
   const res = await fetch(`${BASE}/responses`, {
@@ -53,6 +53,7 @@ export async function refine({ key, instructions, text, signal }) {
   return {
     text: extractOutputText(data).trim(),
     usage: { inputTokens: data.usage?.input_tokens || 0, outputTokens: data.usage?.output_tokens || 0 },
+    complete: data.status !== 'incomplete',
   };
 }
 
