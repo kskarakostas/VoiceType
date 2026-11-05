@@ -22,7 +22,7 @@
 - A hotkey held while a result lands now records when the landing ends, rather than being refused.
 
 ### Measured
-- A worker left to idle during a 45 s provider call is not killed, and the transcript lands: 5 of 5 on Chrome 156 with the 3.0.0 build, one on a 180 s recording and one on Gemini. The ledger line from 3.0 that said it was lost was wrong. A real crash during processing still loses the transcript.
+- A worker left to idle during a 45 s provider call is not killed, and the transcript lands: 5 of 5 on Chrome 156 with the 3.0.0 build, one on a 180 s recording and one on Gemini, and once more on 3.1.0. The ledger line from 3.0 that said it was lost was wrong. A real crash during processing still loses the transcript.
 
 ### Internal
 - `pill.js` split into sight, raise and menu files. `web-ext` added as a development dependency; no runtime dependency, no new permission.
