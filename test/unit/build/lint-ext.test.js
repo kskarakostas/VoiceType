@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { lintVerdict } from '../../../scripts/lint-ext.mjs';
+import { describe, it, expect, vi } from 'vitest';
+import { lintExitCode, lintVerdict } from '../../../scripts/lint-ext.mjs';
 
 const entry = (code) => ({ code, message: `${code} message`, file: 'manifest.json' });
 const report = (errors = [], warnings = []) =>
@@ -72,5 +72,42 @@ describe('lintVerdict', () => {
     const { ok, lines } = lintVerdict(output);
     expect(ok).toBe(false);
     expect(lines).toEqual(['web-ext lint gave no readable report']);
+  });
+});
+
+describe('lintExitCode', () => {
+  const run = (result) => {
+    const print = vi.fn();
+    return { code: lintExitCode(result, print), printed: print.mock.calls.map(([line]) => line) };
+  };
+
+  it('is 0 for a clean report, whatever the status of web-ext', () => {
+    expect(run({ status: 1, stdout: report(exempt) })).toEqual({ code: 0, printed: [] });
+  });
+
+  it('is 0 with warnings, and prints them', () => {
+    expect(run({ status: 0, stdout: report([], [entry('W_ONE')]) })).toEqual({ code: 0, printed: ['warning W_ONE: W_ONE message'] });
+  });
+
+  it('is 1 for another error, and prints it', () => {
+    expect(run({ status: 1, stdout: report([entry('JSON_INVALID')]) })).toEqual({ code: 1, printed: ['error JSON_INVALID: JSON_INVALID message'] });
+  });
+
+  it('is 1 when web-ext could not run, and prints why', () => {
+    expect(run({ error: new Error('spawn web-ext ENOENT'), status: null, stdout: null })).toEqual({
+      code: 1,
+      printed: ['spawn web-ext ENOENT', 'web-ext lint gave no readable report'],
+    });
+  });
+
+  it('is 1 when the run failed, even with a clean report in hand', () => {
+    expect(run({ error: new Error('spawnSync ETIMEDOUT'), status: null, stdout: report() })).toEqual({ code: 1, printed: ['spawnSync ETIMEDOUT'] });
+  });
+
+  it('prints to the console unless told otherwise', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(lintExitCode({ stdout: '' })).toBe(1);
+    expect(log).toHaveBeenCalledWith('web-ext lint gave no readable report');
+    log.mockRestore();
   });
 });

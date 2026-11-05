@@ -37,6 +37,19 @@ export function lintVerdict(output) {
   };
 }
 
+/**
+ * The exit code of a finished web-ext run. A run that failed fails, whatever it wrote.
+ * @param {{ error?: Error, stdout?: string|null }} lint a `spawnSync` result
+ * @param {(line: string) => void} [print]
+ * @returns {0|1}
+ */
+export function lintExitCode(lint, print = console.log) {
+  if (lint.error) print(lint.error.message);
+  const { ok, lines } = lintVerdict(lint.stdout ?? '');
+  for (const line of lines) print(line);
+  return ok && !lint.error ? 0 : 1;
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === import.meta.filename) {
   const root = join(import.meta.dirname, '..');
   const lint = spawnSync(
@@ -44,7 +57,5 @@ if (process.argv[1] && realpathSync(process.argv[1]) === import.meta.filename) {
     ['lint', '--source-dir', 'dist', '--output', 'json'],
     { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
   );
-  const { ok, lines } = lintVerdict(lint.stdout ?? '');
-  for (const line of lines) console.log(line);
-  process.exit(ok ? 0 : 1);
+  process.exit(lintExitCode(lint));
 }

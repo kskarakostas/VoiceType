@@ -32,6 +32,6 @@ jobs:
       - name: Take the release notes from the CHANGELOG
         run: node scripts/changelog-section.mjs "${GITHUB_REF_NAME#v}" > notes.md
       - name: Publish the release
-        run: gh release create "$GITHUB_REF_NAME" voicetype-*.zip --notes-file notes.md
+        run: gh release create "$GITHUB_REF_NAME" voicetype-*.zip --verify-tag --notes-file notes.md
         env:
           GH_TOKEN: ${{ github.token }}
