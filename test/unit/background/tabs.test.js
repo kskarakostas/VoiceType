@@ -56,6 +56,19 @@ describe('sendToFrame', () => {
     expect(tabsApi.sendMessage).toHaveBeenCalledWith(4, message, { frameId: 2 });
   });
 
+  it('sendToFrame sends frameId with no documentId', async () => {
+    const tabsApi = { sendMessage: vi.fn(async () => undefined) };
+    await sendToFrame(tabsApi, { tabId: 4, frameId: 0 }, { action: 'x' });
+    expect(tabsApi.sendMessage.mock.calls[0][2]).toStrictEqual({ frameId: 0 });
+  });
+
+  it('sendToFrame names the document as well as its frame when the endpoint has one', async () => {
+    const tabsApi = { sendMessage: vi.fn(async () => undefined) };
+    await sendToFrame(tabsApi, { tabId: 4, frameId: 2, documentId: 'DOC' }, { action: 'x' });
+    // The frame stays in: Chromium leaves a send by documentId alone pending for a cached top document.
+    expect(tabsApi.sendMessage.mock.calls[0][2]).toStrictEqual({ frameId: 2, documentId: 'DOC' });
+  });
+
   it('reports false when the frame or tab has no receiver', async () => {
     const tabsApi = { sendMessage: vi.fn(async () => { throw new Error(NO_RECEIVER); }) };
     expect(await sendToFrame(tabsApi, { tabId: 4, frameId: 0 }, { action: 'x' })).toBe(false);

@@ -17,7 +17,7 @@ const TOO_SHORT = Object.freeze({ success: false, error: 'Too short, ignored', t
 export const COPY_TIMEOUT_MS = 1000;
 
 /**
- * @typedef {{ tabId: number, frameId: number }} Endpoint
+ * @typedef {{ tabId: number, frameId: number, documentId?: string }} Endpoint
  * @typedef {{ endpoint: Endpoint, state: 'starting'|'recording'|'processing', modeKey: string, minSec: number }} Session
  * Internally a session also holds the id of its offscreen capture: reports that name any other
  * capture are stale (a cancelled recording finishing late) and are dropped. It also holds the
@@ -55,6 +55,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   /** The current session, when this offscreen report came from its capture. */
   const reporter = (captureId) => (session !== null && captureId === session.captureId ? session : null);
 
+  /** Frame 0 by frameId alone: the mirror is for whichever document the tab shows, never the session's. */
   const topOf = (s) => ({ tabId: s.endpoint.tabId, frameId: 0 });
 
   /**

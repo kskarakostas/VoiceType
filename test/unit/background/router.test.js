@@ -440,6 +440,19 @@ describe('recorder delegation', () => {
     expect(deps.recorder.cancel).toHaveBeenCalledWith({ tabId: 7, frameId: 3 });
   });
 
+  it('endpointOf carries sender.documentId', async () => {
+    const sender = { ...CONTENT, documentId: 'DOC' };
+    const endpoint = { tabId: 7, frameId: 3, documentId: 'DOC' };
+    await handle({ action: MSG.START_RECORDING }, sender);
+    expect(deps.recorder.start.mock.calls[0][0]).toStrictEqual(endpoint);
+    await handle({ action: MSG.STOP_RECORDING }, sender);
+    expect(deps.recorder.stop.mock.calls[0][0]).toStrictEqual(endpoint);
+    await handle({ action: MSG.CANCEL_RECORDING }, sender);
+    expect(deps.recorder.cancel.mock.calls[0][0]).toStrictEqual(endpoint);
+    await handle({ action: MSG.FRAME_SIGHT, seen: true }, sender);
+    expect(deps.recorder.onFrameSight.mock.calls[0][0]).toStrictEqual(endpoint);
+  });
+
   it('offscreen events go to the recorder with their capture id and are acknowledged', async () => {
     expect(await handle({ action: MSG.OFFSCREEN_LEVEL, level: 0.5, captureId: 'c1' }, OFFSCREEN)).toEqual({ ok: true });
     expect(deps.recorder.onLevel).toHaveBeenCalledWith(0.5, 'c1');

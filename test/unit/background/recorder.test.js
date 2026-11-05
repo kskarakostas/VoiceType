@@ -395,6 +395,25 @@ describe('levels', () => {
   });
 });
 
+describe('a session in a document', () => {
+  const DOCUMENT = { ...A, documentId: 'DOC' };
+
+  it('sends its result to the document that recorded', async () => {
+    const t = setup();
+    await t.recorder.start(DOCUMENT);
+    await t.recorder.stop(A);
+    await t.recorder.onDone(done({ captureId: t.id() }));
+    expect(t.result().endpoint).toStrictEqual(DOCUMENT);
+  });
+
+  it('still belongs to its tab and frame when another document of that frame asks', async () => {
+    const t = setup();
+    await t.recorder.start(DOCUMENT);
+    expect(await t.recorder.cancel({ ...A, documentId: 'NEXT' })).toEqual({ ok: true });
+    expect(t.recorder.session).toBeNull();
+  });
+});
+
 describe('mirror', () => {
   const FRAME = { tabId: 1, frameId: 7 };
   const OTHER_FRAME = { tabId: 1, frameId: 9 };
@@ -423,6 +442,14 @@ describe('mirror', () => {
     t.recorder.onFrameSight(FRAME, false);
     return t;
   }
+
+  it('the mirror goes to frame 0 by frameId', async () => {
+    const t = setup();
+    await t.recorder.start({ ...FRAME, documentId: 'DOC' });
+    t.recorder.onFrameSight(FRAME, false);
+    expect(mirrored(t)).toHaveLength(1);
+    expect(mirrored(t)[0].endpoint).toStrictEqual(TOP);
+  });
 
   it('onFrameSight(false) sends recording to frame 0', async () => {
     const t = await unseen();

@@ -25,16 +25,18 @@ export async function broadcast(tabsApi, messageFor) {
 }
 
 /**
- * Send a message to one frame. Resolves false only when the frame has no receiver; a listener
- * that answers nothing still counts as delivered.
- * @param {{ sendMessage: (tabId: number, message: unknown, options: { frameId: number }) => Promise<unknown> }} tabsApi
- * @param {{ tabId: number, frameId: number }} endpoint
+ * Send a message to one frame, or to one document of it. Resolves false only when it has no
+ * receiver; a listener that answers nothing still counts as delivered. The frame stays beside
+ * documentId: by documentId alone, Chromium leaves a send to a document in the back-forward cache
+ * pending with no answer, where the two together are refused at once like any document gone.
+ * @param {{ sendMessage: (tabId: number, message: unknown, options: { frameId: number, documentId?: string }) => Promise<unknown> }} tabsApi
+ * @param {{ tabId: number, frameId: number, documentId?: string }} endpoint
  * @param {unknown} message
  * @returns {Promise<boolean>}
  */
-export async function sendToFrame(tabsApi, { tabId, frameId }, message) {
+export async function sendToFrame(tabsApi, { tabId, frameId, documentId }, message) {
   try {
-    await tabsApi.sendMessage(tabId, message, { frameId });
+    await tabsApi.sendMessage(tabId, message, documentId ? { frameId, documentId } : { frameId });
     return true;
   } catch (err) {
     return !NO_RECEIVER.test(String(err?.message ?? err));

@@ -7,7 +7,7 @@ import { ProviderError, redact } from './providers/errors.js';
 
 /**
  * @typedef {'offscreen'|'extension'|'content'|'unknown'} SenderKind
- * @typedef {{ tabId: number, frameId: number }} Endpoint
+ * @typedef {{ tabId: number, frameId: number, documentId?: string }} Endpoint
  * @typedef {{
  *   start: (endpoint: Endpoint, tabUrl?: string, site?: { host?: string|null, incognito?: boolean }) => Promise<import('../shared/messages.js').StartResponse>,
  *   stop: (endpoint: Endpoint) => Promise<{ ok: boolean }>,
@@ -123,7 +123,7 @@ function pickKeys(keys) {
  * @returns {Endpoint}
  */
 function endpointOf(sender) {
-  return { tabId: sender.tab.id, frameId: sender.frameId ?? 0 };
+  return { tabId: sender.tab.id, frameId: sender.frameId ?? 0, documentId: sender.documentId };
 }
 
 /**
