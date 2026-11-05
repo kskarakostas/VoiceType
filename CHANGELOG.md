@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.1.0 (2026-11-05)
+
+### Added
+- History: your last 20 dictations stay in memory until you close the browser, on a new History page of the settings page, with Copy, Copy original and Clear. **Keep recent dictations** is on by default; turning it off clears them. A dictation in an incognito tab is not kept.
+- Last dictation in the pill menu: Insert, Copy and, when a mode changed the text, Undo AI edit. It offers only what was dictated on this site. Undo AI edit puts the transcript back in a text field or text box when the inserted text is still exactly where it landed; anything else copies the transcript and says so.
+- Copy last in the quick panel, the way in for Minimal.
+- Translate to on the Modes page, so Minimal and hidden sites can change the target language.
+- Welcome: a first install opens a page that shows whether you have a key, whether the microphone is allowed, and the hotkey.
+- A version tag now builds a GitHub Release: tests, lint, and a zip of `dist/` with the CHANGELOG section as notes.
+
+### Changed
+- Usage's **Clear history** now reads **Clear usage history**, beside the new History page.
+- Reset to defaults keeps the history choice.
+- CSV export marks a term starting with `=`, `+`, `-` or `@` with a leading `'`, so a spreadsheet reads it as text. Import removes it, so a 3.0 export holding `'=x` now imports as `=x`.
+
+### Fixed
+- A usage write that hangs no longer holds back a paid transcript: bookkeeping gets 2 s.
+- A failed menu save no longer replaces a click-to-copy status. A page whose extension was turned off keeps that status, and its click still copies.
+- The pill follows its field through a zoom change during a recording.
+- A hotkey held while a result lands now records when the landing ends, rather than being refused.
+
+### Measured
+- A worker left to idle during a 45 s provider call is not killed, and the transcript lands: 5 of 5 on Chrome 156 with the 3.0.0 build, one on a 180 s recording and one on Gemini. The ledger line from 3.0 that said it was lost was wrong. A real crash during processing still loses the transcript.
+
+### Internal
+- `pill.js` split into sight, raise and menu files. `web-ext` added as a development dependency; no runtime dependency, no new permission.
+
 ## 3.0.0 (2026-11-04)
 
 ### Added
