@@ -110,7 +110,9 @@ export async function launchExtension({ transcriptDelayMs = 0, contextOptions = 
       ?? await context.waitForEvent('serviceworker', { predicate: isExtensionWorker });
     const extensionId = new URL(serviceWorker.url()).host;
     // onInstalled stores the default settings; a seed written before that lands is overwritten.
-    await expect.poll(() => serviceWorker.evaluate(async () => Boolean((await chrome.storage.local.get('settings')).settings))).toBe(true);
+    // Chrome 140 can answer a first evaluate before the worker has its extension APIs: `chrome`
+    // then holds only loadTimes and csi for about 20 ms, so a missing chrome.storage is a retry.
+    await expect.poll(() => serviceWorker.evaluate(async () => Boolean((await chrome.storage?.local.get('settings'))?.settings))).toBe(true);
     if (!keepWelcome) {
       const welcomeUrl = `chrome-extension://${extensionId}/options.html#welcome`;
       const welcomePages = () => context.pages().filter((page) => page.url() === welcomeUrl);
