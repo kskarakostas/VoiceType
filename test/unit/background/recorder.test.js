@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { createRecorder, COPY_TIMEOUT_MS, PENDING_WRITE_LIMIT_MS, PENDING_WINDOW_MS } from '../../../src/background/recorder.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createRecorder, COPY_TIMEOUT_MS, PENDING_WRITE_LIMIT_MS, PENDING_WINDOW_MS, RESULT_SEND_LIMIT_MS } from '../../../src/background/recorder.js';
 import { MSG } from '../../../src/shared/messages.js';
 import { freshSettings, EDIT_MODE } from '../../../src/shared/defaults.js';
 
@@ -1569,6 +1569,99 @@ describe('a result with no receiver', () => {
     pending.resolve({ ...DICTATION });
     await finished;
     expect(t.copies()).toEqual([{ action: MSG.OFFSCREEN_COPY, text: 'final' }]);
+  });
+});
+
+describe('a result send that does not settle (V50)', () => {
+  /** A dictation whose DICTATION_RESULT send stays pending; every other send answers. */
+  async function hanging(over) {
+    const t = setup(over);
+    const send = deferred();
+    t.deps.toTab.mockImplementation(async (_endpoint, message) => (message.action === MSG.DICTATION_RESULT ? send.promise : true));
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    const finished = t.recorder.onDone(done({ captureId: t.id() }));
+    await vi.advanceTimersByTimeAsync(0); // vi.waitFor would move the fake clock
+    expect(t.result()).toBeDefined();
+    return { ...t, send, finished };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('the limit is 5 s', () => {
+    expect(RESULT_SEND_LIMIT_MS).toBe(5000);
+  });
+
+  it('copies nothing and keeps the record before the limit', async () => {
+    const t = await hanging();
+    await vi.advanceTimersByTimeAsync(RESULT_SEND_LIMIT_MS - 1);
+    expect(t.copies()).toEqual([]);
+    expect(t.deps.pending.store.record).not.toBeNull();
+    t.send.resolve(true);
+    await t.finished;
+  });
+
+  it('past the limit counts as not delivered: the copy runs and the record goes', async () => {
+    const t = await hanging();
+    await vi.advanceTimersByTimeAsync(RESULT_SEND_LIMIT_MS);
+    await t.finished;
+    expect(t.copies()).toEqual([{ action: MSG.OFFSCREEN_COPY, text: 'final' }]);
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it.each([['resolves', (send) => send.resolve(false)], ['rejects', (send) => send.reject(new Error('late'))]])('a send that %s later has no further effect', async (_name, settle) => {
+    const t = await hanging();
+    await vi.advanceTimersByTimeAsync(RESULT_SEND_LIMIT_MS);
+    await t.finished;
+    const clears = t.deps.pending.clear.mock.calls.length;
+    settle(t.send);
+    await vi.advanceTimersByTimeAsync(COPY_TIMEOUT_MS);
+    expect(t.copies()).toHaveLength(1);
+    expect(t.deps.pending.clear).toHaveBeenCalledTimes(clears);
+  });
+
+  it('an always-copy that landed is not copied again', async () => {
+    const t = await hanging({ settings: { alwaysCopy: true } });
+    await vi.advanceTimersByTimeAsync(RESULT_SEND_LIMIT_MS);
+    await t.finished;
+    expect(t.copies()).toHaveLength(1);
+  });
+
+  it('a failed result past the limit copies nothing and still frees the record', async () => {
+    const t = setup();
+    t.deps.dictate.mockResolvedValueOnce({ success: false, error: 'No speech detected.', tone: 'warning' });
+    t.deps.toTab.mockImplementation(() => new Promise(() => {}));
+    await t.recorder.start(A);
+    await t.recorder.stop(A);
+    const finished = t.recorder.onDone(done({ captureId: t.id() }));
+    await vi.advanceTimersByTimeAsync(RESULT_SEND_LIMIT_MS);
+    await finished;
+    expect(t.copies()).toEqual([]);
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it('a resumed run is bound the same way', async () => {
+    const t = setup({ record: leftBehind() });
+    t.deps.toTab.mockImplementation((_endpoint, message) => (message.action === MSG.DICTATION_RESULT ? new Promise(() => {}) : Promise.resolve(true)));
+    expect(await t.recorder.ping(A)).toEqual({ alive: true });
+    await vi.advanceTimersByTimeAsync(RESULT_SEND_LIMIT_MS);
+    expect(t.copies()).toEqual([{ action: MSG.OFFSCREEN_COPY, text: 'final' }]);
+    expect(t.deps.pending.store.record).toBeNull();
+  });
+
+  it("the session's other sends stay unbounded: a stuck state message holds the provider call", async () => {
+    const t = setup();
+    t.deps.toTab.mockImplementation((_endpoint, message) => (message.action === MSG.RECORDING_STATE ? new Promise(() => {}) : Promise.resolve(true)));
+    await t.recorder.start(A);
+    t.recorder.onDone(done({ captureId: t.id(), reason: 'silence' }));
+    await vi.advanceTimersByTimeAsync(RESULT_SEND_LIMIT_MS * 2);
+    expect(t.deps.dictate).not.toHaveBeenCalled();
   });
 });
 

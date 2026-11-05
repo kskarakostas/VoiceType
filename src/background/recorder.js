@@ -20,6 +20,8 @@ export const COPY_TIMEOUT_MS = 1000;
 export const PENDING_WRITE_LIMIT_MS = 500;
 /** How long after a recording ended a later worker may still run it (V52). */
 export const PENDING_WINDOW_MS = 120_000;
+/** The longest a result send counts as on its way: past it the result is not delivered (V50). */
+export const RESULT_SEND_LIMIT_MS = 5000;
 
 /**
  * @typedef {{ tabId: number, frameId: number, documentId?: string }} Endpoint
@@ -47,9 +49,11 @@ const sameDocument = (a, b) => a.tabId === b.tabId && a.frameId === b.frameId &&
 async function within(ms, work) {
   let timer;
   const expired = new Promise((resolve) => { timer = setTimeout(resolve, ms, false); });
-  const result = await Promise.race([work, expired]);
-  clearTimeout(timer);
-  return result;
+  try {
+    return await Promise.race([work, expired]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -187,8 +191,8 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   async function land(s, message) {
     free(s);
     try {
-      const delivered = await toTab(s.endpoint, { action: MSG.DICTATION_RESULT, ...message });
-      // The tab closed or left for a page without us: the clipboard is what is left for a paid transcript.
+      const delivered = await within(RESULT_SEND_LIMIT_MS, toTab(s.endpoint, { action: MSG.DICTATION_RESULT, ...message }));
+      // The tab closed, left for a page without us, or never answered: the clipboard is what is left for a paid transcript.
       if (!delivered && message.success && !message.copied) await copyResult(message.text);
     } finally {
       release(s);
