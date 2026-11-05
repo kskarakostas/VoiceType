@@ -179,11 +179,17 @@ export async function initOptions({ chrome, document, window, sections = SECTION
 
   el.version.textContent = `Version ${chrome.runtime.getManifest().version}`;
 
-  // Closing. The flush is a best effort: Chrome may drop messages a closing page sends. The page
-  // never blocks closing with beforeunload.
+  // Closing. The flush is a best effort: Chrome may drop messages a closing page sends. Chrome 140
+  // drops nearly every one, 2 of 20 landed, unless a keepalive request follows the message: then 20
+  // of 20 landed. It has to come after the message. It reads a file of the extension, so nothing
+  // leaves the machine. The page never blocks closing with beforeunload.
 
   function flushTypingSaves() {
-    return Promise.all(mounted.flatMap((section) => section.typingSaves ?? []).map((save) => save.flush()));
+    const saves = mounted.flatMap((section) => section.typingSaves ?? []);
+    const pending = saves.some((save) => save.pending);
+    const flushed = Promise.all(saves.map((save) => save.flush()));
+    if (pending) window.fetch('manifest.json', { keepalive: true }).catch(() => {});
+    return flushed;
   }
 
   window.addEventListener('pagehide', flushTypingSaves);

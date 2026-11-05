@@ -295,4 +295,27 @@ describe('settings page context', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(save).toHaveBeenCalledTimes(2);
   });
+
+  it('a close with a pending save opens a keepalive request after the save', async () => {
+    const fetch = vi.spyOn(window, 'fetch').mockResolvedValue(new Response());
+    const section = probe();
+    await start(fakeChrome(), [section.factory]);
+    const save = vi.fn();
+    section.typingSaves.push(section.ctx.typingSave(save));
+    section.typingSaves[0].schedule();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(fetch).toHaveBeenCalledExactlyOnceWith('manifest.json', { keepalive: true });
+    expect(save.mock.invocationCallOrder[0]).toBeLessThan(fetch.mock.invocationCallOrder[0]);
+    fetch.mockRestore();
+  });
+
+  it('a close with nothing pending opens no request', async () => {
+    const fetch = vi.spyOn(window, 'fetch').mockResolvedValue(new Response());
+    const section = probe();
+    await start(fakeChrome(), [section.factory]);
+    section.typingSaves.push(section.ctx.typingSave(vi.fn()));
+    window.dispatchEvent(new Event('pagehide'));
+    expect(fetch).not.toHaveBeenCalled();
+    fetch.mockRestore();
+  });
 });
