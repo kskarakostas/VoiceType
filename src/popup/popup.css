@@ -36,7 +36,6 @@ select { min-height: 30px; padding: 4px 8px; }
 /* Provider and mode */
 
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.pair .field-label { font-size: 11px; }
 
 /* This site */
 

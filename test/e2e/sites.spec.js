@@ -319,13 +319,17 @@ test('in forced colours the popup keeps the edge of every control', async () => 
   expect(withKey.map((e) => e.id)).toEqual(['provider', 'active-mode', 'site-mode', 'copy-last', 'open-settings']);
   expect(withKey.filter((e) => !e.drawn)).toEqual([]);
 
-  // With no key, Add API key takes the place of Ready.
+  // With no key, Add API key takes the place of Ready. The key comes back for the next case.
   await seedSettings(serviceWorker, '');
-  await popup.reload();
-  await expect(popup.locator('#add-key')).toBeVisible();
-  const withoutKey = await edges();
-  expect(withoutKey.map((e) => e.id)).toContain('add-key');
-  expect(withoutKey.filter((e) => !e.drawn)).toEqual([]);
+  try {
+    await popup.reload();
+    await expect(popup.locator('#add-key')).toBeVisible();
+    const withoutKey = await edges();
+    expect(withoutKey.map((e) => e.id)).toContain('add-key');
+    expect(withoutKey.filter((e) => !e.drawn)).toEqual([]);
+  } finally {
+    await seedRules({});
+  }
 });
 
 test('the Sites page adds, edits and removes a rule, and an open tab follows', async () => {

@@ -557,7 +557,7 @@ describe('popup Copy last (V29)', () => {
     const chrome = fakeChrome();
     chrome.script(MSG.GET_HISTORY, { entries: [NEWER, OLDER] });
     await start(chrome);
-    expect($('copy-last').hidden).toBe(false);
+    expect($('copy-row').hidden).toBe(false);
     expect($('copy-last').disabled).toBe(false);
     $('copy-last').click();
     await flush();
@@ -570,7 +570,7 @@ describe('popup Copy last (V29)', () => {
     const chrome = fakeChrome();
     chrome.script(MSG.GET_HISTORY, { entries: [] });
     await start(chrome);
-    expect($('copy-last').hidden).toBe(false);
+    expect($('copy-row').hidden).toBe(false);
     expect($('copy-last').disabled).toBe(true);
   });
 
@@ -585,7 +585,9 @@ describe('popup Copy last (V29)', () => {
     const stored = storedSettings();
     stored.keepHistory = false;
     await start(fakeChrome(stored));
-    expect($('copy-last').hidden).toBe(true);
+    // The row is what hides, so it must hold the button.
+    expect($('copy-row').contains($('copy-last'))).toBe(true);
+    expect($('copy-row').hidden).toBe(true);
   });
 
   it('going off in another page hides it and lets go of the text', async () => {
@@ -597,11 +599,11 @@ describe('popup Copy last (V29)', () => {
     stored.keepHistory = false;
     chrome.fire(SETTINGS_CHANGE, 'local');
     await flush();
-    expect($('copy-last').hidden).toBe(true);
+    expect($('copy-row').hidden).toBe(true);
     stored.keepHistory = true;
     chrome.fire(SETTINGS_CHANGE, 'local');
     await flush();
-    expect($('copy-last').hidden).toBe(false);
+    expect($('copy-row').hidden).toBe(false);
     expect($('copy-last').disabled).toBe(true);
     expect(writeText).not.toHaveBeenCalled();
   });

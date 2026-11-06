@@ -69,7 +69,6 @@ export async function initPopup({ chrome, document, window }) {
     const { keepHistory } = state.settings();
     if (!keepHistory) lastText = null;
     el.copyRow.hidden = !keepHistory;
-    el.copyLast.hidden = !keepHistory;
     el.copyLast.disabled = lastText === null;
   }
 

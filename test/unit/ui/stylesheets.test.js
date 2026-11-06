@@ -50,13 +50,8 @@ describe('extension page stylesheets and markup', () => {
     }
   });
 
-  // V77 sets the popup's Provider and Mode labels at 11 px; every other size stays at 12 or more.
-  const POPUP_SMALL_LABELS = /\.pair \.field-label\s*{[^}]*}/;
-
-  it('uses no font size under 12 px, except the popup labels V77 sets at 11', () => {
-    expect(POPUP_CSS.match(POPUP_SMALL_LABELS)?.[0]).toMatch(/font-size:\s*11px;/);
-    for (const [name, source] of Object.entries(STYLESHEETS)) {
-      const CSS = name === 'popup.css' ? source.replace(POPUP_SMALL_LABELS, '') : source;
+  it('uses no font size under 12 px', () => {
+    for (const [name, CSS] of Object.entries(STYLESHEETS)) {
       const sizes = [...CSS.matchAll(/font(?:-size)?:\s*([^;]+);/g)].flatMap((m) => [...m[1].matchAll(/([\d.]+)px/g)].map((n) => Number(n[1])));
       expect(sizes.length, name).toBeGreaterThan(0);
       for (const size of sizes) expect(size, name).toBeGreaterThanOrEqual(12);
