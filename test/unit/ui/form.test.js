@@ -162,6 +162,14 @@ describe('fillModeSelect', () => {
     expect(rows(el).slice(1).map(([value]) => value)).toEqual(['default', 'email', 'custom_1']);
   });
 
+  it('names the first row with activeLabel, and rebuilds when it changes', () => {
+    const el = select();
+    fillModeSelect(el, MODES, { useActive: true, activeLabel: 'Active' });
+    expect(rows(el)[0]).toEqual(['', 'Active']);
+    fillModeSelect(el, MODES, { useActive: true });
+    expect(rows(el)[0]).toEqual(['', 'Use active mode']);
+  });
+
   it('keeps the options and the selection when nothing changed', () => {
     const el = select();
     fillModeSelect(el, MODES, { useActive: true });

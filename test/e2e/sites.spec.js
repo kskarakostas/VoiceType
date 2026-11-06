@@ -1,6 +1,6 @@
 // End-to-end coverage for site rules in the built extension: a hidden site in every frame, the
-// hotkey on it, a site mode across frames, the pill menu, and the popup and the Sites page acting
-// on an open tab. Run with `npm run test:e2e`, which builds dist/ first.
+// hotkey on it, a site mode across frames, the pill menu, the popup and the Sites page acting
+// on an open tab, and the popup's size. Run with `npm run test:e2e`, which builds dist/ first.
 import { test, expect } from '@playwright/test';
 import { freshSettings } from '../../src/shared/defaults.js';
 import { siteKey } from '../../src/shared/sites.js';
@@ -25,6 +25,11 @@ const MODE_BUTTON = 'button.mode';
 const USE_ACTIVE = '[data-use-active]';
 /** See frames.spec.js: a click right after a scroll can miss an out-of-process frame. */
 const VIEWPORT = { width: 1280, height: 2000 };
+/** The popup's width, and the height it stays under with a site and a key (V77). */
+const POPUP_WIDTH = 320;
+const POPUP_MAX_HEIGHT = 460;
+/** Chromium maps every *.localhost name to the loopback the fixture server listens on. */
+const LONG_HOST = 'a-very-long-site-name-for-the-popup-to-trim.example.localhost';
 const CROSS_ORIGIN_FRAME = `http://127.0.0.1:${PORT}/frame.html`;
 const SAME_ORIGIN_FRAME = `http://localhost:${PORT}/frame.html`;
 
@@ -256,6 +261,71 @@ test('the popup hides the pill on the open page within a second', async () => {
 
   await expect.poll(() => pillShown(fixture), { timeout: PILL_SYNC_MS }).toBe(false);
   expect(await storedRules()).toEqual({ localhost: { hidePill: true, mode: 'email' } });
+});
+
+test('the popup is under 460 px tall at 320 px, with a long site name on one line and no sideways scroll', async () => {
+  await seedRules({});
+  const fixture = await openFields(context);
+  await fixture.goto(`http://${LONG_HOST}:${PORT}/fields.html`);
+  const popup = await openPopupOver(fixture);
+  await popup.setViewportSize({ width: POPUP_WIDTH, height: 800 });
+  await expect(popup.locator('#site-host')).toHaveText(LONG_HOST);
+  await expect(popup.locator('#status-ready')).toBeVisible();
+
+  const layout = await popup.evaluate(() => {
+    const box = (id) => document.getElementById(id).getBoundingClientRect();
+    const host = document.getElementById('site-host');
+    const middle = (id) => box(id).top + box(id).height / 2;
+    return {
+      height: document.body.getBoundingClientRect().height,
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      title: host.title,
+      cut: host.scrollWidth > host.clientWidth,
+      hostHeight: box('site-host').height,
+      lineHeight: parseFloat(getComputedStyle(host).lineHeight),
+      hostMiddle: middle('site-host'),
+      hideMiddle: middle('site-hide'),
+      modeMiddle: middle('site-mode'),
+    };
+  });
+  expect(layout.height).toBeLessThan(POPUP_MAX_HEIGHT);
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+  expect(layout.title).toBe(LONG_HOST);
+  expect(layout.cut).toBe(true);
+  expect(layout.hostHeight).toBeLessThanOrEqual(layout.lineHeight + 1);
+  expect(Math.abs(layout.hideMiddle - layout.hostMiddle)).toBeLessThan(layout.lineHeight);
+  expect(Math.abs(layout.modeMiddle - layout.hostMiddle)).toBeLessThan(layout.lineHeight);
+});
+
+test('in forced colours the popup keeps the edge of every control', async () => {
+  await seedRules({});
+  const fixture = await openFields(context);
+  const popup = await openPopupOver(fixture);
+  await popup.emulateMedia({ forcedColors: 'active' });
+  await expect(popup.locator('#site-mode')).toBeVisible();
+
+  const edges = () => popup.evaluate(() => {
+    const canvas = getComputedStyle(document.body).backgroundColor;
+    return [...document.querySelectorAll('select, button')].filter((el) => el.offsetParent !== null).map((el) => {
+      const style = getComputedStyle(el);
+      return {
+        id: el.id,
+        drawn: style.borderTopStyle !== 'none' && parseFloat(style.borderTopWidth) > 0 && style.borderTopColor !== canvas,
+      };
+    });
+  });
+  const withKey = await edges();
+  expect(withKey.map((e) => e.id)).toEqual(['provider', 'active-mode', 'site-mode', 'copy-last', 'open-settings']);
+  expect(withKey.filter((e) => !e.drawn)).toEqual([]);
+
+  // With no key, Add API key takes the place of Ready.
+  await seedSettings(serviceWorker, '');
+  await popup.reload();
+  await expect(popup.locator('#add-key')).toBeVisible();
+  const withoutKey = await edges();
+  expect(withoutKey.map((e) => e.id)).toContain('add-key');
+  expect(withoutKey.filter((e) => !e.drawn)).toEqual([]);
 });
 
 test('the Sites page adds, edits and removes a rule, and an open tab follows', async () => {

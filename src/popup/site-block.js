@@ -36,10 +36,11 @@ export function createSiteBlock({ chrome, document, state, client, toast }) {
     const settings = state.settings();
     const rule = ruleFor(settings, url);
     el.host.textContent = site;
+    el.host.title = site;
     const focused = document.activeElement;
     if (restore || focused !== el.hide) el.hide.checked = rule.hidePill;
     if (restore || focused !== el.mode) {
-      fillModeSelect(el.mode, settings.modes, { useActive: true });
+      fillModeSelect(el.mode, settings.modes, { useActive: true, activeLabel: 'Active' });
       el.mode.value = rule.mode ?? '';
     }
   }

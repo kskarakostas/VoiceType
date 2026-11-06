@@ -13,10 +13,7 @@
       <span class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#4f46e5" stroke="none"/><g transform="translate(2.4 0)"><rect x="17" y="12" width="15" height="26" rx="7.5" fill="#fff" stroke="none"/><path d="M11 30a13.5 13.5 0 0 0 27 0M24.5 44v7" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round"/><path d="M48 14v36" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/></g></svg>
       </span>
-      <div>
-        <h1>VoiceType</h1>
-        <p class="tagline">BYOK dictation</p>
-      </div>
+      <h1>VoiceType</h1>
     </div>
     <div id="status">
       <p class="status" id="status-ready" data-ready="true" hidden><span class="status-dot" aria-hidden="true"></span>Ready</p>
@@ -30,40 +27,47 @@
   </div>
 
   <main>
-    <section class="card" aria-labelledby="h-provider">
-      <h2 id="h-provider"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2"/><path d="m17 6 2 2"/><path d="m14 9 2 2"/></svg>Provider</h2>
-      <div class="segmented" role="radiogroup" aria-labelledby="h-provider">
-        <label class="segment"><input type="radio" name="provider" value="openai"><span>OpenAI</span></label>
-        <label class="segment"><input type="radio" name="provider" value="gemini"><span>Gemini</span></label>
+    <div class="row pair">
+      <div class="field">
+        <label class="field-label" for="provider">Provider</label>
+        <select id="provider">
+          <option value="openai">OpenAI</option>
+          <option value="gemini">Gemini</option>
+        </select>
       </div>
-    </section>
+      <div class="field">
+        <label class="field-label" for="active-mode">Mode</label>
+        <select id="active-mode"></select>
+      </div>
+    </div>
 
-    <section class="card" aria-labelledby="h-mode">
-      <h2 id="h-mode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>Mode</h2>
-      <select id="active-mode" aria-labelledby="h-mode"></select>
-    </section>
-
-    <section class="card" id="site-block" aria-labelledby="h-site">
-      <h2 id="h-site"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg>This site</h2>
+    <section class="row" id="site-block" aria-labelledby="h-site">
+      <h2 class="visually-hidden" id="h-site">This site</h2>
       <p class="hint" id="site-unavailable" hidden>Not available on this page</p>
-      <div id="site-controls" hidden>
+      <div class="site-line" id="site-controls" hidden>
         <p id="site-host"></p>
         <label class="check"><input type="checkbox" id="site-hide">Hide pill</label>
-        <label class="field"><span class="field-label">Mode on this site</span><select id="site-mode"></select></label>
+        <label class="visually-hidden" for="site-mode">Mode on this site</label>
+        <select id="site-mode"></select>
       </div>
     </section>
 
-    <section class="card" aria-labelledby="h-today">
-      <h2 id="h-today"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11"/><path d="M10 20V5"/><path d="M16 20v-6"/><path d="M21 20H3"/></svg>Today</h2>
+    <section class="row" aria-labelledby="h-today">
+      <h2 class="caption" id="h-today">Today</h2>
       <dl class="today">
         <div><dt>Sessions</dt><dd id="today-sessions">0</dd></div>
+        <div><dt>Words</dt><dd id="today-words">0</dd></div>
+        <div><dt>Spoken</dt><dd id="today-spoken">0:00</dd></div>
         <div><dt>Cost</dt><dd id="today-cost">$0.00</dd></div>
       </dl>
     </section>
 
-    <button type="button" class="btn btn-block" id="copy-last" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy last</button>
-
-    <button type="button" class="btn btn-block" id="open-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="m4.93 4.93 2.12 2.12"/><path d="m16.95 16.95 2.12 2.12"/><path d="M2 12h3"/><path d="M19 12h3"/><path d="m4.93 19.07 2.12-2.12"/><path d="m16.95 7.05 2.12-2.12"/></svg>Open settings</button>
+    <div class="row actions">
+      <div class="split" id="copy-row">
+        <button type="button" class="btn" id="copy-last" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy last</button>
+      </div>
+      <button type="button" class="btn btn-block" id="open-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="m4.93 4.93 2.12 2.12"/><path d="m16.95 16.95 2.12 2.12"/><path d="M2 12h3"/><path d="M19 12h3"/><path d="m4.93 19.07 2.12-2.12"/><path d="m16.95 7.05 2.12-2.12"/></svg>Open settings</button>
+    </div>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

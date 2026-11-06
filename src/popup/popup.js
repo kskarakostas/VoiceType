@@ -2,11 +2,13 @@
 // full settings, saves only the field an edit changed (provider or activeMode) or the current
 // site's rule, and re-reads when stored settings change. Everything else lives on the settings
 // page, which it opens (V6). Copy last copies the newest dictation (V29).
+import { formatCount } from '../options/home-stats.js';
 import { MSG } from '../shared/messages.js';
 import { formatCost } from '../shared/pricing.js';
 import { fillModeSelect } from '../ui/form.js';
 import { createSettingsClient } from '../ui/settings-client.js';
 import { createSettingsState } from '../ui/settings-state.js';
+import { formatSpoken } from './format.js';
 import { openSettings } from './open-settings.js';
 import { createSiteBlock } from './site-block.js';
 
@@ -28,9 +30,9 @@ export async function initPopup({ chrome, document, window }) {
 
   const el = {
     ready: $('status-ready'), addKey: $('add-key'), banner: $('banner'), bannerText: $('banner-text'),
-    providerRadios: [...document.querySelectorAll('input[name="provider"]')],
-    mode: $('active-mode'), todaySessions: $('today-sessions'), todayCost: $('today-cost'),
-    copyLast: $('copy-last'), openSettings: $('open-settings'), toast: $('toast'),
+    provider: $('provider'), mode: $('active-mode'),
+    todaySessions: $('today-sessions'), todayWords: $('today-words'), todaySpoken: $('today-spoken'), todayCost: $('today-cost'),
+    copyRow: $('copy-row'), copyLast: $('copy-last'), openSettings: $('open-settings'), toast: $('toast'),
   };
 
   let toastTimer;
@@ -55,7 +57,7 @@ export async function initPopup({ chrome, document, window }) {
     const ready = Boolean(settings.keys[settings.provider]?.trim());
     el.ready.hidden = !state.loaded() || !ready;
     el.addKey.hidden = !state.loaded() || ready;
-    for (const radio of el.providerRadios) radio.checked = radio.value === settings.provider;
+    el.provider.value = settings.provider;
     fillModeSelect(el.mode, settings.modes);
     el.mode.value = settings.activeMode;
     block.render();
@@ -66,15 +68,15 @@ export async function initPopup({ chrome, document, window }) {
   function renderCopyLast() {
     const { keepHistory } = state.settings();
     if (!keepHistory) lastText = null;
+    el.copyRow.hidden = !keepHistory;
     el.copyLast.hidden = !keepHistory;
     el.copyLast.disabled = lastText === null;
   }
 
-  for (const radio of el.providerRadios) {
-    radio.addEventListener('change', () => {
-      if (radio.checked) commit((s) => { s.provider = radio.value; });
-    });
-  }
+  el.provider.addEventListener('change', () => {
+    const key = el.provider.value;
+    commit((s) => { s.provider = key; });
+  });
 
   el.mode.addEventListener('change', () => {
     const key = el.mode.value;
@@ -109,6 +111,8 @@ export async function initPopup({ chrome, document, window }) {
     const today = stats?.today;
     if (!today || typeof today !== 'object') return;
     el.todaySessions.textContent = String(today.sessions || 0);
+    el.todayWords.textContent = formatCount(today.words || 0);
+    el.todaySpoken.textContent = formatSpoken(today.audioSeconds || 0);
     el.todayCost.textContent = formatCost(today.estimatedCost || 0);
   }
 

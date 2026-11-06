@@ -4,6 +4,7 @@ import { orderedModeKeys } from '../shared/defaults.js';
 import { SPOKEN_LANGUAGES } from '../shared/dictionary.js';
 
 const DEFAULT_MODE_ICON = '🎯';
+const USE_ACTIVE_LABEL = 'Use active mode';
 
 /**
  * Apply one checkbox change to the spoken-language list. Checking 'auto' clears the list;
@@ -21,16 +22,17 @@ export function toggleLanguage(list, code, checked) {
 }
 
 /**
- * Fill a select with the modes in display order, after a `Use active mode` row of value `''` when
- * `useActive` is set. The options are rebuilt only when the list or a label changed, so an
- * unchanged select keeps its selection; after a rebuild the caller sets the value.
+ * Fill a select with the modes in display order, after a row of value `''` labelled `activeLabel`
+ * (`Use active mode` unless given) when `useActive` is set. The options are rebuilt only when the
+ * list or a label changed, so an unchanged select keeps its selection; after a rebuild the caller
+ * sets the value.
  * @param {HTMLSelectElement} select
  * @param {Record<string, { name: string, icon?: string }>} modes
- * @param {{ useActive?: boolean }} [options]
+ * @param {{ useActive?: boolean, activeLabel?: string }} [options]
  */
-export function fillModeSelect(select, modes, { useActive = false } = {}) {
+export function fillModeSelect(select, modes, { useActive = false, activeLabel = USE_ACTIVE_LABEL } = {}) {
   const rows = orderedModeKeys(modes).map((key) => [key, `${modes[key].icon || DEFAULT_MODE_ICON} ${modes[key].name}`]);
-  if (useActive) rows.unshift(['', 'Use active mode']);
+  if (useActive) rows.unshift(['', activeLabel]);
   const current = [...select.options];
   const same = current.length === rows.length
     && rows.every(([value, text], i) => current[i].value === value && current[i].textContent === text);

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { initPopup } from '../../../src/popup/popup.js';
 import { MSG } from '../../../src/shared/messages.js';
 import { freshSettings } from '../../../src/shared/defaults.js';
+import { formatCost } from '../../../src/shared/pricing.js';
 import { withSiteRule } from '../../../src/shared/sites.js';
 
 // jsdom replaces the global URL, so resolve paths with node:path rather than new URL().
@@ -88,16 +89,14 @@ function fakeChrome(stored = storedSettings(), contexts = []) {
 const $ = (id) => document.getElementById(id);
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const start = (chrome) => initPopup({ chrome, document, window });
-const radio = (value) => document.querySelector(`input[name="provider"][value="${value}"]`);
-const checkedProvider = () => document.querySelector('input[name="provider"]:checked')?.value;
+const checkedProvider = () => $('provider').value;
 
 function change(el, value) {
   if (value !== undefined) el.value = value;
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 function choose(value) {
-  radio(value).checked = true;
-  change(radio(value));
+  change($('provider'), value);
 }
 
 beforeEach(() => {
@@ -111,15 +110,21 @@ afterEach(() => {
 describe('popup quick panel', () => {
   it('renders the quick panel in spec order', async () => {
     await start(fakeChrome());
-    const order = [...document.querySelectorAll('#status, main > section h2, #open-settings')]
-      .map((node) => (node.id === 'status' || node.id === 'open-settings' ? node.id : node.textContent.trim()));
-    expect(order).toEqual(['status', 'Provider', 'Mode', 'This site', 'Today', 'open-settings']);
+    const order = [...document.querySelectorAll('#status, #provider, #active-mode, #site-block, #h-today, #copy-last, #open-settings')]
+      .map((node) => node.id);
+    expect(order).toEqual(['status', 'provider', 'active-mode', 'site-block', 'h-today', 'copy-last', 'open-settings']);
+    expect($('h-today').textContent.trim()).toBe('Today');
+    expect($('provider').labels[0].textContent).toBe('Provider');
+    expect($('active-mode').labels[0].textContent).toBe('Mode');
+    expect(document.querySelector('.tagline')).toBeNull();
+    expect(document.body.textContent).not.toContain('BYOK dictation');
     expect($('open-settings').textContent.trim()).toBe('Open settings');
     expect($('banner').hidden).toBe(true);
     expect($('copy-last').textContent.trim()).toBe('Copy last');
     expect($('copy-last').compareDocumentPosition($('open-settings'))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect($('today-cost').compareDocumentPosition($('copy-last'))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect($('site-block').querySelector('h2').textContent.trim()).toBe('This site');
+    expect($('site-block').querySelector('h2').classList.contains('visually-hidden')).toBe(true);
     expect($('site-block').textContent).not.toContain('coming in a later update');
   });
 
@@ -180,20 +185,39 @@ describe('popup quick panel', () => {
     expect($('toast').dataset.tone).toBe('success');
   });
 
-  it('today shows sessions and cost', async () => {
+  it('Today shows four numbers', async () => {
     const chrome = fakeChrome();
+    chrome.script(MSG.GET_USAGE, { today: { sessions: 6, words: 1412, audioSeconds: 200, estimatedCost: 0.012 } });
     await start(chrome);
     expect(chrome.sent.some((m) => m.action === MSG.GET_USAGE)).toBe(true);
-    expect($('today-sessions').textContent).toBe('4');
+    expect(['today-sessions', 'today-words', 'today-spoken'].map((id) => $(id).textContent)).toEqual(['6', '1,412', '3:20']);
+    expect($('today-cost').textContent).toBe(formatCost(0.012));
+  });
+
+  it('Today reads a bucket without words as zero words', async () => {
+    await start(fakeChrome());
+    expect(['today-sessions', 'today-words', 'today-spoken'].map((id) => $(id).textContent)).toEqual(['4', '0', '2:00']);
     expect($('today-cost').textContent).toBe('$0.01');
   });
 
-  it('today stays at zero when usage cannot be read', async () => {
+  it('Today stays at zero when usage cannot be read', async () => {
     const chrome = fakeChrome();
     chrome.script(MSG.GET_USAGE, null);
     await start(chrome);
-    expect($('today-sessions').textContent).toBe('0');
+    expect(['today-sessions', 'today-words', 'today-spoken'].map((id) => $(id).textContent)).toEqual(['0', '0', '0:00']);
     expect($('today-cost').textContent).toBe('$0.00');
+  });
+
+  it('provider is a select that saves as the radios did', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    expect($('provider').tagName).toBe('SELECT');
+    expect([...$('provider').options].map((o) => [o.value, o.textContent])).toEqual([['openai', 'OpenAI'], ['gemini', 'Gemini']]);
+    expect($('provider').value).toBe('openai');
+    $('provider').value = 'gemini';
+    $('provider').dispatchEvent(new Event('change'));
+    await flush();
+    expect(chrome.saves()).toContainEqual({ provider: 'gemini' });
   });
 
   it('Open settings opens or focuses the settings tab and closes the popup', async () => {
@@ -307,22 +331,31 @@ describe('popup This site block', () => {
     expect(blockVisible()).toBe(true);
     expect($('site-unavailable').hidden).toBe(true);
     expect($('site-host').textContent).toBe('example.com');
+    expect($('site-host').title).toBe('example.com');
     expect($('site-hide').checked).toBe(true);
     expect($('site-mode').value).toBe('email');
     expect($('site-block').textContent).toContain('Hide pill');
     expect($('site-block').textContent).toContain('Mode on this site');
   });
 
-  it('Use active mode is listed first and selected without a mode rule', async () => {
+  it('the site line keeps its whole name in title, and reads Active', async () => {
+    const chrome = fakeChrome();
+    chrome.tabs.query.mockResolvedValue([{ url: 'https://a-very-long-site-name.example.com/' }]);
+    await start(chrome);
+    expect($('site-host').title).toBe('a-very-long-site-name.example.com');
+    expect($('site-mode').options[0].textContent).toBe('Active');
+  });
+
+  it('Active is listed first and selected without a mode rule', async () => {
     await start(fakeChrome());
     const select = $('site-mode');
     expect([...select.options].map((o) => o.value)).toEqual(['', 'default', 'email', 'translate', 'instruct']);
-    expect(select.options[0].textContent).toBe('Use active mode');
+    expect(select.options[0].textContent).toBe('Active');
     expect(select.value).toBe('');
     expect($('site-hide').checked).toBe(false);
   });
 
-  it('a rule naming a missing mode shows Use active mode', async () => {
+  it('a rule naming a missing mode shows Active', async () => {
     await start(fakeChrome(withRule({ hidePill: false, mode: 'custom_gone' })));
     expect($('site-mode').value).toBe('');
   });
@@ -349,7 +382,7 @@ describe('popup This site block', () => {
     expect(chrome.saves()).toEqual([]);
   });
 
-  it('Use active mode sends null', async () => {
+  it('Active sends null', async () => {
     const chrome = fakeChrome(withRule({ hidePill: false, mode: 'email' }));
     await start(chrome);
     change($('site-mode'), '');
