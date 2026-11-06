@@ -247,7 +247,7 @@ Select text in a field, press `Ctrl+Shift+E` (the Control key on a Mac too) and 
 - If you are in another window or tab when the result arrives, it waits as dictated text does ("Return to the field to insert, or click here to copy."), and gets the same check when you come back.
 - In rich editors, a replacement VoiceType cannot confirm is also on the clipboard, and the pill says so.
 - "No speech detected." changes nothing in the field.
-- If the text model fails or returns nothing, the field does not change and the pill says "Could not edit the selection. Click here to copy what you said." The click copies your instruction; the next press records, so you can try the same edit again at once. Speech recognition was paid for, so usage counts it. A failed edit adds no entry to History, and with the tab gone your instruction is not copied.
+- If the text model fails, returns nothing, is cut short or cannot make out a change to apply, as when speech recognition garbled your instruction, the field does not change and the pill says "Could not edit the selection. Click here to copy what you said." The click copies your instruction; the next press records, so you can try the same edit again at once. Speech recognition was paid for, so usage counts it. A failed edit adds no entry to History, and with the tab gone your instruction is not copied.
 
 ---
 
