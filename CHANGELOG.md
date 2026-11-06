@@ -1,5 +1,34 @@
 # Changelog
 
+## 3.3.0 (2026-11-06)
+
+### Added
+- Four Minimal sizes on Settings, Appearance: Small, Medium, Large and Extra large. The choice shows while Minimal is the style.
+- Five recording colours on Settings, Appearance: Classic red, Vampire red, Obsidian purple, Emerald green and Mocha brown. Pill and Dot show the colour on the REC button and in the glow, and Minimal on its level bars. Status colours do not change: an error stays red and a success stays green. Forced colours ignore the choice.
+- Four sound sets on Settings, Sound and clipboard: Soft, Warm, Single tap and Classic. A Play button beside each lets you hear it, with Play sounds off too. Sounds stay off until you turn them on.
+
+### Changed
+- Minimal now stands beside your field: left of it, else right, above or below. It goes to the bottom of the page when there is no room around the field, the field is out of view, or no field has focus. Clicks pass through it.
+- If you use Minimal, it moves beside the field and is Medium after this update. Small brings back the old size. There is no option to keep it at the bottom.
+- If you have sounds on, you now hear Soft after this update, lower and quieter. Classic brings back the old sounds.
+- Sites with Hide pill, and the indicator for a frame out of sight, stay Small at the bottom of the page. They take your recording colour.
+- Minimal's status messages stand next to it when it is beside a field.
+- The start sound is longer: Soft's lasts about 0.4 s, with the microphone already open.
+
+### Measured
+- Every recording colour reaches at least 4.5:1 with its white text and 3:1 on the light and dark pill surfaces. The lowest are 4.68 with white and 3.12 on dark.
+- On one machine with real speakers, Soft's start sound reached no transcript, with and without Silence auto-stop.
+
+### Internal
+- `Pill` takes its size, colour and place through one `setLook` call. A unit test computes each colour's contrast. No new permission, no new package, no audio file.
+
+### Not tested
+- Chrome's own update of a real 3.2 install: a stored 3.2 record was read by the 3.3 build in a test instead.
+- Minimal on real sites (Gmail, Slack, Notion, ChatGPT), and in a very small frame, where the bottom position can sit over the field.
+- Each colour, its glow and each size, by eye. Warm and Single tap by ear, and whether their start sounds or Classic's reach a transcript on real speakers: only Soft was checked.
+- A Minimal status beside a field near the bottom of the page while another frame records: it can meet the indicator there.
+- Windows and macOS, and a real Bluetooth headset with the longer start sound.
+
 ## 3.2.0 (2026-11-06)
 
 ### Added
