@@ -281,9 +281,24 @@ Blocked it by mistake? Open `chrome://settings/content/microphone`, find VoiceTy
 
 ## ⚙️ Settings and Quick Panel
 
-Click the VoiceType icon for the quick panel: status, provider, active mode, **This site** (Hide pill and Mode on this site), today's sessions and cost, **Copy last** (hidden with Keep recent dictations off) and **Open settings**.
+Click the VoiceType icon for the quick panel, 320 px wide, top to bottom:
 
-The settings page opens in a tab, also from **Extension options** on `chrome://extensions`. **Home**, **Modes**, **Dictionary** and **History** come first, then Settings: **Provider**, **Recording**, **Speech**, **Sites**, **Appearance**, **Sound and clipboard**, **Usage and data**.
+- **Header**: **Ready**, or **Add API key** when the chosen provider has no key; it opens the settings at **Provider**.
+- **Provider** and **Mode**: two drop-down lists side by side, each with its label above. A change saves at once.
+- **This site**: one line with the site's name (cut with an ellipsis when long, the whole name in its tooltip), **Hide pill**, and a drop-down for the site's mode, whose first choice **Active** follows the mode above. On a page VoiceType cannot run on, such as a `chrome://` page or the Chrome Web Store, the line reads "Not available on this page".
+- **Today**: four numbers, **Sessions**, **Words**, **Spoken** (`m:ss`, or `h:mm:ss` from an hour) and **Cost**.
+- **Copy last** copies your newest dictation, from any site. The arrow at its right opens a list of your newest 5.
+- **Open settings**.
+
+**The list of recent dictations**
+- One row per dictation: its first line, at most 120 characters, cut with an ellipsis where it runs past the row. Press a row to copy that dictation's whole text. The quick panel and the list stay open.
+- The list is closed every time the quick panel opens, and none of your words are in the panel until you press the arrow.
+- The arrow shows only with 2 or more dictations. With **Keep recent dictations** off, neither **Copy last** nor the arrow shows.
+
+The settings page opens in a tab, also from **Extension options** on `chrome://extensions`. **Home**, **Modes**, **Dictionary** and **History** are pages of their own. **Settings** is one page in seven parts, each under its own heading: **Provider**, **Recording**, **Speech**, **Sites**, **Appearance**, **Sound and clipboard**, **Usage and data**.
+
+- The sidebar lists the seven parts under Settings. Pressing one scrolls to that part and puts the focus on its heading. Scrolling by hand changes neither the address nor the marked entry, which stays on the part you last pressed.
+- Each part keeps its address, such as `options.html#settings/sites`, and `#settings` alone opens Provider. A link or bookmark made before 3.4 lands on the same part.
 
 - **Recording**
   - **Minimum length** (0.5, 1, 2 or 3 s; default 1 s): shorter recordings are discarded as accidental clicks, and the pill says "Too short, ignored".

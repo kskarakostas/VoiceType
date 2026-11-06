@@ -38,6 +38,7 @@ VoiceType collects and processes the following data **locally on your device**:
 - Your dictionary and site rules are stored locally. Dictionary terms leave this device only with a recording, as described below; site rules never do
 - Usage statistics are stored locally and never transmitted
 - Recent dictations are held in Chrome's session storage, in memory, not on disk, and never leave this device. Only VoiceType's service worker and extension pages can read that store. VoiceType's own in-page script can ask for the newest dictation of the site it runs on, when you open the pill menu; the web page's scripts cannot ask, and a frame from another site gets nothing. With VoiceType allowed in incognito, an incognito tab of a site can be offered that site's newest dictation from a normal tab
+- The popup can list the first line of each of your newest 5 recent dictations, at most 120 characters each, but only after you press the arrow beside Copy last: until then none of their words appear. It reads the same recent dictations that Copy last does, stores nothing new and sends nothing anywhere; a press on a row copies that dictation's whole text to the clipboard
 - While a dictation is processing, its audio, an edit's selected text and its site are held in the same session storage, in memory, not on disk, so that a stopped service worker can retry once. That retry is a second provider charge. This holds for incognito tabs too. Only VoiceType's service worker and extension pages can read that store; its in-page script and web pages cannot. It is cleared when the result is delivered or copied or the dictation fails. If a stopped service worker leaves it behind, it goes when its tab closes or the next time the service worker runs after two minutes, and at the latest when you close the browser
 
 ## Data Transmission
@@ -91,7 +92,7 @@ You can:
 - **Clear your API keys** at any time through the extension settings
 - **Clear usage history** on the settings page under Usage and data
 - **Clear recent dictations**, or turn them off, on the History page of the settings page
-- **Remove dictionary terms and site rules** on the Dictionary and Sites pages of the settings page
+- **Remove dictionary terms and site rules** on the Dictionary page and under Sites on the settings page
 - **Uninstall the extension** to remove all stored data
 
 ## Security
