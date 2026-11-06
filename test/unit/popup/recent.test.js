@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createRecent, RECENT_MAX } from '../../../src/popup/recent.js';
+import { createRecent, RECENT_MAX, RECENT_LINE_MAX } from '../../../src/popup/recent.js';
 
 // jsdom replaces the global URL, so resolve paths with node:path rather than new URL().
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/popup/popup.html'), 'utf8');
@@ -68,6 +68,57 @@ describe('recent dictations (V76)', () => {
     recent.render([{ text: 'one\r\ntwo' }, { text: 'three\rfour' }], true);
     toggle.click();
     expect(rows(list).map((b) => b.textContent)).toEqual(['one', 'three']);
+  });
+
+  it('puts at most 120 characters of the line in the page: all of 120, the first 120 of 121', async () => {
+    const { recent, list, toggle, copy } = setup();
+    expect(RECENT_LINE_MAX).toBe(120);
+    const exactly = 'a'.repeat(120);
+    const over = `${'b'.repeat(120)}c`;
+    recent.render([{ text: exactly }, { text: over }, { text: `${'d'.repeat(5000)}\nsecond` }], true);
+    toggle.click();
+    expect(rows(list).map((b) => b.textContent)).toEqual([exactly, 'b'.repeat(120), 'd'.repeat(120)]);
+    expect(document.body.innerHTML).not.toContain(over);
+    rows(list)[1].click();
+    await settle();
+    expect(copy).toHaveBeenCalledExactlyOnceWith(over);
+  });
+
+  it('counts characters, not code units, so a cut never splits a pair', () => {
+    const { recent, list, toggle } = setup();
+    const emoji = '\u{1F600}';
+    recent.render([{ text: `${'a'.repeat(119)}${emoji}${emoji}` }, { text: 'b' }], true);
+    toggle.click();
+    expect(rows(list)[0].textContent).toBe(`${'a'.repeat(119)}${emoji}`);
+  });
+
+  it('names a row by the first non-blank line, and still copies the text as it was', async () => {
+    const { recent, list, toggle, copy } = setup();
+    const text = '\n\r\n   hello there\nsecond';
+    recent.render([{ text }, { text: '  spaced' }], true);
+    toggle.click();
+    expect(rows(list).map((b) => b.textContent)).toEqual(['hello there', 'spaced']);
+    rows(list)[0].click();
+    await settle();
+    expect(copy).toHaveBeenCalledWith(text);
+  });
+
+  it('skips an entry without text, and counts the rest', () => {
+    const { recent, list, toggle } = setup();
+    recent.render([null, undefined, {}, { text: 5 }, { text: 'a' }, { text: 'b' }], true);
+    expect(toggle.hidden).toBe(false);
+    toggle.click();
+    expect(rows(list).map((b) => b.textContent)).toEqual(['a', 'b']);
+    recent.render([null, { text: 'a' }], true);
+    expect(toggle.hidden).toBe(true);
+    expect(list.hidden).toBe(true);
+  });
+
+  it('takes the newest 5 after the entries without text are left out', () => {
+    const { recent, list, toggle } = setup();
+    recent.render([null, ...entries(6)], true);
+    toggle.click();
+    expect(rows(list).map((b) => b.textContent)).toEqual(entries(5).map((e) => e.text));
   });
 
   it('keeps the rest of the text out of the page, open or closed', () => {

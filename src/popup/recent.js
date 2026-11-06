@@ -1,9 +1,11 @@
 // The popup's list of recent dictations (V76): an arrow beside Copy last opens the newest few, one
-// line each, and a press copies that dictation's whole text. Closed, the page holds none of the
+// short line each, and a press copies that dictation's whole text. Closed, the page holds none of the
 // text: it stays in `texts` here and reaches the page only when the arrow is pressed.
 
 /** How many dictations the list offers. */
 export const RECENT_MAX = 5;
+/** The most characters of a dictation's first line that a row puts in the page. */
+export const RECENT_LINE_MAX = 120;
 
 const COPIED = 'Copied to clipboard.';
 const COPY_ERROR = 'Could not copy.';
@@ -26,14 +28,23 @@ export function createRecent({ document, toast, copy }) {
   let texts = [];
   let open = false;
 
+  /**
+   * The first non-blank line, cut to RECENT_LINE_MAX characters. Counted by code point, so a cut never splits a pair.
+   * @param {string} text
+   */
+  function firstLine(text) {
+    const [line] = text.trimStart().split(/[\r\n]/, 1);
+    return Array.from(line).slice(0, RECENT_LINE_MAX).join('');
+  }
+
   /** @param {string} text */
   function row(text) {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'recent-row';
-    // The page gets the first line, which CSS trims; the whole text stays in this closure.
-    button.textContent = text.split(/[\r\n]/, 1)[0];
+    // The page gets a short first line, which CSS trims to the width; the whole text stays in this closure.
+    button.textContent = firstLine(text);
     button.addEventListener('click', async () => {
       try {
         await copy(text);
@@ -61,7 +72,9 @@ export function createRecent({ document, toast, copy }) {
 
   return {
     render(entries, keepHistory) {
-      texts = keepHistory ? entries.slice(0, RECENT_MAX).map((entry) => entry.text) : [];
+      texts = keepHistory
+        ? entries.filter((entry) => typeof entry?.text === 'string').slice(0, RECENT_MAX).map((entry) => entry.text)
+        : [];
       paint();
     },
   };

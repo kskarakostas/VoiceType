@@ -371,6 +371,7 @@ test('the open list of 5 dictations fits the popup at 320 px with no scrollbar, 
         bodyHeight: document.body.getBoundingClientRect().height,
         heights: rows.map((row) => row.getBoundingClientRect().height),
         cut: rows.map((row) => row.scrollWidth > row.clientWidth),
+        length: rows[0].textContent.length,
       };
     });
     expect(open.bodyHeight).toBeLessThan(POPUP_CAP_HEIGHT);
@@ -378,6 +379,8 @@ test('the open list of 5 dictations fits the popup at 320 px with no scrollbar, 
     expect(open.scrollWidth).toBeLessThanOrEqual(open.clientWidth);
     expect(new Set(open.heights).size).toBe(1);
     expect(open.cut).toEqual([true, false, false, false, false]);
+    // The long line reaches the page as its first 120 characters, not whole.
+    expect(open.length).toBe(120);
     // A half turn once the glide ends: the icon points up.
     const turn = () => popup.evaluate(() => getComputedStyle(document.querySelector('#recent-toggle svg')).transform);
     await expect.poll(turn).toBe('matrix(-1, 0, 0, -1, 0, 0)');
