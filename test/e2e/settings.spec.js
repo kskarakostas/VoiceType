@@ -5,6 +5,7 @@
 // `npm run test:e2e`, which builds dist/ first.
 import { test, expect } from '@playwright/test';
 import { migrateSettings } from '../../src/shared/defaults.js';
+import { CUE_NAMES, CUE_SETS } from '../../src/offscreen/cues.js';
 import { CONFIRM_GUARD_MS } from '../../src/ui/form.js';
 import { launchExtension, seedSettings, openFields, pillQuery, focusField, dictate, DUMMY_KEY, PORT, TRANSCRIPT } from './helpers.js';
 
@@ -40,6 +41,12 @@ test.afterEach(async () => {
     if (/^(http|chrome-extension):/.test(page.url())) await page.close();
   }
 });
+
+/**
+ * Picks a card by its top left corner: on a sound set card the Play button covers the middle of it.
+ * @param {import('@playwright/test').Page} page
+ */
+const choose = (page, name, value) => page.locator(`input[name="${name}"][value="${value}"]`).check({ position: { x: 4, y: 4 } });
 
 const extensionUrl = (path) => `chrome-extension://${extensionId}/${path}`;
 
@@ -297,6 +304,133 @@ test('Reset keeps keys, dictionary and site rules', async () => {
   expect(after.keys).toEqual(seed.keys);
   expect(after.dictionary).toEqual(seed.dictionary);
   expect(after.siteRules).toEqual(seed.siteRules);
+});
+
+test('the Minimal size shows for Minimal only, and the size, colour and sound set stay after a reload', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY, { pillStyle: 'dot' });
+  const appearance = await openSettingsPage('settings/appearance');
+  await expect(appearance.locator('input[name="pill-style"][value="dot"]')).toBeChecked();
+  await expect(appearance.locator('#mini-size-group')).toBeHidden();
+  await choose(appearance, 'pill-style', 'minimal');
+  await expect(appearance.locator('#mini-size-group')).toBeVisible();
+
+  await choose(appearance, 'mini-size', 'xlarge');
+  await choose(appearance, 'rec-color', 'obsidian');
+  const sound = await openSettingsPage('settings/sound');
+  await choose(sound, 'sound-set', 'warm');
+  await expect.poll(async () => {
+    const { pillStyle, miniSize, recColor, soundSet } = await storedSettings();
+    return [pillStyle, miniSize, recColor, soundSet];
+  }).toEqual(['minimal', 'xlarge', 'obsidian', 'warm']);
+
+  await appearance.reload();
+  await sound.reload();
+  await expect(appearance.locator('#mini-size-group')).toBeVisible();
+  await expect(appearance.locator('input[name="mini-size"][value="xlarge"]')).toBeChecked();
+  await expect(appearance.locator('input[name="rec-color"][value="obsidian"]')).toBeChecked();
+  await expect(sound.locator('input[name="sound-set"][value="warm"]')).toBeChecked();
+});
+
+test('Reset to defaults gives Medium, Classic red and Soft', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY, { pillStyle: 'minimal', miniSize: 'xlarge', recColor: 'mocha', soundSet: 'tap' });
+  const usage = await openSettingsPage('settings/usage');
+  const reset = usage.locator('#reset');
+  await reset.click();
+  await expect(reset).toHaveAttribute('data-confirming', 'true');
+  await usage.waitForTimeout(CONFIRM_GUARD_MS + 100);
+  await reset.click();
+
+  await expect.poll(async () => {
+    const { miniSize, recColor, soundSet } = await storedSettings();
+    return [miniSize, recColor, soundSet];
+  }).toEqual(['medium', 'red', 'soft']);
+  const appearance = await openSettingsPage('settings/appearance');
+  await expect(appearance.locator('input[name="mini-size"][value="medium"]')).toBeChecked();
+  await expect(appearance.locator('input[name="rec-color"][value="red"]')).toBeChecked();
+  const sound = await openSettingsPage('settings/sound');
+  await expect(sound.locator('input[name="sound-set"][value="soft"]')).toBeChecked();
+});
+
+test('a stored 3.2 record on Minimal reads as Medium, Classic red and Soft', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY, { pillStyle: 'minimal' });
+  const { miniSize, recColor, soundSet, ...record } = await storedSettings();
+  await serviceWorker.evaluate((s) => chrome.storage.local.set({ settings: s }), record);
+
+  const appearance = await openSettingsPage('settings/appearance');
+  await expect(appearance.locator('#mini-size-group')).toBeVisible();
+  await expect(appearance.locator('input[name="mini-size"][value="medium"]')).toBeChecked();
+  await expect(appearance.locator('input[name="rec-color"][value="red"]')).toBeChecked();
+  const sound = await openSettingsPage('settings/sound');
+  await expect(sound.locator('input[name="sound-set"][value="soft"]')).toBeChecked();
+});
+
+test('the Minimal preview sits where the Pill preview does, beside its field, 28 by 8', async () => {
+  const page = await openSettingsPage('settings/appearance');
+  const inCard = (value, selector) => page.locator('.style-card', { has: page.locator(`input[value="${value}"]`) }).locator(selector);
+  const box = async (value, selector) => {
+    const [mark, preview] = await Promise.all([inCard(value, selector).boundingBox(), inCard(value, '.style-preview').boundingBox()]);
+    return { x: mark.x - preview.x, midY: mark.y + mark.height / 2 - preview.y, width: mark.width, height: mark.height };
+  };
+  const mini = await box('minimal', '.preview-mini');
+  const bar = await box('pill', '.preview-bar');
+  const field = await box('minimal', '.preview-field');
+
+  expect([mini.width, mini.height]).toEqual([28, 8]);
+  expect(mini.x).toBeCloseTo(bar.x, 0);
+  expect(mini.x).toBeGreaterThan(field.x + field.width);
+  expect(mini.midY).toBeCloseTo(bar.midY, 0);
+  expect(mini.midY).toBeCloseTo(field.midY, 0);
+});
+
+test('Play runs the four tones of a set on the page, once, with sounds off', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY, { sounds: false, soundSet: 'soft' });
+  const page = await openSettingsPage('settings/sound');
+  // Records what the page asks its audio contexts to play, in order.
+  await page.evaluate(() => {
+    const log = { contexts: 0, notes: [], waves: [], filters: 0 };
+    window.__cues = log;
+    const Real = window.AudioContext;
+    window.AudioContext = class extends Real {
+      constructor() {
+        super();
+        log.contexts += 1;
+      }
+
+      createOscillator() {
+        const oscillator = super.createOscillator();
+        const start = oscillator.start.bind(oscillator);
+        oscillator.start = (when) => {
+          log.notes.push(oscillator.frequency.value);
+          log.waves.push(oscillator.type);
+          start(when);
+        };
+        return oscillator;
+      }
+
+      createBiquadFilter() {
+        log.filters += 1;
+        return super.createBiquadFilter();
+      }
+    };
+  });
+  const warm = page.locator('[data-play="warm"]');
+  await expect(warm).toHaveAccessibleName('Play Warm');
+
+  await warm.click();
+  await expect(warm).toHaveAttribute('aria-disabled', 'true');
+  // Playwright waits for an enabled button, which is the thing under test: dispatch the press.
+  await page.locator('[data-play="soft"]').dispatchEvent('click');
+  await expect(warm).not.toHaveAttribute('aria-disabled', 'true', { timeout: 8000 });
+
+  const log = await page.evaluate(() => window.__cues);
+  const notes = CUE_NAMES.flatMap((name) => CUE_SETS.warm.notes[name].map(({ freq }) => freq));
+  expect(log.notes).toEqual(notes);
+  expect(log.contexts).toBe(CUE_NAMES.length);
+  expect(new Set(log.waves)).toEqual(new Set(['triangle']));
+  expect(log.filters).toBe(notes.length);
+  // Pressing Play does not choose the set.
+  await expect(page.locator('input[name="sound-set"][value="soft"]')).toBeChecked();
+  expect((await storedSettings()).soundSet).toBe('soft');
 });
 
 test('Home counts the words of a dictation', async () => {

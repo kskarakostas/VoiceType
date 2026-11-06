@@ -301,10 +301,56 @@
                 <input type="radio" name="pill-style" value="minimal">
                 <span class="style-preview" aria-hidden="true"><span class="preview-field"></span><span class="preview-mini"></span></span>
                 <span class="style-name">Minimal</span>
-                <span class="hint">Nothing until you record, then a small indicator at the bottom of the page. Start and stop with the hotkey. There is no menu on the page; change settings here or in the toolbar popup.</span>
+                <span class="hint">Nothing until you record, then a small indicator beside the field. Start and stop with the hotkey.</span>
               </label>
             </div>
             <p class="hint">Sites with Hide pill use Minimal.</p>
+            <div class="option-group" id="mini-size-group" role="radiogroup" aria-labelledby="mini-size-label" hidden>
+              <div class="field-label" id="mini-size-label">Minimal size</div>
+              <div class="style-grid style-grid-compact">
+                <label class="style-card">
+                  <input type="radio" name="mini-size" value="small">
+                  <span class="style-name">Small</span>
+                </label>
+                <label class="style-card">
+                  <input type="radio" name="mini-size" value="medium">
+                  <span class="style-name">Medium</span>
+                </label>
+                <label class="style-card">
+                  <input type="radio" name="mini-size" value="large">
+                  <span class="style-name">Large</span>
+                </label>
+                <label class="style-card">
+                  <input type="radio" name="mini-size" value="xlarge">
+                  <span class="style-name">Extra large</span>
+                </label>
+              </div>
+            </div>
+            <div class="option-group" role="radiogroup" aria-labelledby="rec-color-label">
+              <div class="field-label" id="rec-color-label">Recording colour</div>
+              <div class="style-grid style-grid-compact">
+                <label class="style-card">
+                  <input type="radio" name="rec-color" value="red">
+                  <span class="style-name"><span class="swatch swatch-red" aria-hidden="true"></span>Classic red</span>
+                </label>
+                <label class="style-card">
+                  <input type="radio" name="rec-color" value="vampire">
+                  <span class="style-name"><span class="swatch swatch-vampire" aria-hidden="true"></span>Vampire red</span>
+                </label>
+                <label class="style-card">
+                  <input type="radio" name="rec-color" value="obsidian">
+                  <span class="style-name"><span class="swatch swatch-obsidian" aria-hidden="true"></span>Obsidian purple</span>
+                </label>
+                <label class="style-card">
+                  <input type="radio" name="rec-color" value="emerald">
+                  <span class="style-name"><span class="swatch swatch-emerald" aria-hidden="true"></span>Emerald green</span>
+                </label>
+                <label class="style-card">
+                  <input type="radio" name="rec-color" value="mocha">
+                  <span class="style-name"><span class="swatch swatch-mocha" aria-hidden="true"></span>Mocha brown</span>
+                </label>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -313,6 +359,32 @@
           <div class="card">
             <label class="check"><input type="checkbox" id="sounds" aria-describedby="sounds-hint">Play sounds</label>
             <p class="hint" id="sounds-hint">Short tones when recording starts, when it stops, when the text is ready, and when something goes wrong.</p>
+            <div class="option-group" role="radiogroup" aria-labelledby="sound-set-label" aria-describedby="sound-set-hint">
+              <div class="field-label" id="sound-set-label">Sound set</div>
+              <div class="style-grid style-grid-compact">
+                <div class="style-card">
+                  <input type="radio" name="sound-set" id="sound-set-soft" value="soft">
+                  <label class="style-name" for="sound-set-soft">Soft</label>
+                  <button type="button" class="btn" data-play="soft" aria-label="Play Soft">Play</button>
+                </div>
+                <div class="style-card">
+                  <input type="radio" name="sound-set" id="sound-set-warm" value="warm">
+                  <label class="style-name" for="sound-set-warm">Warm</label>
+                  <button type="button" class="btn" data-play="warm" aria-label="Play Warm">Play</button>
+                </div>
+                <div class="style-card">
+                  <input type="radio" name="sound-set" id="sound-set-tap" value="tap">
+                  <label class="style-name" for="sound-set-tap">Single tap</label>
+                  <button type="button" class="btn" data-play="tap" aria-label="Play Single tap">Play</button>
+                </div>
+                <div class="style-card">
+                  <input type="radio" name="sound-set" id="sound-set-classic" value="classic">
+                  <label class="style-name" for="sound-set-classic">Classic</label>
+                  <button type="button" class="btn" data-play="classic" aria-label="Play Classic">Play</button>
+                </div>
+              </div>
+            </div>
+            <p class="hint" id="sound-set-hint">Play runs the four tones of a set in turn: start, stop, ready and error. It plays even with Play sounds off.</p>
             <label class="check"><input type="checkbox" id="always-copy" aria-describedby="always-copy-hint">Always copy the result</label>
             <p class="hint" id="always-copy-hint">Also copies every dictation to the clipboard. This replaces whatever is on the clipboard.</p>
           </div>

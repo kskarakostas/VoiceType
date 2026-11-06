@@ -203,6 +203,9 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 
 .style-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 .style-grid + .hint { margin-top: 10px; }
+/* The size, colour and sound set choices: the same cards, narrower, with no preview. */
+.style-grid-compact { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+.option-group { display: grid; gap: 6px; margin-top: 16px; }
 
 .style-card {
   position: relative;
@@ -249,6 +252,10 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .style-card .hint { margin-top: 0; }
 .style-name { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; font-weight: 600; }
 
+/* A card's own button sits above the radio that covers the card, so a press on it plays and does not choose. */
+.style-card .btn { position: relative; z-index: 1; justify-self: start; margin-top: 2px; }
+.btn[aria-disabled="true"] { cursor: default; opacity: 0.6; }
+
 .tag {
   padding: 0 6px;
   border-radius: 999px;
@@ -284,7 +291,22 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .preview-bar, .preview-dot, .preview-mini { position: absolute; background: var(--accent); }
 .preview-bar { top: 18px; left: 112px; width: 36px; height: 12px; border-radius: 999px; }
 .preview-dot { top: 19px; left: 112px; width: 10px; height: 10px; border-radius: 50%; }
-.preview-mini { bottom: 6px; left: 50%; width: 28px; height: 8px; border-radius: 999px; transform: translateX(-50%); }
+.preview-mini { top: 20px; left: 112px; width: 28px; height: 8px; border-radius: 999px; }
+
+/* Recording colour swatches: the values of --vt-rec in pill.css, which a unit test compares. They
+   are the one place this sheet names a colour; the name and the card's mark say which is chosen. */
+
+.swatch { flex: none; width: 16px; height: 16px; border: 1px solid var(--border-strong); border-radius: 50%; }
+.swatch-red { background: #dc2626; }
+.swatch-vampire { background: #db2d4a; }
+.swatch-obsidian { background: #8b3fe8; }
+.swatch-emerald { background: #0a8461; }
+.swatch-mocha { background: #a0603a; }
+
+/* A swatch shows a colour, so forced colors leave it its own. The edge is a system colour. */
+@media (forced-colors: active) {
+  .swatch { forced-color-adjust: none; border-color: CanvasText; }
+}
 
 /* History */
 

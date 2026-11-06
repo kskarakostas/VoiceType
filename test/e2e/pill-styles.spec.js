@@ -564,7 +564,7 @@ test('the Appearance page has no sideways scroll at 380 px', async () => {
   await page.setViewportSize({ width: 380, height: 800 });
   await page.goto(`chrome-extension://${extensionId}/options.html#settings/appearance`);
   await expect(page.locator('input[name="pill-style"][value="dot"]')).toBeChecked();
-  await expect(page.locator('.style-card').last()).toBeVisible();
+  await expect(page.locator('section[data-route="settings/appearance"] .style-card').last()).toBeVisible();
 
   const { scroll, client } = await page.evaluate(() => ({
     scroll: document.documentElement.scrollWidth,

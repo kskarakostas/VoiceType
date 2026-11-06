@@ -3,7 +3,8 @@
 // values through getComputedStyle, so a background the mode took reads as the page's. Run with
 // `npm run test:e2e`, which builds dist/ first.
 import { test, expect } from '@playwright/test';
-import { launchExtension, seedSettings, openFields, focusField, pillCall, startWithHotkey, DUMMY_KEY, MINI } from './helpers.js';
+import { REC_COLORS } from '../../src/shared/defaults.js';
+import { launchExtension, seedSettings, openFields, focusField, pillCall, startWithHotkey, DUMMY_KEY, MINI, RED } from './helpers.js';
 import { decodePng } from './png.js';
 
 /** Keeps a row of text off the ends of the plate. */
@@ -81,6 +82,30 @@ test('each style preview shows the pill as well as the field', async () => {
     await expect(locator).toBeVisible();
     expect(await backgroundOf(locator), mark).not.toBe(await backgroundOf(page.locator('.style-preview', { has: locator })));
   }
+});
+
+test('a recording colour swatch keeps its own colour, and the chosen card keeps its mark', async () => {
+  await seedSettings(vt.serviceWorker, DUMMY_KEY, { recColor: 'red' });
+  const page = await openOptions('settings/appearance');
+  const radio = (value) => page.locator(`input[name="rec-color"][value="${value}"]`);
+  const card = (value) => page.locator('.style-card', { has: radio(value) });
+  await expect(radio('red')).toBeChecked();
+
+  const swatches = await Promise.all(REC_COLORS.map((value) => card(value).locator('.swatch').evaluate((el) => {
+    const { backgroundColor, borderTopColor, borderTopStyle } = getComputedStyle(el);
+    return { backgroundColor, borderTopColor, borderTopStyle };
+  })));
+  expect(new Set(swatches.map((s) => s.backgroundColor)).size).toBe(REC_COLORS.length);
+  expect(swatches[0].backgroundColor).toBe(`rgb(${RED.join(', ')})`);
+  for (const swatch of swatches) {
+    expect(swatch.borderTopStyle).toBe('solid');
+    expect(swatch.borderTopColor).not.toBe(swatch.backgroundColor);
+  }
+
+  const outline = (value) => card(value).evaluate((el) => getComputedStyle(el).outlineStyle);
+  expect(await outline('red')).toBe('solid');
+  expect(await outline('mocha')).toBe('none');
+  await expect(card('red').locator('.style-name')).toHaveText('Classic red');
 });
 
 for (const [name, pillStyle] of [['the pill bar', 'pill'], ['the collapsed dot', 'dot']]) {

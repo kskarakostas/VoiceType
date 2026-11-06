@@ -85,7 +85,9 @@ describe('extension page stylesheets and markup', () => {
   });
 
   it('options.css adds no colour token', () => {
-    expect(OPTIONS_CSS).not.toMatch(/--[\w-]+\s*:/);
-    expect(OPTIONS_CSS).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(/);
+    // The recording colour swatches show pill.css's colours, and appearance.test.js compares them.
+    const css = OPTIONS_CSS.replace(/\.swatch-\w+\s*{\s*background:\s*#[0-9a-f]{6};\s*}/g, '');
+    expect(css).not.toMatch(/--[\w-]+\s*:/);
+    expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(/);
   });
 });

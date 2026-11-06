@@ -4,7 +4,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { initOptions } from '../../../src/options/options.js';
 import { MSG } from '../../../src/shared/messages.js';
-import { freshSettings } from '../../../src/shared/defaults.js';
+import { freshSettings, SOUND_SETS } from '../../../src/shared/defaults.js';
+import { CUE_NAMES } from '../../../src/offscreen/cues.js';
+
+// The page plays through createCuePlayer; the real cues keep their other exports.
+const { play, createCuePlayer } = vi.hoisted(() => {
+  const play = vi.fn();
+  return { play, createCuePlayer: vi.fn() };
+});
+vi.mock('../../../src/offscreen/cues.js', async (importOriginal) => ({ ...(await importOriginal()), createCuePlayer }));
 
 // jsdom replaces the global URL, so resolve paths with node:path rather than new URL().
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/options/options.html'), 'utf8');
@@ -51,6 +59,21 @@ function fakeChrome(initial = storedSettings()) {
 
 const $ = (id) => document.getElementById(id);
 const flush = () => new Promise((r) => setTimeout(r, 0));
+const section = () => document.querySelector(`section[data-route="${ROUTE}"]`);
+const setRadio = (value) => section().querySelector(`input[name="sound-set"][value="${value}"]`);
+const checkedSets = () => [...section().querySelectorAll('input[name="sound-set"]')].filter((r) => r.checked).map((r) => r.value);
+const playButtons = () => [...section().querySelectorAll('[data-play]')];
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
+};
+
+/** Presses a button and lets what it started settle. */
+async function press(selector) {
+  document.querySelector(selector).click();
+  await flush();
+}
 
 function start(chrome) {
   window.history.replaceState(null, '', `#${ROUTE}`);
@@ -58,6 +81,10 @@ function start(chrome) {
 }
 
 beforeEach(() => {
+  play.mockReset();
+  play.mockResolvedValue({ ok: true });
+  createCuePlayer.mockReset();
+  createCuePlayer.mockImplementation(() => ({ play }));
   document.body.innerHTML = new DOMParser().parseFromString(HTML, 'text/html').body.innerHTML;
   window.history.replaceState(null, '', '/');
 });
@@ -137,5 +164,164 @@ describe('settings page Sound and clipboard', () => {
     const hintOf = (id) => $($(id).getAttribute('aria-describedby')).textContent;
     expect(hintOf('sounds')).toBe(SOUNDS_HINT);
     expect(hintOf('always-copy')).toBe(COPY_HINT);
+  });
+});
+
+describe('settings page Sound and clipboard, sound sets', () => {
+  it('checks the stored set, and a stored change moves it', async () => {
+    const chrome = fakeChrome(storedSettings({ soundSet: 'warm' }));
+    await start(chrome);
+    expect(checkedSets()).toEqual(['warm']);
+    chrome.stored = storedSettings({ soundSet: 'classic' });
+    chrome.fire();
+    await flush();
+    expect(checkedSets()).toEqual(['classic']);
+  });
+
+  it('a fresh record shows Soft', async () => {
+    await start(fakeChrome());
+    expect(checkedSets()).toEqual(['soft']);
+  });
+
+  it('saves a sound set', async () => {
+    const chrome = fakeChrome();
+    await start(chrome);
+    setRadio('tap').click();
+    await flush();
+    expect(chrome.saves()).toEqual([{ soundSet: 'tap' }]);
+  });
+
+  it('a failed save puts the stored set back', async () => {
+    const chrome = fakeChrome(storedSettings({ soundSet: 'warm' }));
+    await start(chrome);
+    chrome.failNextSave = true;
+    setRadio('tap').click();
+    await flush();
+    expect(checkedSets()).toEqual(['warm']);
+  });
+
+  it('lists the four sets in order as a labelled group, each with a Play button that names it', async () => {
+    await start(fakeChrome());
+    const radios = [...section().querySelectorAll('input[name="sound-set"]')];
+    const group = radios[0].closest('[role="radiogroup"]');
+    expect(radios.map((r) => r.value)).toEqual(SOUND_SETS);
+    expect(radios.every((r) => r.closest('[role="radiogroup"]') === group)).toBe(true);
+    expect($(group.getAttribute('aria-labelledby')).textContent).toBe('Sound set');
+    const names = ['Soft', 'Warm', 'Single tap', 'Classic'];
+    expect(radios.map((r) => r.closest('.style-card').querySelector('.style-name').textContent.trim())).toEqual(names);
+    expect(playButtons().map((b) => b.dataset.play)).toEqual(SOUND_SETS);
+    expect(playButtons().map((b) => [b.textContent, b.getAttribute('aria-label'), b.type])).toEqual(
+      names.map((name) => ['Play', `Play ${name}`, 'button']),
+    );
+    // A button inside a label is not valid markup and would split the card's two jobs.
+    expect(section().querySelector('label button')).toBeNull();
+  });
+
+  it('each radio is named by its own label', async () => {
+    await start(fakeChrome());
+    const radios = [...section().querySelectorAll('input[name="sound-set"]')];
+    expect(radios).toHaveLength(SOUND_SETS.length);
+    for (const r of radios) {
+      expect(r.labels).toHaveLength(1);
+      expect(r.labels[0].textContent.trim()).not.toBe('');
+    }
+  });
+
+  it('plays the four cues of a set in turn, with sounds off too', async () => {
+    await start(fakeChrome(storedSettings({ sounds: false })));
+    await press('[data-play="warm"]');
+    expect(play.mock.calls).toEqual(CUE_NAMES.map((name) => [name, 'warm']));
+  });
+
+  it('plays the four cues in turn: the next waits for the last', async () => {
+    const gates = CUE_NAMES.map(() => deferred());
+    let n = 0;
+    play.mockImplementation(() => gates[n++].promise);
+    await start(fakeChrome());
+    document.querySelector('[data-play="tap"]').click();
+    await flush();
+    expect(play).toHaveBeenCalledTimes(1);
+    gates[0].resolve({ ok: true });
+    await flush();
+    expect(play).toHaveBeenCalledTimes(2);
+    for (const gate of gates.slice(1)) gate.resolve({ ok: true });
+    await flush();
+    expect(play.mock.calls).toEqual(CUE_NAMES.map((name) => [name, 'tap']));
+  });
+
+  it('Play previews a set and does not choose it', async () => {
+    const chrome = fakeChrome(storedSettings({ soundSet: 'soft' }));
+    await start(chrome);
+    await press('[data-play="classic"]');
+    expect(chrome.saves()).toEqual([]);
+    expect(checkedSets()).toEqual(['soft']);
+  });
+
+  it('builds the player at the first press, once, over an AudioContext', async () => {
+    class FakeAudioContext {}
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    try {
+      await start(fakeChrome());
+      expect(createCuePlayer).not.toHaveBeenCalled();
+      await press('[data-play="soft"]');
+      await press('[data-play="warm"]');
+      expect(createCuePlayer).toHaveBeenCalledTimes(1);
+      expect(createCuePlayer.mock.calls[0][0].createContext()).toBeInstanceOf(FakeAudioContext);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a second press while a set plays does nothing', async () => {
+    const gate = deferred();
+    play.mockImplementation(() => gate.promise);
+    await start(fakeChrome());
+    document.querySelector('[data-play="soft"]').click();
+    document.querySelector('[data-play="warm"]').click();
+    document.querySelector('[data-play="soft"]').click();
+    gate.resolve({ ok: true });
+    await flush();
+    expect(play.mock.calls).toEqual(CUE_NAMES.map((name) => [name, 'soft']));
+  });
+
+  it('the buttons say they are busy while a set plays, and are free after', async () => {
+    const gate = deferred();
+    play.mockImplementation(() => gate.promise);
+    await start(fakeChrome());
+    const busy = () => playButtons().map((b) => b.getAttribute('aria-disabled'));
+    document.querySelector('[data-play="soft"]').click();
+    expect(busy()).toEqual(['true', 'true', 'true', 'true']);
+    gate.resolve({ ok: true });
+    await flush();
+    expect(busy()).toEqual([null, null, null, null]);
+    play.mockClear();
+    await press('[data-play="warm"]');
+    expect(play.mock.calls).toEqual(CUE_NAMES.map((name) => [name, 'warm']));
+  });
+
+  it('a cue that cannot play ends the set, since the rest would each wait out the same timeout', async () => {
+    play.mockResolvedValue({ ok: false });
+    await start(fakeChrome());
+    await press('[data-play="soft"]');
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(playButtons().every((b) => !b.hasAttribute('aria-disabled'))).toBe(true);
+  });
+
+  it('a player that cannot start leaves the page working', async () => {
+    createCuePlayer.mockImplementation(() => { throw new Error('no audio'); });
+    await start(fakeChrome());
+    await expect(press('[data-play="soft"]')).resolves.toBeUndefined();
+    expect(playButtons().every((b) => !b.hasAttribute('aria-disabled'))).toBe(true);
+    // The next press tries again, and a save still works.
+    createCuePlayer.mockImplementation(() => ({ play }));
+    await press('[data-play="soft"]');
+    expect(play).toHaveBeenCalledTimes(CUE_NAMES.length);
+  });
+
+  it('a play that rejects leaves the page working', async () => {
+    play.mockRejectedValue(new Error('closed'));
+    await start(fakeChrome());
+    await expect(press('[data-play="soft"]')).resolves.toBeUndefined();
+    expect(playButtons().every((b) => !b.hasAttribute('aria-disabled'))).toBe(true);
   });
 });
