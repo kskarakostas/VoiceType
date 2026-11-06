@@ -52,6 +52,15 @@ describe('icons', () => {
   it('logo.png is a PNG of 360 by 360', () => {
     expect(pngSize('logo.png')).toEqual({ width: 360, height: 360 });
   });
+
+  it('build.mjs copies every icon the manifest names to the same path under dist', () => {
+    // build.mjs bundles on import, so read its STATICS pairs as text.
+    const statics = [...readFileSync(new URL('../../build.mjs', import.meta.url), 'utf8').matchAll(/\['([^']+)', '([^']+)'\]/g)];
+    const copied = new Set(statics.filter(([, from, to]) => from === to).map(([, from]) => from));
+    const named = new Set([...Object.values(manifest.icons), ...Object.values(manifest.action.default_icon)]);
+    expect(named.size).toBe(4);
+    for (const path of named) expect(copied.has(path), `build.mjs does not list ${path}`).toBe(true);
+  });
 });
 
 describe('content script', () => {
