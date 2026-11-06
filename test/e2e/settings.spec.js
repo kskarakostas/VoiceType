@@ -240,6 +240,26 @@ test('a key pasted on the settings page survives closing the tab one second late
   await expect(reopened.locator('#key-openai')).toHaveValue('');
 });
 
+test('a 3.1 record with dictation on the new edit chord says so on the Recording page, until the chord moves', async () => {
+  const { editHotkey, ...record } = await storedSettings();
+  record.hotkey = editHotkey;
+  await serviceWorker.evaluate((s) => chrome.storage.local.set({ settings: s }), record);
+
+  const page = await openSettingsPage('settings/recording');
+  const hint = page.locator('#edit-hotkey-hint');
+  await expect(page.locator('#edit-hotkey')).toHaveText('Ctrl+Shift+E');
+  await expect(hint).toHaveText('Same as the dictation hotkey, so this one does nothing. Click it and press another.');
+
+  await page.locator('#edit-hotkey').click();
+  await page.keyboard.press('Control+Shift+K');
+  await expect(page.locator('#edit-hotkey')).toHaveText('Ctrl+Shift+K');
+  await expect(hint).not.toHaveAttribute('data-tone');
+  await expect(hint).toContainText('Select text in a field');
+  await expect.poll(async () => (await storedSettings()).editHotkey?.code).toBe('KeyK');
+
+  await seedSettings(serviceWorker, DUMMY_KEY);
+});
+
 test('the pill reflects a mode chosen on the settings page within one second', async () => {
   await seedSettings(serviceWorker, DUMMY_KEY);
   const fields = await openFields(context);

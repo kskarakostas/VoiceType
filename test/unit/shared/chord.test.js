@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isValidChord, matchesChord, chordFromEvent, formatChord } from '../../../src/shared/chord.js';
+import { isValidChord, matchesChord, sameChord, chordFromEvent, formatChord } from '../../../src/shared/chord.js';
 
 const CTRL_SHIFT_SPACE = { code: 'Space', ctrl: true, shift: true, alt: false, meta: false };
 
@@ -58,6 +58,24 @@ describe('matchesChord', () => {
     expect(matchesChord(key('Space', { shift: true }), { code: 'Space', ctrl: false, shift: true, alt: false, meta: false })).toBe(false);
     expect(matchesChord(key('Space', { ctrl: true, shift: true }), null)).toBe(false);
     expect(matchesChord(null, CTRL_SHIFT_SPACE)).toBe(false);
+  });
+});
+
+describe('sameChord', () => {
+  it('needs the same code and the same four modifiers', () => {
+    expect(sameChord(CTRL_SHIFT_SPACE, { ...CTRL_SHIFT_SPACE })).toBe(true);
+    expect(sameChord(CTRL_SHIFT_SPACE, { ...CTRL_SHIFT_SPACE, code: 'KeyE' })).toBe(false);
+    for (const flag of ['ctrl', 'shift', 'alt', 'meta']) {
+      const other = { ...CTRL_SHIFT_SPACE, [flag]: !CTRL_SHIFT_SPACE[flag] };
+      expect(sameChord(CTRL_SHIFT_SPACE, other)).toBe(false);
+    }
+  });
+
+  it('is false for an invalid chord, even the same one twice', () => {
+    expect(sameChord(null, null)).toBe(false);
+    expect(sameChord(CTRL_SHIFT_SPACE, undefined)).toBe(false);
+    const noModifier = { code: 'KeyE', ctrl: false, shift: false, alt: false, meta: false };
+    expect(sameChord(noModifier, noModifier)).toBe(false);
   });
 });
 

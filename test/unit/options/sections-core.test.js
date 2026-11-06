@@ -487,6 +487,54 @@ describe('settings page edit hotkey recorder', () => {
     expect(chrome.saves()).toHaveLength(0);
   });
 
+  describe('with both chords the same in storage', () => {
+    const DEAD_CHORD = 'Same as the dictation hotkey, so this one does nothing. Click it and press another.';
+    const CTRL_SHIFT_E_CHORD = { code: 'KeyE', ctrl: true, shift: true, alt: false, meta: false };
+    const onEditChord = () => fakeChrome({ ...storedSettings(), hotkey: CTRL_SHIFT_E_CHORD });
+
+    it('says so under the edit hotkey, and only there', async () => {
+      await start(onEditChord(), 'settings/recording');
+      expect($('edit-hotkey-hint').textContent).toBe(DEAD_CHORD);
+      expect($('edit-hotkey-hint').dataset.tone).toBe('error');
+      expect($('hotkey-hint').textContent).toBe(IDLE_HINT);
+      expect($('hotkey-hint').dataset.tone).toBeUndefined();
+    });
+
+    it('comes back when the recorder is cancelled', async () => {
+      await start(onEditChord(), 'settings/recording');
+      const button = $('edit-hotkey');
+      button.click();
+      expect($('edit-hotkey-hint').textContent).toBe('Press the new hotkey. Esc cancels.');
+      keydown(button, { code: 'Escape', key: 'Escape' });
+      expect($('edit-hotkey-hint').textContent).toBe(DEAD_CHORD);
+      expect($('edit-hotkey-hint').dataset.tone).toBe('error');
+    });
+
+    it('goes when the edit chord changes', async () => {
+      const chrome = onEditChord();
+      await start(chrome, 'settings/recording');
+      const button = $('edit-hotkey');
+      button.click();
+      keydown(button, { code: 'KeyK', key: 'k', ctrlKey: true, shiftKey: true });
+      await flush();
+      expect(chrome.saves().at(-1).editHotkey.code).toBe('KeyK');
+      expect($('edit-hotkey-hint').textContent).toBe(EDIT_HINT);
+      expect($('edit-hotkey-hint').dataset.tone).toBeUndefined();
+    });
+
+    it('goes when the dictation chord changes', async () => {
+      const chrome = onEditChord();
+      await start(chrome, 'settings/recording');
+      const button = $('hotkey');
+      button.click();
+      keydown(button, CTRL_SHIFT_SPACE);
+      await flush();
+      expect(chrome.saves().at(-1).hotkey.code).toBe('Space');
+      expect($('edit-hotkey-hint').textContent).toBe(EDIT_HINT);
+      expect($('edit-hotkey-hint').dataset.tone).toBeUndefined();
+    });
+  });
+
   it('arming one recorder disarms the other', async () => {
     await start(fakeChrome(), 'settings/recording');
     const hotkey = $('hotkey');

@@ -44,6 +44,16 @@ export function matchesChord(event, chord) {
 }
 
 /**
+ * True for two valid chords a press cannot tell apart.
+ * @param {Chord|null|undefined} a
+ * @param {Chord|null|undefined} b
+ * @returns {boolean}
+ */
+export function sameChord(a, b) {
+  return isValidChord(a) && isValidChord(b) && a.code === b.code && FLAGS.every((flag) => a[flag] === b[flag]);
+}
+
+/**
  * The chord a keydown would record, or null for modifier-only keys, Escape, Tab, or a
  * key pressed without Ctrl, Alt or Meta.
  * @param {{ code: string, ctrlKey: boolean, shiftKey: boolean, altKey: boolean, metaKey: boolean }|null|undefined} event

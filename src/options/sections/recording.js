@@ -1,7 +1,7 @@
 // Settings, Recording: length limits, silence auto-stop and the two hotkey recorders. Ported from
 // the 2.2 popup; changes save through ctx.commit.
 import { AUTO_STOP_CHOICES } from '../../shared/defaults.js';
-import { formatChord, chordFromEvent, matchesChord } from '../../shared/chord.js';
+import { formatChord, chordFromEvent, matchesChord, sameChord } from '../../shared/chord.js';
 
 /** @typedef {import('../options.js').PageContext} PageContext */
 /** @typedef {import('../options.js').Section} Section */
@@ -12,24 +12,21 @@ const HOTKEY_ARMED_HINT = 'Press the new hotkey. Esc cancels.';
 const HOTKEY_INVALID_HINT = 'Use Ctrl, Alt or Cmd with a key';
 const SAME_AS_DICTATION_HINT = 'Same as the dictation hotkey.';
 const SAME_AS_EDIT_HINT = 'Same as the edit hotkey.';
+const DEAD_EDIT_HOTKEY_HINT = 'Same as the dictation hotkey, so this one does nothing. Click it and press another.';
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'AltGraph', 'Meta', 'OS']);
 
 /**
  * One chord button. A press the other recorder holds is refused like an invalid one: nothing
- * saves and the button stays armed for another press (V41).
+ * saves and the button stays armed for another press (V41). `deadHint` replaces the idle hint while
+ * storage holds the two chords equal, which a recorder never saves: a 3.1 user on the new default.
  * @param {PageContext} ctx
- * @param {{ button: HTMLElement, hint: HTMLElement, idleHint: string, field: 'hotkey'|'editHotkey',
+ * @param {{ button: HTMLElement, hint: HTMLElement, idleHint: string, deadHint?: string, field: 'hotkey'|'editHotkey',
  *   otherField: 'hotkey'|'editHotkey', sameHint: string, savedLabel: string }} recorder
  * @returns {{ render: () => void }}
  */
-function createChordRecorder(ctx, { button, hint, idleHint, field, otherField, sameHint, savedLabel }) {
+function createChordRecorder(ctx, { button, hint, idleHint, deadHint, field, otherField, sameHint, savedLabel }) {
   const { mac } = ctx;
   let armed = false;
-
-  function render() {
-    button.textContent = armed ? 'Press keys' : formatChord(ctx.settings()[field], { mac });
-    button.setAttribute('aria-pressed', String(armed));
-  }
 
   function setHint(text, tone) {
     hint.textContent = text;
@@ -37,9 +34,19 @@ function createChordRecorder(ctx, { button, hint, idleHint, field, otherField, s
     else delete hint.dataset.tone;
   }
 
+  function render() {
+    const settings = ctx.settings();
+    button.textContent = armed ? 'Press keys' : formatChord(settings[field], { mac });
+    button.setAttribute('aria-pressed', String(armed));
+    if (armed) return;
+    const dead = deadHint && sameChord(settings[field], settings[otherField]);
+    const text = dead ? deadHint : idleHint;
+    // Every save renders, and the hint is a live region: an unchanged one is not announced again.
+    if (hint.textContent !== text) setHint(text, dead ? 'error' : undefined);
+  }
+
   function disarm() {
     armed = false;
-    setHint(idleHint);
     render();
   }
 
@@ -94,7 +101,7 @@ export function createRecordingSection(ctx) {
       field: 'hotkey', otherField: 'editHotkey', sameHint: SAME_AS_EDIT_HINT, savedLabel: 'Hotkey',
     }),
     createChordRecorder(ctx, {
-      button: $('edit-hotkey'), hint: $('edit-hotkey-hint'), idleHint: EDIT_HOTKEY_IDLE_HINT,
+      button: $('edit-hotkey'), hint: $('edit-hotkey-hint'), idleHint: EDIT_HOTKEY_IDLE_HINT, deadHint: DEAD_EDIT_HOTKEY_HINT,
       field: 'editHotkey', otherField: 'hotkey', sameHint: SAME_AS_DICTATION_HINT, savedLabel: 'Edit hotkey',
     }),
   ];
