@@ -12,7 +12,7 @@ import { formatChord } from '../../../src/shared/chord.js';
 const HTML = readFileSync(join(import.meta.dirname, '../../../src/options/options.html'), 'utf8');
 const SETTINGS_CHANGE = { settings: { newValue: {} } };
 const RESET_PROMPT = 'Click again to reset. Custom modes will be deleted.';
-const RESET_HINT = 'Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the dictation and edit hotkeys, the pill style, sounds and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.';
+const RESET_HINT = 'Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the dictation and edit hotkeys, the pill style, Minimal\'s size, the recording colour, sounds, the sound set and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.';
 
 function bucket(sessions, audioSeconds, cost) {
   return {

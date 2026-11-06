@@ -69,7 +69,7 @@ Hide the pill on a site, or give a site its own mode.
 Your last 20 dictations stay in memory until you close the browser: insert or copy the last one, or undo a mode's edit. One switch turns it off.
 
 ### 🎨 Pill Styles
-Dot (the default), Pill or Minimal. Optional sounds, and an option to also copy every result.
+Dot (the default), Pill or Minimal, which comes in four sizes. Five recording colours. Optional sounds in four sets, and an option to also copy every result.
 
 ### 🔒 Privacy First
 Keys stay in your browser's local extension storage, readable only by VoiceType's own extension pages, never synced. Audio goes straight to the provider you chose. No server of ours exists.
@@ -136,7 +136,7 @@ Keys stay in your browser's local extension storage, readable only by VoiceType'
   <img src="screenshots/light/settings-appearance.png" alt="Settings page, Appearance" width="380">
 </picture><br>
 <strong>Appearance</strong><br>
-<em>Pill, Dot or Minimal</em>
+<em>Pill, Dot or Minimal, and the recording colour</em>
 </td>
 </tr>
 </table>
@@ -290,18 +290,20 @@ The settings page opens in a tab, also from **Extension options** on `chrome://e
   - **Maximum length** (30 s to 5 min; default 2 min): recording stops at this length, the pill says "Max time reached", and what you said is transcribed.
   - **Silence auto-stop** (Off, 2, 3 or 5 s; default Off): once you have spoken, recording stops after this much silence.
   - **Edit hotkey** (default `Ctrl+Shift+E`): see Edit by Voice above. If it matches the dictation hotkey, as it does if you had moved dictation to `Ctrl+Shift+E`, dictation wins, it does nothing and this page says so until you change one of them. **Reset to defaults** resets it.
-- **Sites**: **Hide pill** removes the idle pill on a site; the hotkey still records there, with a small indicator at the bottom of the page. **Mode** gives a site its own mode. The rule goes by hostname, without `www.`; subdomains need their own rule. On a site with a mode, a mode picked in the pill menu updates that site; **Use active mode** clears it.
+- **Sites**: **Hide pill** removes the idle pill on a site; the hotkey still records there, with a small indicator at the bottom of the page. That indicator is always Small, whatever Minimal size you chose, and takes the recording colour; a status stands above it while it shows. **Mode** gives a site its own mode. The rule goes by hostname, without `www.`; subdomains need their own rule. On a site with a mode, a mode picked in the pill menu updates that site; **Use active mode** clears it.
 - **History**: your last 20 dictations with time, site and mode. A dictation in a frame from another site shows **This device** instead of a site. **Copy** takes the text, **Copy original** the transcript from before a mode changed it. An edit shows **Edit selection** as its mode: **Copy** takes the result and **Copy instruction** what you said. The selected text is not kept, though a result can repeat most of it. **Keep recent dictations** is on by default; turning it off clears them. A dictation in an incognito tab is not kept.
 - **Appearance**
   - **Dot** (default): a small dot beside the field that opens into the bar when you point at it.
   - **Pill**: the full bar beside the field, always in view.
-  - **Minimal**: nothing until you record, then a small indicator at the bottom of the page. Start and stop with the hotkey. There is no menu on the page.
-- **Sound and clipboard**: **Play sounds** gives short tones for start, stop, done and error. **Always copy the result** also copies every dictation. Both are off by default.
+  - **Minimal**: nothing until you record, then a small indicator beside the field (left of it if there is room, else right, above or below), or at the bottom of the page when the field has no room around it or is out of view. A click goes through it. Start and stop with the hotkey. There is no menu on the page.
+  - **Minimal size** (Small, Medium, Large or Extra large; default Medium): the indicator's size and its number of level bars, 4, 6, 8 or 10. It shows while Minimal is the style.
+  - **Recording colour** (Classic red, Vampire red, Obsidian purple, Emerald green or Mocha brown; default Classic red): the colour of the REC button, the glow that follows your voice and Minimal's level bars, in every style. An error stays red and a success stays green whatever you choose.
+- **Sound and clipboard**: **Play sounds** gives short tones for start, stop, done and error. **Sound set** (Soft, Warm, Single tap or Classic; default Soft) picks the tones: **Play** beside a set plays its four tones in turn, even with Play sounds off. **Always copy the result** also copies every dictation. Play sounds and Always copy are both off by default.
 - Every change saves on its own; there is no Save button. A new mode is saved with **Create mode**, a new site rule with **Add**.
 - **Clear** on History, **Clear usage history** and **Reset to defaults** need two separate clicks: the first changes the button's label, the second confirms. A double click or a held Enter does not confirm them.
 - **Reset to defaults** keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice. Custom modes are deleted, so a site rule that uses one loses its mode.
 
-If the frame you dictate in is out of sight, hidden or covered, VoiceType shows the small indicator at the bottom of the page, in every style. It also stays on top of modal dialogs, popovers and fullscreen elements. Under a modal dialog it can be seen but not clicked: use the hotkey, or close the dialog to click a "click here to copy" status.
+If the frame you dictate in is out of sight, hidden or covered, VoiceType shows the small indicator at the bottom of the page, in every style. It is always Small and takes the recording colour, and a status stands above it while it shows. It also stays on top of modal dialogs, popovers and fullscreen elements. Under a modal dialog it can be seen but not clicked: use the hotkey, or close the dialog to click a "click here to copy" status.
 
 ---
 

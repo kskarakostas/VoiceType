@@ -135,7 +135,7 @@ describe('settings page Appearance', () => {
     await start(fakeChrome());
     const card = (value) => radio(value).closest('.style-card');
     const hint = (value) => card(value).querySelector('.hint').textContent;
-    expect(hint('minimal')).toBe('Nothing until you record, then a small indicator beside the field. Start and stop with the hotkey.');
+    expect(hint('minimal')).toBe('Nothing until you record, then a small indicator beside the field. Start and stop with the hotkey. There is no menu on the page; change settings here or in the toolbar popup.');
     expect(hint('pill')).toBe('The full bar beside the field, always in view.');
     expect(hint('dot')).toBe('A small dot beside the field. It opens into the bar when you point at it.');
     expect(card('dot').querySelector('.tag').textContent).toBe('Default');
