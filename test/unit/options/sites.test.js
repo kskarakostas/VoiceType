@@ -113,7 +113,7 @@ afterEach(() => {
 describe('sites page markup', () => {
   it('has the hint, the form and the table with its columns', async () => {
     await start(fakeChrome());
-    expect(document.querySelector('section[data-route="settings/sites"] .placeholder')).toBeNull();
+    expect(document.querySelector('section[data-part="settings/sites"] .placeholder')).toBeNull();
     expect(document.querySelector('.site-hint').textContent).toBe('Hide pill removes the idle pill on that site; the hotkey still records there, with a small indicator at the bottom of the page.');
     expect(document.querySelector('label[for="site-add-host"]').textContent).toBe('Add site');
     expect($('site-add-hide').checked).toBe(true);
