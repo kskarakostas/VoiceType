@@ -289,9 +289,9 @@ The settings page opens in a tab, also from **Extension options** on `chrome://e
   - **Minimum length** (0.5, 1, 2 or 3 s; default 1 s): shorter recordings are discarded as accidental clicks, and the pill says "Too short, ignored".
   - **Maximum length** (30 s to 5 min; default 2 min): recording stops at this length, the pill says "Max time reached", and what you said is transcribed.
   - **Silence auto-stop** (Off, 2, 3 or 5 s; default Off): once you have spoken, recording stops after this much silence.
-  - **Edit hotkey** (default `Ctrl+Shift+E`): see Edit by Voice above. **Reset to defaults** resets it.
+  - **Edit hotkey** (default `Ctrl+Shift+E`): see Edit by Voice above. If it matches the dictation hotkey, as it does if you had moved dictation to `Ctrl+Shift+E`, dictation wins, it does nothing and this page says so until you change one of them. **Reset to defaults** resets it.
 - **Sites**: **Hide pill** removes the idle pill on a site; the hotkey still records there, with a small indicator at the bottom of the page. **Mode** gives a site its own mode. The rule goes by hostname, without `www.`; subdomains need their own rule. On a site with a mode, a mode picked in the pill menu updates that site; **Use active mode** clears it.
-- **History**: your last 20 dictations with time, site and mode. A dictation in a frame from another site shows **This device** instead of a site. **Copy** takes the text, **Copy original** the transcript from before a mode changed it. An edit shows **Edit selection** as its mode: **Copy** takes the result and **Copy instruction** what you said; the selected text is not kept. **Keep recent dictations** is on by default; turning it off clears them. A dictation in an incognito tab is not kept.
+- **History**: your last 20 dictations with time, site and mode. A dictation in a frame from another site shows **This device** instead of a site. **Copy** takes the text, **Copy original** the transcript from before a mode changed it. An edit shows **Edit selection** as its mode: **Copy** takes the result and **Copy instruction** what you said. The selected text is not kept, though a result can repeat most of it. **Keep recent dictations** is on by default; turning it off clears them. A dictation in an incognito tab is not kept.
 - **Appearance**
   - **Dot** (default): a small dot beside the field that opens into the bar when you point at it.
   - **Pill**: the full bar beside the field, always in view.
@@ -427,7 +427,7 @@ No. Audio must be sent to OpenAI or Google for AI processing.
 - ✅ API keys stored in plain text in Chrome's local extension storage, readable only by VoiceType's own service worker and extension pages, never synced, never sent anywhere but the provider
 - ✅ Web pages never receive your keys or your microphone; audio is recorded in VoiceType's own extension page
 - ✅ Audio sent directly to OpenAI/Google (not our servers)
-- ✅ Selected text leaves the device only after a press of the edit hotkey, only from the focused field and only to the chosen provider's text model. It is not kept; the result and your instruction sit in recent dictations
+- ✅ Selected text leaves the device only after a press of the edit hotkey, only from the focused field and only to the chosen provider's text model. It is not kept; the result and your instruction sit in recent dictations, and a result can repeat most of it
 - ✅ Audio and an edit's selected text are held in Chrome's session storage, in memory, while a dictation is processing, so a stopped service worker can retry once, a second provider charge. If a stopped worker leaves them behind, they go when the tab closes or the next time the worker runs after two minutes, at the latest at browser close
 - ✅ Site rules and your dictionary stay on this device; dictionary terms go to the provider with each recording
 - ✅ The `clipboardWrite` permission lets VoiceType copy results with no click, for **Always copy the result** and for text it cannot insert, or when the page does not take the result within 5 seconds. It never reads the clipboard

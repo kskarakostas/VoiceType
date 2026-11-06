@@ -18,8 +18,8 @@ VoiceType collects and processes the following data **locally on your device**:
 4. **Dictionary**: The terms you add, by language
 5. **Site Rules**: The hostnames you add a rule for, with that rule (Hide pill, mode). Recent dictations (item 7) also hold the site of each dictation, and a dictation being processed holds its site until it ends (see Data Storage); no other site is stored
 6. **Usage Statistics**: Session counts, audio duration, word counts, modes used, and estimated costs per day. Word counts are numbers; the statistics hold no transcript and no selected text
-7. **Recent dictations**: With Keep recent dictations on, which is the default, the text of your last 20 dictations, the transcript before a mode changed it, the mode, the site and the time. For an edit, that is the replacement and your spoken instruction, never the selected text. Off, none of this is kept. A dictation in an incognito tab is never kept, nor is one run again after a stopped service worker (see Data Storage)
-8. **Selected Text**: With the edit hotkey, the text you selected in the focused field, taken at that press and from nowhere else. It is held in memory from that press until the edit ends (see Data Storage) and sent as described under Data Transmission. It is not stored after that
+7. **Recent dictations**: With Keep recent dictations on, which is the default, the text of your last 20 dictations, the transcript before a mode changed it, the mode, the site and the time. For an edit, that is the replacement and your spoken instruction. The selected text itself is not saved, but a replacement can repeat most of it, as after "fix the comma". Off, none of this is kept. A dictation in an incognito tab is never kept, nor is one run again after a stopped service worker (see Data Storage)
+8. **Selected Text**: With the edit hotkey, the text you selected in the focused field, taken at that press and from nowhere else. It is held in memory from that press until the edit ends (see Data Storage) and sent as described under Data Transmission. It is not stored after that, apart from what a replacement repeats (item 7)
 
 ### What We Do NOT Collect
 
