@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computePillPosition, computeMenuPlacement, computeIndicatorPosition, EDGE, CORNER_MARGIN } from '../../../src/content/position.js';
+import { computePillPosition, computeMenuPlacement, computeIndicatorPosition, computeMiniPosition, EDGE, CORNER_MARGIN } from '../../../src/content/position.js';
 
 const viewport = { width: 1000, height: 800 };
 const pill = { width: 100, height: 40 };
@@ -206,5 +206,40 @@ describe('computeIndicatorPosition', () => {
   it('clamps to EDGE in a viewport smaller than it', () => {
     expect(computeIndicatorPosition({ indicator, viewport: { width: 60, height: 20 } }))
       .toEqual({ top: EDGE, left: EDGE, placement: 'minimal' });
+  });
+});
+
+describe('computeMiniPosition', () => {
+  const viewport = { width: 1000, height: 700 };
+  const indicator = { width: 124, height: 34 };
+  const at = (anchor) => computeMiniPosition({ anchor, indicator, viewport, gap: 8 });
+
+  it('stands left of a field with room', () => {
+    expect(at({ top: 100, left: 300, width: 300, height: 60 }).placement).toBe('left');
+  });
+
+  it('takes the bottom centre with no field', () => {
+    expect(at(null)).toEqual(computeIndicatorPosition({ indicator, viewport }));
+  });
+
+  it('takes the bottom centre for a field out of view', () => {
+    expect(at({ top: 900, left: 300, width: 300, height: 60 }).placement).toBe('minimal');
+  });
+
+  it('never goes inside: a field filling the window gives the bottom centre', () => {
+    expect(at({ top: 0, left: 0, width: 1000, height: 700 }).placement).toBe('minimal');
+  });
+
+  it('Extra large in a narrow window with a wide field goes above, not over the field', () => {
+    const out = computeMiniPosition({ anchor: { top: 300, left: 20, width: 350, height: 60 }, indicator: { width: 184, height: 46 }, viewport: { width: 400, height: 700 }, gap: 8 });
+    expect(out.placement).toBe('above');
+  });
+
+  it('falls to the right of a field flush with the left edge', () => {
+    expect(at({ top: 100, left: 0, width: 500, height: 60 })).toEqual({ top: 100 + (60 - 34) / 2, left: 508, placement: 'right' });
+  });
+
+  it('goes below a full-width field at the top of the window', () => {
+    expect(at({ top: 20, left: 0, width: 1000, height: 100 })).toEqual({ top: 128, left: EDGE, placement: 'below' });
   });
 });

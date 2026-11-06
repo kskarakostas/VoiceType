@@ -68,6 +68,21 @@ export function computeIndicatorPosition({ indicator, viewport }) {
   };
 }
 
+const BESIDE = new Set(['left', 'right', 'above', 'below']);
+
+/**
+ * Places the Minimal indicator beside its field with the pill's order: left, else right,
+ * else above, else below. It never takes the pill's inside slot, which would cover text:
+ * with no slot outside the field, no field, or a field out of view, it sits at the bottom
+ * centre.
+ * @param {{ anchor: Box|null, indicator: Size, viewport: Size, gap: number }} input
+ * @returns {{ top: number, left: number, placement: 'left'|'right'|'above'|'below'|'minimal' }}
+ */
+export function computeMiniPosition({ anchor, indicator, viewport, gap }) {
+  const beside = computePillPosition({ anchor, pill: indicator, viewport, gap });
+  return BESIDE.has(beside.placement) ? beside : computeIndicatorPosition({ indicator, viewport });
+}
+
 /**
  * Opens the menu below the pill when it fits, else above when it fits there, else on the
  * side with more room, capped by maxHeight to that room. It never overlaps the pill and is
