@@ -295,10 +295,7 @@ Click the VoiceType icon for the quick panel, 320 px wide, top to bottom:
 - The list is closed every time the quick panel opens, and none of your words are in the panel until you press the arrow.
 - The arrow shows only with 2 or more dictations. With **Keep recent dictations** off, neither **Copy last** nor the arrow shows.
 
-The settings page opens in a tab, also from **Extension options** on `chrome://extensions`. **Home**, **Modes**, **Dictionary** and **History** are pages of their own. **Settings** is one page in seven parts, each under its own heading: **Provider**, **Recording**, **Speech**, **Sites**, **Appearance**, **Sound and clipboard**, **Usage and data**.
-
-- The sidebar lists the seven parts under Settings. Pressing one scrolls to that part and puts the focus on its heading. Scrolling by hand changes neither the address nor the marked entry, which stays on the part you last pressed.
-- Each part keeps its address, such as `options.html#settings/sites`, and `#settings` alone opens Provider. A link or bookmark made before 3.4 lands on the same part.
+The settings page opens in a tab, also from **Extension options** on `chrome://extensions`. **Home**, **Modes**, **Dictionary** and **History** are pages of their own. **Settings** is one page in seven parts, each under its own heading: **Provider**, **Recording**, **Speech**, **Sites**, **Appearance**, **Sound and clipboard**, **Usage and data**. The sidebar lists the seven parts under Settings. Pressing one scrolls to that part and puts the focus on its heading. Scrolling by hand changes neither the address nor the marked entry, which stays on the part you last pressed. Each part keeps its address, such as `options.html#settings/sites`, and `#settings` alone opens Provider. A link or bookmark made before 3.4 lands on the same part.
 
 - **Recording**
   - **Minimum length** (0.5, 1, 2 or 3 s; default 1 s): shorter recordings are discarded as accidental clicks, and the pill says "Too short, ignored".
