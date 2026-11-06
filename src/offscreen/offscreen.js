@@ -87,7 +87,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.action === MSG.OFFSCREEN_CUE) {
-    cues.play(message.cue).then(sendResponse);
+    cues.play(message.cue, message.set).then(sendResponse);
     return true;
   }
   if (message?.action === MSG.OFFSCREEN_COPY) {

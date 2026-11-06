@@ -56,8 +56,8 @@ export const MSG = Object.freeze({
  * `empty` marks a capture that ended with no audio and no recorder error; it comes with the duration.
  * @typedef {{ error: string, captureId: string, empty?: true, durationSec?: number }} OffscreenError
  * @typedef {'start'|'stop'|'done'|'error'} CueName
- * Both answer { ok: boolean }.
- * @typedef {{ cue: CueName }} OffscreenCue
+ * Both answer { ok: boolean }. `set` is the recording's sound set (V62); the offscreen document plays Soft for a missing or unknown one.
+ * @typedef {{ cue: CueName, set?: import('./defaults.js').Settings['soundSet'] }} OffscreenCue
  * @typedef {{ text: string }} OffscreenCopy
  * The rule of the top-level page. Content scripts get this one rule, never `siteRules`.
  * @typedef {{ hidePill: boolean, mode: string|null }} SiteState

@@ -28,7 +28,7 @@ export const RESULT_SEND_LIMIT_MS = 5000;
  * @typedef {{ endpoint: Endpoint, state: 'starting'|'recording'|'processing', modeKey: string, minSec: number }} Session
  * Internally a session also holds the id of its offscreen capture: reports that name any other
  * capture are stale (a cancelled recording finishing late) and are dropped. It also holds the
- * `sounds` and `alwaysCopy` settings, read once at start, `liveAt`, when the recording went live,
+ * `sounds`, `soundSet` and `alwaysCopy` settings, read once at start, `liveAt`, when the recording went live,
  * `unseen`: its frame reported the indicator out of sight, so frame 0 is mirroring it,
  * `mirrorLost`: frame 0 had no receiver for the last mirror message, and `host` and `incognito`,
  * for the history: the frame's site as the router worked it out (V26), and whether the tab is incognito.
@@ -70,7 +70,7 @@ async function within(ms, work) {
  * }} deps
  */
 export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermissionPage, getSettings, dictate, pending, bootId, now }) {
-  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null, sounds: boolean, alwaysCopy: boolean, unseen: boolean, mirrorLost: boolean, liveAt: number, host: string|null, incognito: boolean, editText: string|null, resumed: boolean })} */
+  /** @type {null | (Session & { captureId: string, stopRequested: boolean, starting: Promise<StartResponse>|null, sounds: boolean, soundSet: import('../shared/defaults.js').Settings['soundSet']|undefined, alwaysCopy: boolean, unseen: boolean, mirrorLost: boolean, liveAt: number, host: string|null, incognito: boolean, editText: string|null, resumed: boolean })} */
   let session = null;
   /** @type {Endpoint|null} */
   let pendingPermission = null;
@@ -133,7 +133,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
   /** Play a cue when the session has sounds on. Fire and forget: a cue never delays or fails a dictation. */
   function cue(s, name) {
     if (!s.sounds) return;
-    ensureOffscreen().then(() => toOffscreen({ action: MSG.OFFSCREEN_CUE, cue: name })).catch(() => {});
+    ensureOffscreen().then(() => toOffscreen({ action: MSG.OFFSCREEN_CUE, cue: name, set: s.soundSet })).catch(() => {});
   }
 
   /**
@@ -228,10 +228,10 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
    * @returns {Promise<{ alive: boolean }>}
    */
   async function resume(record) {
-    const { endpoint, modeKey, host, incognito, sounds, alwaysCopy, editText, captureId, at } = record;
+    const { endpoint, modeKey, host, incognito, sounds, soundSet, alwaysCopy, editText, captureId, at } = record;
     const s = {
       endpoint, state: /** @type {const} */ ('processing'), modeKey, minSec: 0,
-      captureId, stopRequested: false, starting: null, sounds, alwaysCopy,
+      captureId, stopRequested: false, starting: null, sounds, soundSet, alwaysCopy,
       // The worker that knew about frame 0's mirror is gone: a subframe takes down what may be up.
       unseen: endpoint.frameId !== 0, mirrorLost: false, liveAt: at, host, incognito, editText, resumed: true,
     };
@@ -274,6 +274,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
     s.modeKey = s.editText === null ? ruleFor(settings, tabUrl).mode ?? settings.activeMode : EDIT_MODE;
     s.minSec = settings.minRecordingTime;
     s.sounds = settings.sounds === true;
+    s.soundSet = settings.soundSet;
     s.alwaysCopy = settings.alwaysCopy === true;
 
     let reply = null;
@@ -334,7 +335,7 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       // Reserve synchronously so a start from another frame during the awaits below is busy.
       const s = {
         endpoint: { ...endpoint }, state: 'starting', modeKey: 'default', minSec: 0,
-        captureId: crypto.randomUUID(), stopRequested: false, starting: null, sounds: false, alwaysCopy: false,
+        captureId: crypto.randomUUID(), stopRequested: false, starting: null, sounds: false, soundSet: undefined, alwaysCopy: false,
         unseen: false, mirrorLost: false, liveAt: 0, host, incognito, editText, resumed: false,
       };
       session = s;
@@ -415,11 +416,11 @@ export function createRecorder({ ensureOffscreen, toOffscreen, toTab, openPermis
       cue(s, 'stop');
       const { audioBase64, mimeType } = payload;
       const at = now();
-      const { captureId, endpoint, modeKey, host, incognito, sounds, alwaysCopy, editText } = s;
+      const { captureId, endpoint, modeKey, host, incognito, sounds, soundSet, alwaysCopy, editText } = s;
       holder = s;
       sweepAt = at + PENDING_WINDOW_MS;
       // Landed or not, the dictation goes ahead: a failed write costs it its recovery and nothing else (V51).
-      await write({ captureId, endpoint, modeKey, host, incognito, sounds, alwaysCopy, audioBase64, mimeType, durationSec, editText, bootId, at, attempts: 0 });
+      await write({ captureId, endpoint, modeKey, host, incognito, sounds, soundSet, alwaysCopy, audioBase64, mimeType, durationSec, editText, bootId, at, attempts: 0 });
       if (session !== s) return; // cancelled, or an edit's tab closed, during the write: no provider call
       await run(s, { audioBase64, mimeType, durationSec });
     },

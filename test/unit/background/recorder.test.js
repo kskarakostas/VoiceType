@@ -1472,6 +1472,65 @@ describe('cues', () => {
     await t.recorder.start(A);
     expect(t.recorder.session).toStrictEqual({ endpoint: A, state: 'recording', modeKey: 'email', minSec: 1 });
   });
+
+  describe('the sound set (V62)', () => {
+    const cueMessages = (t) => t.offscreenMessages().filter((m) => m.action === MSG.OFFSCREEN_CUE);
+
+    it('sends the session soundSet with each cue', async () => {
+      const t = setup({ settings: { sounds: true, soundSet: 'warm' } });
+      await dictation(t);
+      expect(t.offscreenMessages()).toContainEqual({ action: MSG.OFFSCREEN_CUE, cue: 'start', set: 'warm' });
+      expect(cueMessages(t)).toEqual(['start', 'stop', 'done'].map((cue) => ({ action: MSG.OFFSCREEN_CUE, cue, set: 'warm' })));
+    });
+
+    it('sends Soft, the default, when the setting was never touched', async () => {
+      const t = setup(SOUNDS);
+      await dictation(t);
+      expect(cueMessages(t).map((m) => m.set)).toEqual(['soft', 'soft', 'soft']);
+    });
+
+    it('a setting changed during a recording waits for the next one', async () => {
+      const t = setup({ settings: { sounds: true, soundSet: 'warm' } });
+      await t.recorder.start(A);
+      t.settings.soundSet = 'tap';
+      await t.recorder.stop(A);
+      await t.recorder.onDone(done({ captureId: t.id() }));
+      await flush();
+      expect(cueMessages(t).map((m) => [m.cue, m.set])).toEqual([['start', 'warm'], ['stop', 'warm'], ['done', 'warm']]);
+
+      await dictation(t);
+      expect(cueMessages(t).slice(3).map((m) => [m.cue, m.set])).toEqual([['start', 'tap'], ['stop', 'tap'], ['done', 'tap']]);
+    });
+
+    it('the error cue carries the set too', async () => {
+      const t = setup({ settings: { sounds: true, soundSet: 'tap' } });
+      t.deps.dictate.mockRejectedValueOnce(new Error('bug'));
+      await dictation(t);
+      expect(cueMessages(t).at(-1)).toEqual({ action: MSG.OFFSCREEN_CUE, cue: 'error', set: 'tap' });
+    });
+
+    it('stores the session soundSet in the pending record', async () => {
+      const t = setup({ settings: { sounds: true, soundSet: 'warm' } });
+      await dictation(t);
+      expect(t.deps.pending.save).toHaveBeenCalledWith(expect.objectContaining({ sounds: true, soundSet: 'warm' }));
+    });
+
+    it('a recovered dictation keeps the stored soundSet', async () => {
+      const t = setup({ record: leftBehind({ soundSet: 'tap' }), settings: { soundSet: 'warm' } });
+      await t.recorder.ping(A);
+      await flush();
+      expect(cueMessages(t)).toEqual([{ action: MSG.OFFSCREEN_CUE, cue: 'done', set: 'tap' }]);
+      expect(t.deps.pending.save).toHaveBeenCalledWith(leftBehind({ soundSet: 'tap', attempts: 1, bootId: BOOT }));
+    });
+
+    it('a record from 3.2 has no soundSet: its cue names none, and the offscreen document plays Soft', async () => {
+      const t = setup({ record: leftBehind(), settings: { soundSet: 'warm' } });
+      expect(leftBehind()).not.toHaveProperty('soundSet');
+      await t.recorder.ping(A);
+      await flush();
+      expect(cueMessages(t)).toEqual([{ action: MSG.OFFSCREEN_CUE, cue: 'done' }]);
+    });
+  });
 });
 
 describe('a result with no receiver', () => {
@@ -1960,7 +2019,7 @@ describe('held audio (V51)', () => {
     await finished(t);
     expect(t.deps.pending.save).toHaveBeenCalledTimes(1);
     expect(t.deps.pending.save).toHaveBeenCalledWith({
-      captureId: t.id(), endpoint, modeKey: EDIT_MODE, host: 'example.com', incognito: true, sounds: true, alwaysCopy: true,
+      captureId: t.id(), endpoint, modeKey: EDIT_MODE, host: 'example.com', incognito: true, sounds: true, soundSet: 'soft', alwaysCopy: true,
       audioBase64: 'QUJD', mimeType: 'audio/webm', durationSec: 4.2, editText: 'old words', bootId: BOOT, at: T0, attempts: 0,
     });
     expect(t.deps.pending.save.mock.invocationCallOrder[0]).toBeLessThan(t.deps.dictate.mock.invocationCallOrder[0]);

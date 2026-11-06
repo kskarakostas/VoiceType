@@ -13,6 +13,8 @@ class FakeAudioContext {
     this.currentTime = 0;
     this.destination = {};
     this.close = vi.fn(async () => {});
+    this.oscillators = [];
+    this.filters = [];
     FakeAudioContext.created.push(this);
   }
 
@@ -26,11 +28,19 @@ class FakeAudioContext {
       start: vi.fn(),
       stop: vi.fn(() => { queueMicrotask(() => osc.onended?.()); }),
     };
+    this.oscillators.push(osc);
     return osc;
   }
 
+  createBiquadFilter() {
+    const filter = { frequency: {}, connect: vi.fn() };
+    this.filters.push(filter);
+    return filter;
+  }
+
   createGain() {
-    return { gain: { setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() }, connect: vi.fn() };
+    const param = { setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() };
+    return { gain: param, connect: vi.fn() };
   }
 }
 
@@ -83,6 +93,27 @@ describe('offscreen listener', () => {
     expect(FakeAudioContext.created).toHaveLength(1);
     expect(FakeAudioContext.created[0].close).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(FakeAudioContext.created[0].close).toHaveBeenCalledTimes(1));
+  });
+
+  it.each([
+    ['soft', 440, 0],
+    ['warm', 392, 2],
+    ['tap', 523, 0],
+    ['classic', 660, 0],
+  ])('plays the %s set named in the message: its first start note is %i Hz, with %i filters', async (set, freq, filters) => {
+    const { reply } = deliver({ action: MSG.OFFSCREEN_CUE, cue: 'start', set }, WORKER);
+    await expect(reply).resolves.toEqual({ ok: true });
+    const [ctx] = FakeAudioContext.created;
+    expect(ctx.oscillators[0].frequency.value).toBe(freq);
+    expect(ctx.filters).toHaveLength(filters);
+  });
+
+  it.each([[undefined], ['nope'], [7], [null]])('plays Soft for the set %j', async (set) => {
+    const { reply } = deliver({ action: MSG.OFFSCREEN_CUE, cue: 'start', set }, WORKER);
+    await expect(reply).resolves.toEqual({ ok: true });
+    const [ctx] = FakeAudioContext.created;
+    expect(ctx.oscillators.map((osc) => osc.frequency.value)).toEqual([440, 587]);
+    expect(ctx.filters).toEqual([]);
   });
 
   it('replies false to an unknown cue, with no context', async () => {

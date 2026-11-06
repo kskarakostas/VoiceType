@@ -72,7 +72,7 @@ async function installSpy({ refuseCopy = false } = {}) {
     globalThis.offscreenSpy = spy;
     chrome.runtime.sendMessage = function sendMessage(...args) {
       const action = args[0]?.action;
-      if (action === cueAction) spy.calls.push({ action, cue: args[0].cue });
+      if (action === cueAction) spy.calls.push({ action, cue: args[0].cue, set: args[0].set });
       if (action === copyAction) {
         spy.calls.push({ action });
         if (refuse) return Promise.resolve({ ok: false });
@@ -82,7 +82,7 @@ async function installSpy({ refuseCopy = false } = {}) {
   }, { cueAction: MSG.OFFSCREEN_CUE, copyAction: MSG.OFFSCREEN_COPY, refuse: refuseCopy });
 }
 
-/** @returns {Promise<{ action: string, cue?: string }[]|null>} null when the spy is gone. */
+/** @returns {Promise<{ action: string, cue?: string, set?: string }[]|null>} null when the spy is gone. */
 const offscreenCalls = () => serviceWorker.evaluate(() => globalThis.offscreenSpy?.calls ?? null);
 
 /** @param {import('@playwright/test').Page} page */
@@ -128,8 +128,17 @@ test('sounds on fires each cue once', async () => {
   await expect.poll(() => pillStatus(page)).toMatch(DONE);
   await page.waitForTimeout(SETTLE_MS);
   const calls = await offscreenCalls();
-  expect(calls).toEqual(['start', 'stop', 'done'].map((cue) => ({ action: MSG.OFFSCREEN_CUE, cue })));
+  expect(calls).toEqual(['start', 'stop', 'done'].map((cue) => ({ action: MSG.OFFSCREEN_CUE, cue, set: 'soft' })));
   expect(await readClipboard(page)).toBe(SENTINEL);
+});
+
+test('the cues carry the chosen sound set', async () => {
+  const { page, field } = await dictateInto('#ta', { sounds: true, soundSet: 'warm' });
+
+  await expect(field).toHaveValue(TRANSCRIPT);
+  await expect.poll(() => pillStatus(page)).toMatch(DONE);
+  await page.waitForTimeout(SETTLE_MS);
+  expect(await offscreenCalls()).toEqual(['start', 'stop', 'done'].map((cue) => ({ action: MSG.OFFSCREEN_CUE, cue, set: 'warm' })));
 });
 
 test('a double tap while the microphone opens is too short, with no error cue', async () => {
@@ -144,7 +153,7 @@ test('a double tap while the microphone opens is too short, with no error cue', 
 
   await expect.poll(() => pillStatus(page)).toBe('Too short, ignored');
   await page.waitForTimeout(SETTLE_MS);
-  expect(await offscreenCalls()).toEqual([{ action: MSG.OFFSCREEN_CUE, cue: 'start' }]);
+  expect(await offscreenCalls()).toEqual([{ action: MSG.OFFSCREEN_CUE, cue: 'start', set: 'soft' }]);
   await expect(field).toHaveValue('');
 });
 

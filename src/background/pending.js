@@ -7,10 +7,11 @@ const KEY = 'pendingDictation';
 /**
  * @typedef {{
  *   captureId: string, endpoint: import('./recorder.js').Endpoint, modeKey: string, host: string|null, incognito: boolean,
- *   sounds: boolean, alwaysCopy: boolean, audioBase64: string, mimeType: string, durationSec: number, editText: string|null,
+ *   sounds: boolean, soundSet?: import('../shared/defaults.js').Settings['soundSet'], alwaysCopy: boolean, audioBase64: string, mimeType: string, durationSec: number, editText: string|null,
  *   bootId: string, at: number, attempts: number,
  * }} PendingRecord
  * `bootId` is the worker that holds it, `at` when the audio arrived, `attempts` the runs after the first.
+ * `soundSet` is absent from a record a 3.2 worker left; its cues then play Soft.
  */
 
 /**
