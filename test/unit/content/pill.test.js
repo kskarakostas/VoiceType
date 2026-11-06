@@ -1021,6 +1021,52 @@ describe('styles', () => {
       expect(REC_COLORS).toEqual(['red', ...Object.keys(COLORS)]);
     });
 
+    describe('contrast of the recording colours (V60)', () => {
+      const SPEC = {
+        red: [4.83, 3.41], vampire: [4.68, 3.52], obsidian: [5.28, 3.12], emerald: [4.68, 3.52], mocha: [4.97, 3.32],
+      };
+      const WHITE = '#ffffff';
+      const DARK_SURFACE = '#1f1f1f';
+      const baseTokens = () => tokensOf(CSS_TEXT.match(/^\.vt \{[^}]*\}/m)[0]);
+      const darkTokens = () => tokensOf(CSS_TEXT.match(/@media \(prefers-color-scheme: dark\) \{\s*\.vt \{[^}]*\}/)[0]);
+      const recOf = (name) => (name === 'red' ? baseTokens() : tokensOf(colorRule(name)))['--vt-rec'];
+      const channel = (hex, at) => {
+        const value = parseInt(hex.slice(at, at + 2), 16) / 255;
+        return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      };
+      const luminance = (hex) => 0.2126 * channel(hex, 1) + 0.7152 * channel(hex, 3) + 0.0722 * channel(hex, 5);
+      const contrast = (a, b) => {
+        const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+        return (hi + 0.05) / (lo + 0.05);
+      };
+
+      it('the formula gives 21 for black on white', () => {
+        expect(contrast('#000000', WHITE)).toBeCloseTo(21, 5);
+      });
+
+      it('the surfaces and the REC text are the ones the limits name', () => {
+        expect(baseTokens()['--vt-surface']).toBe(WHITE);
+        expect(darkTokens()['--vt-surface']).toBe(DARK_SURFACE);
+        expect(baseTokens()['--vt-on-accent']).toBe(WHITE);
+      });
+
+      it.each(REC_COLORS)('%s: 4.5 to 1 with white, and 3 to 1 on both pill surfaces', (name) => {
+        const rec = recOf(name);
+        expect(contrast(rec, WHITE), `${name} ${rec} with white`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(rec, WHITE), `${name} ${rec} on the light surface`).toBeGreaterThanOrEqual(3);
+        expect(contrast(rec, DARK_SURFACE), `${name} ${rec} on the dark surface`).toBeGreaterThanOrEqual(3);
+      });
+
+      it.each(Object.entries(SPEC))('%s: the ratios are the ones table 4 measured', (name, [withWhite, onDark]) => {
+        const round = (value) => Math.round(value * 100) / 100;
+        expect([round(contrast(recOf(name), WHITE)), round(contrast(recOf(name), DARK_SURFACE))]).toEqual([withWhite, onDark]);
+      });
+
+      it('every colour the settings know is checked', () => {
+        expect(Object.keys(SPEC)).toEqual(REC_COLORS);
+      });
+    });
+
     it('a new Pill is Small, red and not beside a field', () => {
       const { pill } = makePill();
       pill.setStyle('minimal');
