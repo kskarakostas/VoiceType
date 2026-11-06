@@ -27,6 +27,8 @@ export function createRecent({ document, toast, copy }) {
   /** @type {string[]} */
   let texts = [];
   let open = false;
+  /** The texts the list's rows show now. */
+  let shown = [];
 
   /**
    * The first non-blank line, cut to RECENT_LINE_MAX characters. Counted by code point, so a cut never splits a pair.
@@ -62,7 +64,11 @@ export function createRecent({ document, toast, copy }) {
     if (toggle.hidden) open = false;
     toggle.setAttribute('aria-expanded', String(open));
     list.hidden = !open;
-    list.replaceChildren(...(open ? texts.map(row) : []));
+    // Rows stay while their texts do: a rebuild would drop a focused row and a press that spans it.
+    const next = open ? texts : [];
+    if (next.length === shown.length && next.every((text, i) => text === shown[i])) return;
+    shown = next;
+    list.replaceChildren(...next.map(row));
   }
 
   toggle.addEventListener('click', () => {

@@ -601,6 +601,28 @@ test('each settings hash lands with its heading in view, and moves no focus', as
   }
 });
 
+test('a failed load on a deep hash leaves the banner in view, and the page at its top', async () => {
+  const page = await context.newPage();
+  await page.setViewportSize(SHORT_WINDOW);
+  // Every message but the settings read goes through; that one fails as it does with the worker out of reach.
+  await page.addInitScript(() => {
+    const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+    chrome.runtime.sendMessage = (message, ...rest) => (
+      message?.action === 'getSettings' ? Promise.reject(new Error('e2e: no worker')) : send(message, ...rest)
+    );
+  });
+  await page.goto(extensionUrl('options.html#settings/provider'));
+
+  const banner = page.locator('#banner');
+  await expect(banner).toBeVisible();
+  await expect(page.locator('#banner-text')).toHaveText('Could not load settings. Reload this page.');
+  await expect(page.locator('section[data-route]:not([hidden])')).toHaveAttribute('data-route', 'settings');
+  // Past the load's first render, where the scroll to the hash used to run.
+  await expect(page.locator('#mode-list .mode-select').first()).toBeAttached();
+  await expect(banner).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
 test('the sidebar jumps between parts: heading focused, hash and mark moved, nothing reloaded', async () => {
   await seedSettings(serviceWorker, DUMMY_KEY);
   const page = await openSettingsPage('settings/provider', SHORT_WINDOW);

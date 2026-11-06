@@ -333,12 +333,14 @@ describe('settings page shell', () => {
     expect(scroll).not.toHaveBeenCalled();
   });
 
-  it('a failed load still scrolls to the part', async () => {
+  it('a failed load on a deep hash shows the part and the banner, and scrolls nothing, so the banner stays in view', async () => {
     const scroll = stubScroll();
     const chrome = fakeChrome();
     chrome.script(MSG.GET_SETTINGS, { error: 'nope' });
     await open('#settings/speech', chrome);
-    expect(scroll.mock.contexts.map((el) => el.id)).toEqual(['h-settings-speech']);
+    expect(visible()).toEqual(['settings']);
+    expect($('banner').hidden).toBe(false);
+    expect(scroll).not.toHaveBeenCalled();
   });
 
   it('a page without scrollIntoView still shows the part and focuses it', async () => {

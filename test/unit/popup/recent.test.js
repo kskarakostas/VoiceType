@@ -233,6 +233,28 @@ describe('recent dictations (V76)', () => {
     expect(list.textContent).toBe('');
   });
 
+  it('a render with the same entries keeps the rows, so a focused row keeps its focus', () => {
+    const { recent, list, toggle } = setup();
+    recent.render(entries(3), true);
+    toggle.click();
+    const before = rows(list);
+    before[1].focus();
+    expect(document.activeElement).toBe(before[1]);
+    recent.render(entries(3), true);
+    expect(document.activeElement).toBe(before[1]);
+    expect(rows(list).every((row, i) => row === before[i])).toBe(true);
+  });
+
+  it('a render with other entries rebuilds the rows', () => {
+    const { recent, list, toggle } = setup();
+    recent.render(entries(3), true);
+    toggle.click();
+    const before = rows(list);
+    recent.render([{ text: 'newest' }, ...entries(2)], true);
+    expect(rows(list).map((b) => b.textContent)).toEqual(['newest', 'dictation 0', 'dictation 1']);
+    expect(rows(list).some((row) => before.includes(row))).toBe(false);
+  });
+
   it('a new dictation updates an open list, and a closed one stays closed', () => {
     const { recent, list, toggle } = setup();
     recent.render(entries(2), true);

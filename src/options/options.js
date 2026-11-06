@@ -216,12 +216,14 @@ export async function initOptions({ chrome, document, window, sections = SECTION
 
   // Load.
 
-  if (!(await state.start())) {
+  if (await state.start()) {
+    // The page is as tall as it will be only after the first render, so a deep hash scrolls now.
+    showRoute({ focus: false });
+  } else {
+    // No scroll: the banner sits above main and would scroll out of sight with the hash's heading.
     el.bannerText.textContent = LOAD_ERROR;
     el.banner.hidden = false;
   }
-  // The page is as tall as it will be only after the first render, so a deep hash scrolls now.
-  showRoute({ focus: false });
 
   return {
     get settings() { return state.settings(); },
