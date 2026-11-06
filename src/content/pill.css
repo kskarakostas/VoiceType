@@ -177,8 +177,14 @@ button:focus-visible {
 
 /* Forced colors drop the surface, the shadow and the dot's marks: the outline keeps its shape. */
 @media (forced-colors: active) {
-  .body {
+  .body,
+  .mini {
     outline: 1px solid CanvasText;
+  }
+
+  /* A bar is only a background. A system colour stays; the parent outranks the rule further down. */
+  .mini .lvl {
+    background: CanvasText;
   }
 }
 

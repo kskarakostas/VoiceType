@@ -3,7 +3,7 @@
 // values through getComputedStyle, so a background the mode took reads as the page's. Run with
 // `npm run test:e2e`, which builds dist/ first.
 import { test, expect } from '@playwright/test';
-import { launchExtension, seedSettings, openFields, focusField, pillCall, DUMMY_KEY } from './helpers.js';
+import { launchExtension, seedSettings, openFields, focusField, pillCall, startWithHotkey, DUMMY_KEY, MINI } from './helpers.js';
 import { decodePng } from './png.js';
 
 /** Keeps a row of text off the ends of the plate. */
@@ -91,6 +91,28 @@ for (const [name, pillStyle] of [['the pill bar', 'pill'], ['the collapsed dot',
     expect(outlineWidth).toBeGreaterThan(0);
   });
 }
+
+test('Minimal keeps its level bars and an edge while it records', async () => {
+  await seedSettings(vt.serviceWorker, DUMMY_KEY, { pillStyle: 'minimal' });
+  const page = await openFields(vt.context);
+  await page.locator('#ta').click();
+  await startWithHotkey(page, page, { indicator: MINI });
+
+  const drawn = await pillCall(page, MINI, `function () {
+    const plate = getComputedStyle(this);
+    return {
+      plate: plate.backgroundColor,
+      outlineStyle: plate.outlineStyle,
+      outlineWidth: parseFloat(plate.outlineWidth),
+      bars: [...this.querySelectorAll('.lvl')].map((bar) => getComputedStyle(bar).backgroundColor),
+    };
+  }`);
+
+  expect(drawn.outlineStyle).toBe('solid');
+  expect(drawn.outlineWidth).toBeGreaterThan(0);
+  expect(drawn.bars).toHaveLength(4);
+  for (const bar of drawn.bars) expect(bar).not.toBe(drawn.plate);
+});
 
 test('a selected segment differs from an unselected one', async () => {
   const page = await openOptions('settings/provider');
