@@ -50,7 +50,13 @@ export function boot({
 
   const mirror = createMirror({
     // Frame 0's host first: at the same z-index the later host paints on top, so no status hides the mirror.
-    makePill: () => { pill.mount(); return new Pill({}); },
+    makePill: () => {
+      pill.mount();
+      const mirrored = new Pill({});
+      // Small at the bottom is a new Pill's own look; the colour is the user's.
+      mirrored.setLook({ recColor: controller.recColor() });
+      return mirrored;
+    },
     onChange: (up) => { pill.reserveIndicator(up); },
     setTimeout: (fn, ms) => setTimeout(fn, ms),
     clearTimeout: (id) => clearTimeout(id),

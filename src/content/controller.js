@@ -10,7 +10,7 @@ import { STATUS_MS } from './pill.js';
 
 /**
  * @typedef {import('./position.js').Box} Box
- * @typedef {Pick<import('./pill.js').Pill, 'show'|'reposition'|'hide'|'visible'|'host'|'setStyle'|'setState'|'setLevel'
+ * @typedef {Pick<import('./pill.js').Pill, 'show'|'reposition'|'hide'|'visible'|'host'|'setStyle'|'setLook'|'setState'|'setLevel'
  *   |'setStatus'|'clearStatus'|'renderMenu'|'destroy'>} PillLike
  * @typedef {'idle'|'starting'|'recording'|'processing'} ControllerState
  * @typedef {{
@@ -107,9 +107,11 @@ export function createController(deps) {
   let dead = false;
 
   const inactive = () => orphan || dead;
+  /** This site's rule hides the pill (V64). */
+  const hidden = () => settings?.site?.hidePill === true;
   const gap = () => (Number.isFinite(settings?.pillGap) && settings.pillGap >= 0 ? settings.pillGap : DEFAULT_GAP);
   /** The stored style, or Minimal where this site's rule hides the pill. */
-  const presentation = () => (settings?.site?.hidePill === true ? 'minimal' : settings?.pillStyle ?? 'dot');
+  const presentation = () => (hidden() ? 'minimal' : settings?.pillStyle ?? 'dot');
   /** No idle pill here. Recording, processing and statuses still show (V10). */
   const noIdlePill = () => presentation() === 'minimal';
   /** Nothing is running, so a press may record. A step still landing would finish on top of the recording. */
@@ -255,6 +257,8 @@ export function createController(deps) {
     if (!next || typeof next !== 'object' || !next.modes || typeof next.modes !== 'object') return;
     const hadNoIdlePill = noIdlePill();
     settings = next;
+    // A hidden site keeps the Small indicator at the bottom (V64); the colour is the user's either way.
+    pill.setLook({ miniSize: hidden() ? 'small' : settings.miniSize, recColor: settings.recColor, beside: !hidden() });
     pill.setStyle(presentation());
     render();
     if (noIdlePill() !== hadNoIdlePill) settle();
@@ -766,6 +770,8 @@ export function createController(deps) {
 
   return {
     setSettings,
+    /** The recording colour the mirror takes, as it has no settings of its own. */
+    recColor: () => settings?.recColor ?? 'red',
     setUsage,
     focusIn,
     focusOut,

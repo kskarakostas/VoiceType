@@ -20,6 +20,7 @@ function fakePill() {
     reposition: vi.fn(),
     hide: vi.fn(() => { pill.visible = false; }),
     setStyle: vi.fn(),
+    setLook: vi.fn(),
     setState: vi.fn(),
     setLevel: vi.fn(),
     setStatus: vi.fn(),
@@ -2291,10 +2292,66 @@ describe('presentation', () => {
     expect(t.pill.setStyle).toHaveBeenLastCalledWith('dot');
   });
 
-  it('settings that are refused set no style', () => {
+  it('settings that are refused set no style or look', () => {
     const t = setup();
     t.controller.setSettings({ pillStyle: 'pill' });
     expect(t.pill.setStyle).not.toHaveBeenCalled();
+    expect(t.pill.setLook).not.toHaveBeenCalled();
+  });
+
+  it('gives the pill the chosen look, beside the field', () => {
+    const t = setup();
+    t.controller.setSettings(settings({ pillStyle: 'minimal', miniSize: 'large', recColor: 'obsidian' }));
+    expect(t.pill.setLook).toHaveBeenLastCalledWith({ miniSize: 'large', recColor: 'obsidian', beside: true });
+  });
+
+  it('sets the look before the style, so a re-place for the style sees the size', () => {
+    const t = setup();
+    t.controller.setSettings(settings({ pillStyle: 'minimal', miniSize: 'large' }));
+    expect(t.pill.setLook.mock.invocationCallOrder[0]).toBeLessThan(t.pill.setStyle.mock.invocationCallOrder[0]);
+  });
+
+  it('Hide pill keeps Small at the bottom, with the colour', () => {
+    const t = setup();
+    t.controller.setSettings(settings({ miniSize: 'large', recColor: 'obsidian', site: { hidePill: true, mode: null } }));
+    expect(t.pill.setLook).toHaveBeenLastCalledWith({ miniSize: 'small', recColor: 'obsidian', beside: false });
+  });
+
+  it('a site without the rule keeps the chosen size beside the field', () => {
+    const t = setup();
+    t.controller.setSettings(settings({ miniSize: 'xlarge', recColor: 'mocha', site: { hidePill: false, mode: null } }));
+    expect(t.pill.setLook).toHaveBeenLastCalledWith({ miniSize: 'xlarge', recColor: 'mocha', beside: true });
+  });
+
+  it('a new rule on the same settings takes the look back', () => {
+    const t = setup();
+    t.controller.setSettings(settings({ miniSize: 'large', site: { hidePill: true, mode: null } }));
+    t.controller.setSettings(settings({ miniSize: 'large', site: { hidePill: false, mode: null } }));
+    expect(t.pill.setLook).toHaveBeenLastCalledWith({ miniSize: 'large', recColor: undefined, beside: true });
+  });
+
+  describe('recColor', () => {
+    it('is red before any settings', () => {
+      expect(setup().controller.recColor()).toBe('red');
+    });
+
+    it('is the stored colour', () => {
+      const t = setup();
+      t.controller.setSettings(settings({ recColor: 'emerald' }));
+      expect(t.controller.recColor()).toBe('emerald');
+    });
+
+    it('is red when the settings hold none', () => {
+      const t = setup();
+      t.controller.setSettings(settings());
+      expect(t.controller.recColor()).toBe('red');
+    });
+
+    it('is the stored colour on a hidden site, too', () => {
+      const t = setup();
+      t.controller.setSettings(settings({ recColor: 'mocha', site: { hidePill: true, mode: null } }));
+      expect(t.controller.recColor()).toBe('mocha');
+    });
   });
 
   it('Minimal shows no idle pill', () => {

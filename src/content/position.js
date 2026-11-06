@@ -56,7 +56,8 @@ export function computePillPosition({ anchor, pill, viewport, gap }) {
 }
 
 /**
- * Places the Minimal indicator at the bottom centre of the viewport, whatever the field.
+ * Places the Minimal indicator at the bottom centre of the viewport. It takes no field: computeMiniPosition
+ * falls back to this where there is none to stand beside.
  * @param {{ indicator: Size, viewport: Size }} input
  * @returns {{ top: number, left: number, placement: 'minimal' }}
  */

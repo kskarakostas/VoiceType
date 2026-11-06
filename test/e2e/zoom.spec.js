@@ -13,7 +13,9 @@ const ZOOMS = [2, 0.75];
 const GAP = 8;
 /** Constants of pill.js, which a spec cannot import: it imports its stylesheet. */
 const PILL_SIZE = { width: 140, height: 30 };
-const MINI_SIZE = { width: 92, height: 28 };
+/** Medium, the default size, stands beside the field; Small is the size of the bottom centre. */
+const MINI_BESIDE = { width: 124, height: 34 };
+const MINI_BOTTOM = { width: 92, height: 28 };
 const STATUS_GAP = 6;
 const MENU_GAP = 6;
 const MENU_WIDTH = 248;
@@ -23,7 +25,7 @@ const VIEWPORT = { width: 1280, height: 2000 };
 const PAGE_CSS = 'body { margin: 40px 0 0 300px; max-width: 300px; }';
 /** A field in px: a root zoom moves it without resizing it, so the anchor watcher hears nothing. */
 const PX_FIELD_CSS = '#ta { width: 240px; height: 60px; }';
-/** More than the corners of a stray pixel, less than Minimal's four level bars at a low level. */
+/** More than the corners of a stray pixel, less than Minimal's level bars at a low level. */
 const MIN_RED = 40;
 /** A raise from a tick must be back within this long. */
 const RAISE_BACK_MS = 1000;
@@ -87,25 +89,27 @@ const recordingMark = (style) => (style === 'minimal' ? MINI : STOP);
 const near = (a, b) => Math.abs(a - b) <= PX;
 
 /**
- * Whether a box is where Minimal goes: the bottom centre, in its own size, 16 px from the bottom.
+ * Whether a box is where Minimal goes with no field to stand by (Hide pill, the mirror): the bottom
+ * centre, Small, 16 px from the bottom.
  * @param {{ x: number, y: number, width: number, height: number }|null} box
  * @param {{ width: number, height: number }} viewport
  */
 function atBottomCentre(box, viewport) {
   if (!box) return false;
   return near(box.x, viewport.width / 2) && near(box.y + box.height / 2, viewport.height - CORNER_MARGIN)
-    && near(box.width, MINI_SIZE.width) && near(box.height, MINI_SIZE.height);
+    && near(box.width, MINI_BOTTOM.width) && near(box.height, MINI_BOTTOM.height);
 }
 
 /**
- * Whether `.pill` sits left of the field, in its own size, the gap away and level with it.
+ * Whether a box sits left of the field, in `size`, the gap away and level with it.
  * @param {{ x: number, y: number, width: number, height: number }|null} box
  * @param {{ left: number, top: number, height: number }} field
+ * @param {{ width: number, height: number }} size
  */
-function besideField(box, field) {
+function besideField(box, field, size) {
   if (!box) return false;
   return near(box.x + box.width / 2, field.left - GAP) && near(box.y, field.top + field.height / 2)
-    && near(box.width, PILL_SIZE.width) && near(box.height, PILL_SIZE.height);
+    && near(box.width, size.width) && near(box.height, size.height);
 }
 
 /** @param {{ x: number, y: number, width: number, height: number }|null} box @param {{ width: number, height: number }} viewport */
@@ -118,7 +122,7 @@ function inside(box, viewport) {
 const pillBox = (page) => pillQuery(page, '.pill');
 
 /**
- * The recording's indicator is where its style puts it, and paints.
+ * The recording's indicator is where its style puts it (Minimal beside the field, as the pill is), and paints.
  * @param {import('@playwright/test').Page} page
  * @param {'pill'|'dot'|'minimal'} style
  * @param {import('@playwright/test').Locator} field
@@ -127,11 +131,11 @@ const pillBox = (page) => pillQuery(page, '.pill');
 async function expectPlaced(page, style, field, timeout) {
   const viewport = await viewportOf(page);
   const options = { message: `${style} in place`, ...(timeout && { timeout }) };
+  const box = await fieldBox(field);
   if (style === 'minimal') {
-    await expect.poll(async () => atBottomCentre(await pillQuery(page, MINI), viewport), options).toBe(true);
+    await expect.poll(async () => besideField(await pillQuery(page, MINI), box, MINI_BESIDE), options).toBe(true);
   } else {
-    const box = await fieldBox(field);
-    await expect.poll(async () => besideField(await pillBox(page), box), options).toBe(true);
+    await expect.poll(async () => besideField(await pillBox(page), box, PILL_SIZE), options).toBe(true);
   }
   expect(inside(await pillQuery(page, style === 'minimal' ? MINI : '.pill'), viewport)).toBe(true);
   await expect.poll(() => countPixels(page, RED), { message: 'red pixels of the recording', ...(timeout && { timeout }) })
@@ -161,7 +165,10 @@ for (const zoom of ZOOMS) {
 
     await startWithHotkey(page, page, { indicator: MINI });
 
-    await expectPlaced(page, 'minimal', field);
+    const viewport = await viewportOf(page);
+    await expect.poll(async () => atBottomCentre(await pillQuery(page, MINI), viewport), { message: 'Small at the bottom centre' }).toBe(true);
+    expect(inside(await pillQuery(page, MINI), viewport)).toBe(true);
+    await expect.poll(() => countPixels(page, RED), { message: 'red pixels of the recording' }).toBeGreaterThan(MIN_RED);
   });
 
   test(`Done stands where it should at zoom ${zoom}, dot`, async () => {
@@ -196,10 +203,12 @@ for (const zoom of ZOOMS) {
     await expect(field).toHaveValue(TRANSCRIPT);
     await expect.poll(() => pillStatus(page)).toMatch(/^Done /);
     const viewport = await viewportOf(page);
+    const box = await fieldBox(field);
     const status = await pillQuery(page, STATUS);
     expect(inside(status, viewport)).toBe(true);
-    expect(near(status.x, viewport.width / 2)).toBe(true);
-    expect(near(status.y + status.height / 2, viewport.height - CORNER_MARGIN)).toBe(true);
+    // Beside the indicator as beside a pill: it grows leftwards from the indicator's right edge, below it.
+    expect(near(status.x + status.width / 2, box.left - GAP)).toBe(true);
+    expect(near(status.y - status.height / 2, box.top + box.height / 2 + MINI_BESIDE.height / 2 + STATUS_GAP)).toBe(true);
   });
 }
 
@@ -221,13 +230,14 @@ for (const style of ['dot', 'minimal']) {
   });
 }
 
-for (const style of ['dot', 'pill']) {
-  test(`a zoom change during a ${style} recording moves the pill to the field`, async () => {
+for (const style of ['dot', 'pill', 'minimal']) {
+  test(`a zoom change during a ${style} recording moves the ${style === 'minimal' ? 'indicator' : 'pill'} to the field`, async () => {
     await seedSettings(serviceWorker, DUMMY_KEY, { pillStyle: style });
     const page = await openZoomed(1);
     await page.addStyleTag({ content: PX_FIELD_CSS });
     const field = page.locator('#ta');
-    await focusField(page, field);
+    if (style === 'minimal') await field.click();
+    else await focusField(page, field);
     await startWithHotkey(page, page, { indicator: recordingMark(style) });
     await expectPlaced(page, style, field);
     const before = await fieldBox(field);

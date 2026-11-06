@@ -3,10 +3,12 @@
 // in a frame out of sight. Run with `npm run test:e2e`, which builds dist/ first.
 import { test, expect } from '@playwright/test';
 import {
-  launchExtension, seedSettings, openFields, pillQuery, mirrorQuery, viewportBox, pillStatus, waitForPill, clickPill,
-  focusField, indicatorShown, startWithHotkey, dictateWithHotkey, PORT, TRANSCRIPT, DUMMY_KEY, STOP, STATUS, MINI,
-  HOTKEY, RECORD_MS,
+  launchExtension, seedSettings, openFields, pillQuery, pillCall, mirrorQuery, viewportBox, pillStatus, waitForPill, clickPill,
+  focusField, indicatorShown, startWithHotkey, dictateWithHotkey, countPixels, PORT, TRANSCRIPT, DUMMY_KEY, STOP, STATUS, MINI,
+  HOTKEY, RECORD_MS, RED,
 } from './helpers.js';
+import { MINI_SIZES, REC_COLORS } from '../../src/shared/defaults.js';
+import { computeMiniPosition } from '../../src/content/position.js';
 
 const STYLES = ['pill', 'dot', 'minimal'];
 const HOLD = 'Return to the field to insert, or click here to copy.';
@@ -22,10 +24,29 @@ const SHORT_VIEWPORT = { width: 1280, height: 500 };
 /** With TALL_FRAME_PX, the bottom centre of the frame is far below the fold. */
 const TALL_VIEWPORT = { width: 1280, height: 600 };
 const TALL_FRAME_PX = 3000;
+/** Where the indicator stands in a tall frame: Minimal by the field, a hidden site at the bottom of the frame. */
 const TALL_FRAME_SITES = [
-  ['Minimal', { pillStyle: 'minimal' }],
-  ['a hidden site', { siteRules: { localhost: HIDE_ONLY } }],
+  ['Minimal', { pillStyle: 'minimal' }, 'field'],
+  ['a hidden site', { siteRules: { localhost: HIDE_ONLY } }, 'bottom'],
 ];
+/** Table 3 of the 3.3 spec, which a spec cannot import from pill.js: it imports its stylesheet. */
+const MINI_BOXES = Object.freeze({
+  small: { width: 92, height: 28, bars: 4, barWidth: 3, barHeight: 16, barGap: 2, font: 12 },
+  medium: { width: 124, height: 34, bars: 6, barWidth: 4, barHeight: 22, barGap: 3, font: 13 },
+  large: { width: 150, height: 40, bars: 8, barWidth: 4, barHeight: 28, barGap: 3, font: 14 },
+  xlarge: { width: 184, height: 46, bars: 10, barWidth: 5, barHeight: 34, barGap: 3, font: 15 },
+});
+/** Table 4: the base colour as the browser computes it, then the tokens as written. */
+const REC_LOOKS = Object.freeze({
+  red: { rgb: [220, 38, 38], tokens: ['#dc2626', '#b91c1c', '239 68 68'] },
+  vampire: { rgb: [219, 45, 74], tokens: ['#db2d4a', '#b9233d', '244 63 94'] },
+  obsidian: { rgb: [139, 63, 232], tokens: ['#8b3fe8', '#7429d1', '139 92 246'] },
+  emerald: { rgb: [10, 132, 97], tokens: ['#0a8461', '#086c50', '16 185 129'] },
+  mocha: { rgb: [160, 96, 58], tokens: ['#a0603a', '#854e2e', '180 120 80'] },
+});
+const rgbText = ([r, g, b]) => `rgb(${r}, ${g}, ${b})`;
+/** More than the corners of a stray pixel, less than a bar of the smallest indicator at a low level. */
+const MIN_COLOUR_PIXELS = 40;
 /** Reaches into the 30 px pill and stops short of its centre. */
 const EDGE_SHADOW_PX = 10;
 /** Longer than the sight observer's delay, or a flip would go unreported. */
@@ -135,15 +156,72 @@ async function settledBox(target, selector) {
 }
 
 /**
- * Bottom centre of a viewport, the same rule in a frame and in the mirror.
+ * Small at the bottom centre of a viewport: the rule of Hide pill and of the mirror, in a frame as in a page.
  * @param {{ x: number, y: number, width: number, height: number }} box
  * @param {{ x: number, y: number, width: number, height: number }} view
  */
 function expectAtBottomCentre(box, view) {
   expect(box.width).toBe(92);
+  expect(box.height).toBe(28);
   expect(Math.abs(box.x - (view.x + view.width / 2))).toBeLessThanOrEqual(1);
   expect(view.y + view.height - (box.y + box.height / 2)).toBeCloseTo(16, 3);
 }
+
+/**
+ * Minimal stands where its rule puts it for this field: beside it a gap away, else at the bottom
+ * centre. The rule is computeMiniPosition's; what is read here is that the page gives it the field's
+ * box, the viewport and the gap.
+ * @param {{ x: number, y: number, width: number, height: number }} indicator
+ * @param {import('@playwright/test').Locator} field
+ * @param {{ x: number, y: number, width: number, height: number }} view
+ * @param {{ width: number, height: number }} [size]
+ */
+async function expectMinimalPlaced(indicator, field, view, size = MINI_BOXES.medium) {
+  const box = await field.boundingBox();
+  const want = computeMiniPosition({
+    anchor: { top: box.y - view.y, left: box.x - view.x, width: box.width, height: box.height },
+    indicator: size,
+    viewport: { width: view.width, height: view.height },
+    gap: 8,
+  });
+  expect(indicator.width).toBeCloseTo(size.width, 0);
+  expect(indicator.height).toBeCloseTo(size.height, 0);
+  expect(Math.abs(indicator.x - indicator.width / 2 - view.x - want.left)).toBeLessThanOrEqual(1);
+  expect(Math.abs(indicator.y - indicator.height / 2 - view.y - want.top)).toBeLessThanOrEqual(1);
+}
+
+/**
+ * The whole of a box lies inside a frame's viewport. Both are in page coordinates, the box by its centre.
+ * @param {{ x: number, y: number, width: number, height: number }} box
+ * @param {{ x: number, y: number, width: number, height: number }} view
+ */
+function expectInFrame(box, view) {
+  expect(box.x - box.width / 2).toBeGreaterThanOrEqual(view.x - 0.5);
+  expect(box.y - box.height / 2).toBeGreaterThanOrEqual(view.y - 0.5);
+  expect(box.x + box.width / 2).toBeLessThanOrEqual(view.x + view.width + 0.5);
+  expect(box.y + box.height / 2).toBeLessThanOrEqual(view.y + view.height + 0.5);
+}
+
+/**
+ * A button under a point, big enough to take a click on the indicator and on the status beside it. Its
+ * mousedown keeps the focus in the field, so that a click leaves a recording as it is.
+ * @param {import('@playwright/test').Page} page
+ * @param {{ x: number, y: number }} point
+ */
+function addButtonUnder(page, point) {
+  return page.evaluate(({ x, y }) => {
+    const button = document.createElement('button');
+    button.id = 'under';
+    button.dataset.clicks = '0';
+    button.style.cssText = `position: fixed; left: ${x - 200}px; top: ${y - 120}px; width: 400px; height: 240px;`;
+    button.addEventListener('mousedown', (event) => event.preventDefault());
+    button.addEventListener('click', () => { button.dataset.clicks = String(Number(button.dataset.clicks) + 1); });
+    document.body.append(button);
+  }, point);
+}
+
+/** @param {import('@playwright/test').Page} page */
+const buttonClicks = (page) => page.evaluate(() => Number(document.getElementById('under').dataset.clicks));
 
 /**
  * The bar of a recording is open, not only present behind the clip.
@@ -204,7 +282,7 @@ for (const style of STYLES) {
       await startWithHotkey(page, target, { indicator: recordingMark(style) });
 
       if (style === 'minimal') {
-        expectAtBottomCentre(await pillQuery(target, MINI), await viewportBox(target));
+        await expectMinimalPlaced(await pillQuery(target, MINI), field, await viewportBox(target));
         expect(await widthOf(target, STOP)).toBe(0);
       }
       const recording = await settledBox(target, style === 'minimal' ? MINI : '.body');
@@ -247,16 +325,8 @@ test('Minimal lets a click through the indicator and a plain status', async () =
   const indicator = await pillQuery(page, MINI);
 
   // Keeps the keyboard focus in the field, as a dictation that ends elsewhere has another status.
-  await page.evaluate(({ x, y }) => {
-    const button = document.createElement('button');
-    button.id = 'under';
-    button.dataset.clicks = '0';
-    button.style.cssText = `position: fixed; left: ${x - 200}px; top: ${y - 100}px; width: 400px; height: 120px;`;
-    button.addEventListener('mousedown', (event) => event.preventDefault());
-    button.addEventListener('click', () => { button.dataset.clicks = String(Number(button.dataset.clicks) + 1); });
-    document.body.append(button);
-  }, indicator);
-  const clicks = () => page.evaluate(() => Number(document.getElementById('under').dataset.clicks));
+  await addButtonUnder(page, indicator);
+  const clicks = () => buttonClicks(page);
 
   await page.mouse.click(indicator.x, indicator.y);
 
@@ -332,7 +402,7 @@ test('Minimal: the menu is unreachable', async () => {
   const field = page.locator('#ta');
   await field.click();
   await page.waitForTimeout(NO_PILL_MS);
-  // Where the other styles sit: right of this field, which has no room on its left.
+  // Where the other styles sit, and Minimal now: right of this field, which has no room on its left.
   const box = await field.boundingBox();
   const anchor = { x: box.x + box.width + 20, y: box.y + box.height / 2 };
 
@@ -799,7 +869,7 @@ for (const [name, url, selector] of FRAMES) {
     await expectNoMirrorFor(page, 1000);
   });
 
-  for (const [site, overrides] of TALL_FRAME_SITES) {
+  for (const [site, overrides, stands] of TALL_FRAME_SITES) {
     test(`a tall ${name} frame on ${site}: a refusal shows by the field`, async () => {
       await seedSettings(serviceWorker, '', overrides);
       const { page, frame } = await openTallFrame(url);
@@ -817,7 +887,13 @@ for (const [name, url, selector] of FRAMES) {
       const { page, frame } = await openTallFrame(url);
 
       await startWithHotkey(page, frame, { indicator: MINI });
-      expectAtBottomCentre(await pillQuery(frame, MINI), await viewportBox(frame));
+      const indicator = await pillQuery(frame, MINI);
+      if (stands === 'bottom') {
+        expectAtBottomCentre(indicator, await viewportBox(frame));
+      } else {
+        await expectMinimalPlaced(indicator, frame.locator('#frame-ta'), await viewportBox(frame));
+        expectInTallViewport(indicator);
+      }
       await page.waitForTimeout(RECORD_MS);
       await page.keyboard.press(HOTKEY);
 
@@ -878,8 +954,9 @@ for (const [name, url, selector] of FRAMES) {
     });
   }
 
-  // The indicator keeps EDGE (4 px) from the top of a short frame, so a frame viewport of 18 px
-  // holds half of its 28 px: 40 px holds all of it, and only under 18 px is it out of sight.
+  // Medium, with no room beside the field, keeps EDGE (4 px) from the top of a short frame, so a frame
+  // viewport of 21 px holds its centre, which the sight observer watches: 40 px holds all of it, and
+  // only under 21 px is it out of sight.
   test(`mirror, ${name}: a 40 px iframe holds the whole indicator, so no mirror`, async () => {
     await seedStyle('minimal');
     const page = await openPage();
@@ -905,3 +982,169 @@ for (const [name, url, selector] of FRAMES) {
     expectAtBottomCentre(await mirrorQuery(page, MINI), await viewportBox(page));
   });
 }
+
+for (const size of MINI_SIZES) {
+  test(`Minimal ${size}: beside a textarea, in its box, and a click at its centre reaches the page`, async () => {
+    await seedSettings(serviceWorker, DUMMY_KEY, { pillStyle: 'minimal', miniSize: size });
+    const page = await openPage();
+    const field = page.locator('#ta');
+    await field.click();
+    await startWithHotkey(page, page, { indicator: MINI });
+    const want = MINI_BOXES[size];
+    const indicator = await pillQuery(page, MINI);
+    const box = await field.boundingBox();
+
+    // This textarea has no room on its left, so the indicator stands right of it, a gap away, level with it.
+    expect([indicator.width, indicator.height]).toEqual([want.width, want.height]);
+    expect(Math.abs(indicator.x - want.width / 2 - (box.x + box.width + 8))).toBeLessThanOrEqual(1);
+    expect(Math.abs(indicator.y - (box.y + box.height / 2))).toBeLessThanOrEqual(1);
+    expect(await pillCall(page, MINI, `function () {
+      const bars = [...this.querySelectorAll('.lvl')].filter((bar) => getComputedStyle(bar).display !== 'none');
+      const first = getComputedStyle(bars[0]);
+      return {
+        bars: bars.length,
+        barWidth: parseFloat(first.width),
+        barHeight: parseFloat(first.height),
+        barGap: parseFloat(getComputedStyle(this.querySelector('.levels')).columnGap),
+        font: parseFloat(getComputedStyle(this.querySelector('.mini-time')).fontSize),
+      };
+    }`)).toEqual({ bars: want.bars, barWidth: want.barWidth, barHeight: want.barHeight, barGap: want.barGap, font: want.font });
+
+    await addButtonUnder(page, indicator);
+    await page.mouse.click(indicator.x, indicator.y);
+
+    expect(await buttonClicks(page)).toBe(1);
+    expect(await indicatorShown(page)).toBe(true);
+  });
+}
+
+for (const color of REC_COLORS) {
+  test(`recording colour ${color}: the bars, REC and glow take it`, async () => {
+    await seedSettings(serviceWorker, DUMMY_KEY, { pillStyle: 'pill', recColor: color });
+    const page = await openPage();
+    await focusField(page, page.locator('#ta'));
+    await startWithHotkey(page, page);
+    const { rgb, tokens } = REC_LOOKS[color];
+    const read = () => pillCall(page, '.vt', `function () {
+      const css = (el) => getComputedStyle(el);
+      return {
+        tokens: ['--vt-rec', '--vt-rec-hover', '--vt-glow'].map((name) => css(this).getPropertyValue(name).trim()),
+        rec: css(this.querySelector('.rec')).backgroundColor,
+        bar: css(this.querySelector('.lvl')).backgroundColor,
+        glow: css(this.querySelector('.body')).boxShadow,
+      };
+    }`);
+
+    // REC fades to its colour over 0.12 s.
+    await expect.poll(async () => (await read()).rec, { message: 'REC colour' }).toBe(rgbText(rgb));
+    const drawn = await read();
+    expect(drawn.tokens).toEqual(tokens);
+    expect(drawn.bar).toBe(rgbText(rgb));
+    expect(drawn.glow).toContain(tokens[2].split(' ').join(', '));
+  });
+}
+
+test('Hide pill keeps Small at the bottom, in the recording colour', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY, { siteRules: { localhost: HIDE_ONLY }, miniSize: 'xlarge', recColor: 'obsidian' });
+  const page = await openPage();
+  await page.locator('#ta').click();
+  await startWithHotkey(page, page, { indicator: MINI });
+
+  expectAtBottomCentre(await pillQuery(page, MINI), await viewportBox(page));
+  const bars = await pillCall(page, MINI, `function () {
+    return [...this.querySelectorAll('.lvl')]
+      .filter((bar) => getComputedStyle(bar).display !== 'none')
+      .map((bar) => getComputedStyle(bar).backgroundColor);
+  }`);
+  expect(bars).toEqual(Array(MINI_BOXES.small.bars).fill(rgbText(REC_LOOKS.obsidian.rgb)));
+});
+
+test('the mirror is Small at the bottom, in the recording colour', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY, { miniSize: 'xlarge', recColor: 'obsidian' });
+  const [, url, selector] = FRAMES[1];
+  const { page } = await recordInFrame({ url, selector });
+
+  await scrollFramesOut(page);
+
+  await pollMirror(page, true);
+  expectAtBottomCentre(await mirrorQuery(page, MINI), await viewportBox(page));
+  await expect.poll(() => countPixels(page, REC_LOOKS.obsidian.rgb), { message: 'obsidian pixels of the mirror' })
+    .toBeGreaterThan(MIN_COLOUR_PIXELS);
+  expect(await countPixels(page, RED)).toBeLessThan(MIN_COLOUR_PIXELS);
+});
+
+test('Minimal in a cross-origin frame stands in the frame, with its status', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY, { pillStyle: 'minimal', miniSize: 'large' });
+  const page = await openPage();
+  const frame = await frameAt(page, CROSS_ORIGIN_FRAME);
+  const field = frame.locator('#frame-ta');
+  await field.click();
+
+  await startWithHotkey(page, frame, { indicator: MINI });
+
+  const view = await viewportBox(frame);
+  const indicator = await pillQuery(frame, MINI);
+  await expectMinimalPlaced(indicator, field, view, MINI_BOXES.large);
+  expectInFrame(indicator, view);
+  await expectNoMirrorFor(page, 300);
+  await page.waitForTimeout(RECORD_MS);
+  await page.keyboard.press(HOTKEY);
+
+  await expect(field).toHaveValue(TRANSCRIPT);
+  await expect.poll(() => pillStatus(frame)).toMatch(/^Done /);
+  expectInFrame(await pillQuery(frame, STATUS), view);
+});
+
+/**
+ * The tone colour of the status on show, and the tokens it must come from.
+ * @param {import('@playwright/test').Page} page
+ */
+const statusColors = (page) => pillCall(page, STATUS, `function () {
+  const vt = this.closest('.vt');
+  const probe = (token) => {
+    const node = document.createElement('i');
+    node.style.color = 'var(' + token + ')';
+    vt.append(node);
+    const color = getComputedStyle(node).color;
+    node.remove();
+    return color;
+  };
+  return {
+    icon: getComputedStyle(this.querySelector('.status-icon')).color,
+    error: probe('--vt-error'),
+    success: probe('--vt-success'),
+    rec: probe('--vt-rec'),
+    chosen: vt.dataset.rec,
+  };
+}`);
+
+test('an error stays red with the emerald recording colour', async () => {
+  await seedSettings(serviceWorker, '', { pillStyle: 'minimal', recColor: 'emerald' });
+  const page = await openPage();
+  await page.locator('#ta').click();
+
+  await expect(async () => {
+    await page.keyboard.press(HOTKEY);
+    await expect.poll(() => pillStatus(page), { timeout: PILL_SYNC_MS }).toContain('Add an API key');
+  }).toPass({ timeout: 15_000 });
+
+  const colors = await statusColors(page);
+  expect(colors.chosen).toBe('emerald');
+  expect(colors.rec).toBe(rgbText(REC_LOOKS.emerald.rgb));
+  expect(colors.icon).toBe(colors.error);
+  expect(colors.icon).not.toBe(colors.rec);
+});
+
+test('a success stays its green with the obsidian recording colour', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY, { pillStyle: 'minimal', recColor: 'obsidian' });
+  const page = await openPage();
+  await page.locator('#ta').click();
+  await dictateWithHotkey(page, page, { indicator: MINI });
+
+  await expect.poll(() => pillStatus(page)).toMatch(/^Done /);
+
+  const colors = await statusColors(page);
+  expect(colors.chosen).toBe('obsidian');
+  expect(colors.icon).toBe(colors.success);
+  expect(colors.icon).not.toBe(colors.rec);
+});

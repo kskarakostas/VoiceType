@@ -2,8 +2,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Pill, PILL_SIZE, MINI_SIZE, RAISE_MS, SIGHT_DELAY_MS, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
+import { Pill, PILL_SIZE, MINI_BOXES, RAISE_MS, SIGHT_DELAY_MS, STATUS_MS, TARGET_LANGUAGES } from '../../../src/content/pill.js';
 import { computePillPosition, EDGE } from '../../../src/content/position.js';
+import { MINI_SIZES, REC_COLORS } from '../../../src/shared/defaults.js';
 
 // A path, not a URL literal: jsdom replaces the global URL, and the web transform rewrites
 // `new URL('<literal>', import.meta.url)` into a dev-server address.
@@ -932,11 +933,276 @@ describe('styles', () => {
     expect(children.indexOf(mini(pill))).toBeGreaterThan(children.indexOf(statusEl(pill)));
   });
 
-  it('MINI_SIZE matches .mini in pill.css', () => {
-    const rule = CSS_TEXT.match(/^\.mini \{[^}]*\}/m)[0];
-    expect(MINI_SIZE).toEqual({ width: 92, height: 28 });
-    expect(rule).toContain(`width: ${MINI_SIZE.width}px;`);
-    expect(rule).toContain(`height: ${MINI_SIZE.height}px;`);
+  describe('the Minimal look', () => {
+    /** Table 3 of the 3.3 spec: the box, and the bars and timer inside it. */
+    const SIZES = {
+      small: { width: 92, height: 28, bars: 4, barWidth: 3, barHeight: 16, barGap: 2, font: 12 },
+      medium: { width: 124, height: 34, bars: 6, barWidth: 4, barHeight: 22, barGap: 3, font: 13 },
+      large: { width: 150, height: 40, bars: 8, barWidth: 4, barHeight: 28, barGap: 3, font: 14 },
+      xlarge: { width: 184, height: 46, bars: 10, barWidth: 5, barHeight: 34, barGap: 3, font: 15 },
+    };
+    /** Table 4: the three tokens of every colour but Classic red, which `.vt` holds. */
+    const COLORS = {
+      vampire: { '--vt-rec': '#db2d4a', '--vt-rec-hover': '#b9233d', '--vt-glow': '244 63 94' },
+      obsidian: { '--vt-rec': '#8b3fe8', '--vt-rec-hover': '#7429d1', '--vt-glow': '139 92 246' },
+      emerald: { '--vt-rec': '#0a8461', '--vt-rec-hover': '#086c50', '--vt-glow': '16 185 129' },
+      mocha: { '--vt-rec': '#a0603a', '--vt-rec-hover': '#854e2e', '--vt-glow': '180 120 80' },
+    };
+    const RED_TOKENS = { '--vt-rec': '#dc2626', '--vt-rec-hover': '#b91c1c', '--vt-glow': '239 68 68' };
+    const LEFT_OF = { top: 300, left: 400, width: 200, height: 30 };
+    const RIGHT_OF = { top: 300, left: 40, width: 200, height: 30 };
+    const ABOVE = { top: 300, left: 40, width: 960, height: 30 };
+    const BELOW = { top: 10, left: 40, width: 960, height: 30 };
+    const WHOLE_PAGE = { top: 0, left: 0, width: VIEWPORT.width, height: VIEWPORT.height };
+    const bottomCentre = (box) => ({
+      top: `${VIEWPORT.height - box.height - 16}px`,
+      left: `${(VIEWPORT.width - box.width) / 2}px`,
+    });
+    const ruleFor = (size, part = '\\.mini') => CSS_TEXT.match(new RegExp(`\\.vt\\[data-mini-size='${size}'\\] ${part} \\{[^}]*\\}`))?.[0];
+    const colorRule = (name) => CSS_TEXT.match(new RegExp(`\\.vt\\[data-rec='${name}'\\] \\{[^}]*\\}`))?.[0];
+    const tokensOf = (rule) => Object.fromEntries([...rule.matchAll(/(--vt-[a-z-]+):\s*([^;]+);/g)].map(([, name, value]) => [name, value]));
+    const statusBox = (status) => ({
+      left: pxValue(status.style.left),
+      top: pxValue(status.style.top) - (status.dataset.side === 'above' ? STATUS_200().height : 0),
+    });
+
+    /** A Minimal pill that is recording, with its look and field as given. */
+    function recordingMinimal({ anchor = FIELD, statusAtField = false, ...look } = {}) {
+      const pill = new Pill(handlers(), { shadowMode: 'open', statusAtField });
+      pill.setStyle('minimal');
+      pill.setLook(look);
+      pill.show(anchor);
+      statusEl(pill).getBoundingClientRect = STATUS_200;
+      pill.setState('recording');
+      return { pill, wrap: vt(pill), mini: mini(pill), status: statusEl(pill) };
+    }
+
+    it('MINI_BOXES match pill.css', () => {
+      for (const [size, box] of Object.entries(MINI_BOXES)) {
+        expect(CSS_TEXT).toContain(`[data-mini-size='${size}'] .mini`);
+        expect(ruleFor(size)).toContain(`width: ${box.width}px;`);
+        expect(ruleFor(size)).toContain(`height: ${box.height}px;`);
+      }
+    });
+
+    it('MINI_BOXES hold table 3, for the sizes the settings know', () => {
+      expect(Object.keys(MINI_BOXES)).toEqual(MINI_SIZES);
+      expect(Object.fromEntries(Object.entries(MINI_BOXES).map(([size, { width, height }]) => [size, { width, height }])))
+        .toEqual(Object.fromEntries(Object.entries(SIZES).map(([size, { width, height }]) => [size, { width, height }])));
+      expect(Object.isFrozen(MINI_BOXES)).toBe(true);
+    });
+
+    it.each(Object.entries(SIZES))('CSS: %s has its bars, their height and gap, and the timer', (size, want) => {
+      expect(ruleFor(size, '\\.levels')).toContain(`gap: ${want.barGap}px;`);
+      expect(ruleFor(size, '\\.levels')).toContain(`height: ${want.barHeight}px;`);
+      expect(ruleFor(size, '\\.lvl')).toContain(`width: ${want.barWidth}px;`);
+      expect(ruleFor(size, '\\.lvl')).toContain(`height: ${want.barHeight}px;`);
+      expect(ruleFor(size, '\\.mini-time')).toContain(`font-size: ${want.font}px;`);
+      const hidden = ruleFor(size, `\\.lvl:nth-child\\(n\\+${want.bars + 1}\\)`);
+      if (want.bars < 10) expect(hidden).toContain('display: none;');
+      else expect(CSS_TEXT).not.toContain(`[data-mini-size='${size}'] .lvl:nth-child(n+`);
+    });
+
+    it('CSS: more bars repeat the four gains in order', () => {
+      const gain = (selector) => CSS_TEXT.match(new RegExp(`\\.lvl:nth-child\\(${selector}\\) \\{[^}]*--vt-k: ([\\d.]+);`))?.[1];
+      expect([gain('4n\\+2'), gain('4n\\+3'), gain('4n\\+4')]).toEqual(['0.7', '0.6', '0.4']);
+      expect(CSS_TEXT).toContain('var(--vt-k, 0.5)');
+      expect(CSS_TEXT).not.toMatch(/\.lvl:nth-child\([234]\)/);
+    });
+
+    it.each(Object.entries(COLORS))('CSS: %s sets the three tokens of table 4 and nothing else', (name, tokens) => {
+      expect(tokensOf(colorRule(name))).toEqual(tokens);
+    });
+
+    it('CSS: Classic red is what .vt holds, with no rule of its own', () => {
+      const base = tokensOf(CSS_TEXT.match(/^\.vt \{[^}]*\}/m)[0]);
+      expect(Object.fromEntries(Object.keys(RED_TOKENS).map((name) => [name, base[name]]))).toEqual(RED_TOKENS);
+      expect(colorRule('red')).toBeUndefined();
+      expect(REC_COLORS).toEqual(['red', ...Object.keys(COLORS)]);
+    });
+
+    it('a new Pill is Small, red and not beside a field', () => {
+      const { pill } = makePill();
+      pill.setStyle('minimal');
+      pill.show(FIELD);
+      pill.setState('recording');
+      expect([vt(pill).dataset.miniSize, vt(pill).dataset.rec]).toEqual(['small', 'red']);
+      expect(at(mini(pill))).toEqual(INDICATOR);
+    });
+
+    it.each(Object.entries(SIZES))('off the field, or with beside off, %s is at the bottom centre', (size, box) => {
+      const { mini: indicator } = recordingMinimal({ miniSize: size, beside: false, anchor: FIELD });
+      expect(at(indicator)).toEqual(bottomCentre(box));
+    });
+
+    it('beside a field, Minimal takes its own box there', () => {
+      const { mini: indicator } = recordingMinimal({ miniSize: 'medium', beside: true, anchor: FIELD });
+      expect(indicator.style.left).toBe(`${FIELD.left - 8 - 124}px`);
+    });
+
+    it('off the field, or with beside off, it is at the bottom centre', () => {
+      const { mini: indicator } = recordingMinimal({ miniSize: 'medium', beside: false, anchor: FIELD });
+      expect(indicator.style.left).toBe(`${(VIEWPORT.width - 124) / 2}px`);
+    });
+
+    it.each([
+      ['left of the field', LEFT_OF, { top: '298px', left: '268px' }],
+      ['right of it, with no room on the left', RIGHT_OF, { top: '298px', left: '248px' }],
+      ['above it, with no room at the sides', ABOVE, { top: '258px', left: '40px' }],
+      ['below it, with no room above', BELOW, { top: '48px', left: '40px' }],
+    ])('beside a field it goes %s', (_, anchor, want) => {
+      const { mini: indicator } = recordingMinimal({ miniSize: 'medium', beside: true, anchor });
+      expect(at(indicator)).toEqual(want);
+    });
+
+    it.each(Object.entries(SIZES))('beside a field, %s keeps the gap on the left', (size, box) => {
+      const { mini: indicator } = recordingMinimal({ miniSize: size, beside: true, anchor: FIELD });
+      expect(pxValue(indicator.style.left) + box.width).toBe(FIELD.left - 8);
+    });
+
+    it('the pill gap reaches the place beside the field', () => {
+      const pill = new Pill(handlers(), { shadowMode: 'open' });
+      pill.setStyle('minimal');
+      pill.setLook({ miniSize: 'medium', beside: true });
+      pill.show(FIELD, { gap: 20 });
+      pill.setState('recording');
+      expect(mini(pill).style.left).toBe(`${FIELD.left - 20 - 124}px`);
+    });
+
+    it('with no room outside the field, or no field, it is at the bottom centre', () => {
+      for (const anchor of [WHOLE_PAGE, null]) {
+        const { mini: indicator } = recordingMinimal({ miniSize: 'large', beside: true, anchor });
+        expect(at(indicator)).toEqual(bottomCentre(SIZES.large));
+      }
+    });
+
+    it('a field scrolled away moves it to the bottom centre and back', () => {
+      const { pill, mini: indicator } = recordingMinimal({ miniSize: 'medium', beside: true, anchor: FIELD });
+      pill.reposition({ ...FIELD, top: VIEWPORT.height + 50 });
+      expect(indicator.style.left).toBe(`${(VIEWPORT.width - 124) / 2}px`);
+      pill.reposition(FIELD);
+      expect(indicator.style.left).toBe(`${FIELD.left - 8 - 124}px`);
+    });
+
+    it('a field that moves moves the indicator with it', () => {
+      const { pill, mini: indicator } = recordingMinimal({ miniSize: 'medium', beside: true, anchor: FIELD });
+      pill.reposition({ ...FIELD, top: 400 });
+      expect(indicator.style.top).toBe('398px');
+    });
+
+    it('a window resize keeps it beside the field', () => {
+      const { innerHeight } = window;
+      const { pill, mini: indicator } = recordingMinimal({ miniSize: 'medium', beside: true, anchor: BELOW });
+      try {
+        window.innerHeight = 500;
+        window.dispatchEvent(new Event('resize'));
+        expect(at(indicator)).toEqual({ top: '48px', left: '40px' });
+      } finally {
+        window.innerHeight = innerHeight;
+        pill.destroy();
+      }
+    });
+
+    it('setLook during a recording updates the live indicator', () => {
+      const { pill, wrap, mini: indicator } = recordingMinimal({ miniSize: 'small', beside: true, anchor: FIELD });
+      pill.setLook({ miniSize: 'large', recColor: 'emerald' });
+      expect(wrap.dataset.miniSize).toBe('large');
+      expect(wrap.dataset.rec).toBe('emerald');
+      expect(indicator.style.left).toBe(`${FIELD.left - 8 - 150}px`);
+    });
+
+    it('beside alone moves a live indicator to the bottom and back', () => {
+      const { pill, wrap, mini: indicator } = recordingMinimal({ miniSize: 'medium', beside: true, anchor: FIELD });
+      pill.setLook({ beside: false });
+      expect(indicator.style.left).toBe(`${(VIEWPORT.width - 124) / 2}px`);
+      pill.setLook({ beside: true });
+      expect(indicator.style.left).toBe(`${FIELD.left - 8 - 124}px`);
+      expect([wrap.dataset.miniSize, wrap.dataset.rec]).toEqual(['medium', 'red']);
+    });
+
+    it('ignores unknown values', () => {
+      const { pill, wrap, mini: indicator } = recordingMinimal({ miniSize: 'medium', beside: true, anchor: FIELD });
+      const placed = at(indicator);
+      for (const value of ['x', undefined, null, 7, 'constructor']) pill.setLook({ miniSize: value, recColor: value, beside: value });
+      expect([wrap.dataset.miniSize, wrap.dataset.rec]).toEqual(['medium', 'red']);
+      expect(at(indicator)).toEqual(placed);
+    });
+
+    it('setLook with nothing changes nothing, and does nothing after destroy', () => {
+      const { pill, wrap } = recordingMinimal({ miniSize: 'large', recColor: 'mocha', beside: true });
+      expect(() => pill.setLook()).not.toThrow();
+      expect([wrap.dataset.miniSize, wrap.dataset.rec]).toEqual(['large', 'mocha']);
+      pill.destroy();
+      pill.setLook({ miniSize: 'small', recColor: 'red' });
+      expect([wrap.dataset.miniSize, wrap.dataset.rec]).toEqual(['large', 'mocha']);
+    });
+
+    it('a look set before the first show shows nothing', () => {
+      const { pill } = makePill();
+      pill.setLook({ miniSize: 'xlarge', recColor: 'obsidian', beside: true });
+      pill.mount();
+      expect(pill.visible).toBe(false);
+      expect(vt(pill).hidden).toBe(true);
+      expect([vt(pill).dataset.miniSize, vt(pill).dataset.rec]).toEqual(['xlarge', 'obsidian']);
+    });
+
+    it.each(['pill', 'dot'])('%s does not move with the look', (style) => {
+      const place = (look) => {
+        const { pill } = makePill();
+        pill.setStyle(style);
+        pill.setLook(look);
+        pill.show(FIELD);
+        return at(q(pill, '.pill'));
+      };
+      expect(place({ miniSize: 'xlarge', beside: false })).toEqual(place({ miniSize: 'small', beside: true }));
+    });
+
+    it('the sight observer still watches the indicator centre', () => {
+      const { pill } = recordingMinimal({ miniSize: 'large', beside: true });
+      expect(q(pill, '.mini .sight')).not.toBeNull();
+    });
+
+    it('a status stands by the indicator beside a field, in the top frame and a subframe', () => {
+      const placed = [false, true].map((statusAtField) => {
+        const { pill, status } = recordingMinimal({ miniSize: 'medium', beside: true, anchor: FIELD, statusAtField });
+        pill.setStatus('Say how to change the selection.');
+        expect(statusBox(status).left).toBeLessThan(FIELD.left);
+        return statusBox(status);
+      });
+      // The indicator's box (98 to 132), not the pill's (100 to 130): its status is 6 below that.
+      expect(placed[0]).toEqual({ left: 192, top: 138 });
+      expect(placed[1]).toEqual(placed[0]);
+    });
+
+    it('with no room beside the field, a subframe status stands at the field and the top frame at the indicator', () => {
+      const place = (statusAtField) => {
+        const { pill, status } = recordingMinimal({ miniSize: 'medium', beside: true, anchor: WHOLE_PAGE, statusAtField });
+        pill.setStatus('Say how to change the selection.');
+        return { indicator: at(mini(pill)), status: statusBox(status) };
+      };
+      expect(place(false).indicator).toEqual(bottomCentre(SIZES.medium));
+      expect(place(true).indicator).toEqual(bottomCentre(SIZES.medium));
+      expect(place(false).status.top).toBeGreaterThan(VIEWPORT.height - 100);
+      expect(place(true).status.top).toBeLessThan(VIEWPORT.height - 100);
+    });
+
+    it('a status with no recording stands by the box the indicator would have beside the field', () => {
+      const pill = new Pill(handlers(), { shadowMode: 'open' });
+      pill.setStyle('minimal');
+      pill.setLook({ miniSize: 'medium', beside: true });
+      pill.show(FIELD);
+      statusEl(pill).getBoundingClientRect = STATUS_200;
+      pill.setStatus('Done', { tone: 'success', sticky: true });
+      expect(statusEl(pill).dataset.side).toBe('below');
+      expect(statusBox(statusEl(pill))).toEqual({ left: 192, top: 138 });
+    });
+
+    it('the status keeps its tone whatever the colour', () => {
+      const { pill, status } = recordingMinimal({ recColor: 'emerald', beside: true });
+      pill.setStatus('Add an API key.', { tone: 'error' });
+      expect(status.dataset.tone).toBe('error');
+      expect(CSS_TEXT).not.toMatch(/\.status[^{]*\{[^}]*--vt-rec/);
+    });
   });
 
   it('minimal: show with nothing to show stays hidden', () => {
@@ -1020,10 +1286,10 @@ describe('styles', () => {
     expect(CSS_TEXT).toMatch(/\.mini\[data-state='processing'\] \.mini-dots \{[^}]*vt-pulse/);
   });
 
-  it('the indicator holds four level bars, the dots and the time, hidden from assistive tech', () => {
+  it('the indicator holds ten level bars, of which a size shows what it needs, the dots and the time, hidden from assistive tech', () => {
     const { pill } = minimal();
     pill.mount();
-    expect(mini(pill).querySelectorAll('.levels .lvl')).toHaveLength(4);
+    expect(mini(pill).querySelectorAll('.levels .lvl')).toHaveLength(10);
     expect(q(pill, '.levels').getAttribute('aria-hidden')).toBe('true');
     expect(q(pill, '.mini-dots').getAttribute('data-icon')).toBe('dots');
     expect(q(pill, '.mini-time').getAttribute('aria-hidden')).toBe('true');
@@ -2085,6 +2351,24 @@ describe('zoom on the page root', () => {
       pill.setState('processing');
       vi.advanceTimersByTime(RAISE_MS);
       expect(pxValue(q(pill, '.pill').style.top)).toBe(top + 200);
+      pill.destroy();
+    });
+
+    it('Minimal beside a field asks for the box again, and places at the answer', () => {
+      const moved = { ...FIELD, top: FIELD.top + 200 };
+      const pill = new Pill({ ...handlers(), onZoom: () => pill.reposition(moved) }, { shadowMode: 'open' });
+      pill.mount();
+      Object.assign(pill.host, { hidePopover: vi.fn(), showPopover: vi.fn() });
+      pill.setStyle('minimal');
+      pill.setLook({ miniSize: 'medium', beside: true });
+      pill.show(FIELD);
+      pill.setState('recording');
+      const top = pxValue(q(pill, '.mini').style.top);
+      zoomed(pill, 2);
+      vi.advanceTimersByTime(RAISE_MS);
+      expect(wrapZoom(pill)).toBe('0.5');
+      expect(pxValue(q(pill, '.mini').style.top)).toBe(top + 200);
+      expect(q(pill, '.mini').style.left).toBe(`${FIELD.left - 8 - 124}px`);
       pill.destroy();
     });
 

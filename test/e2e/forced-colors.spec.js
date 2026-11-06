@@ -104,13 +104,16 @@ test('Minimal keeps its level bars and an edge while it records', async () => {
       plate: plate.backgroundColor,
       outlineStyle: plate.outlineStyle,
       outlineWidth: parseFloat(plate.outlineWidth),
-      bars: [...this.querySelectorAll('.lvl')].map((bar) => getComputedStyle(bar).backgroundColor),
+      bars: [...this.querySelectorAll('.lvl')]
+        .filter((bar) => getComputedStyle(bar).display !== 'none')
+        .map((bar) => getComputedStyle(bar).backgroundColor),
     };
   }`);
 
   expect(drawn.outlineStyle).toBe('solid');
   expect(drawn.outlineWidth).toBeGreaterThan(0);
-  expect(drawn.bars).toHaveLength(4);
+  // Medium, the default size, shows six of the ten bars.
+  expect(drawn.bars).toHaveLength(6);
   for (const bar of drawn.bars) expect(bar).not.toBe(drawn.plate);
 });
 

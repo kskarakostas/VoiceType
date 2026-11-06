@@ -85,6 +85,31 @@
   }
 }
 
+/* The recording colour (V60): the three tokens, in every style and the mirror. Classic red is .vt's own. */
+.vt[data-rec='vampire'] {
+  --vt-rec: #db2d4a;
+  --vt-rec-hover: #b9233d;
+  --vt-glow: 244 63 94;
+}
+
+.vt[data-rec='obsidian'] {
+  --vt-rec: #8b3fe8;
+  --vt-rec-hover: #7429d1;
+  --vt-glow: 139 92 246;
+}
+
+.vt[data-rec='emerald'] {
+  --vt-rec: #0a8461;
+  --vt-rec-hover: #086c50;
+  --vt-glow: 16 185 129;
+}
+
+.vt[data-rec='mocha'] {
+  --vt-rec: #a0603a;
+  --vt-rec-hover: #854e2e;
+  --vt-glow: 180 120 80;
+}
+
 .vt *,
 .vt *::before,
 .vt *::after {
@@ -353,7 +378,8 @@ button:focus-visible {
   transition: box-shadow 0.1s linear;
 }
 
-/* Minimal: no pill, and no target of its own. MINI_SIZE in pill.js has the same width and height. */
+/* Minimal: no pill, and no target of its own. The width and height of .mini by size are MINI_BOXES in
+   pill.js, and the bars and timer of each size are the sizes of table 3 of the 3.3 spec. */
 .vt[data-style='minimal'] .pill {
   display: none;
 }
@@ -366,8 +392,6 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 92px;
-  height: 28px;
   border-radius: 999px;
   background: var(--vt-surface);
   box-shadow: var(--vt-shadow);
@@ -381,35 +405,119 @@ button:focus-visible {
 .levels {
   display: flex;
   align-items: center;
-  gap: 2px;
-  height: 16px;
 }
 
-/* Each bar answers the level with its own gain, so they do not move as one block. */
+/* Each bar answers the level with its own gain, so they do not move as one block. The indicator holds
+   ten bars and a size hides those it does not use; a gain repeats every four. */
 .lvl {
-  width: 3px;
-  height: 16px;
   border-radius: 2px;
   background: var(--vt-rec);
   transform: scaleY(calc(0.3 + var(--vt-l) * var(--vt-k, 0.5)));
   transition: transform 0.1s linear;
 }
 
-.lvl:nth-child(2) {
+.lvl:nth-child(4n+2) {
   --vt-k: 0.7;
 }
 
-.lvl:nth-child(3) {
+.lvl:nth-child(4n+3) {
   --vt-k: 0.6;
 }
 
-.lvl:nth-child(4) {
+.lvl:nth-child(4n+4) {
   --vt-k: 0.4;
+}
+
+.vt[data-mini-size='small'] .mini {
+  width: 92px;
+  height: 28px;
+}
+
+.vt[data-mini-size='small'] .levels {
+  gap: 2px;
+  height: 16px;
+}
+
+.vt[data-mini-size='small'] .lvl {
+  width: 3px;
+  height: 16px;
+}
+
+.vt[data-mini-size='small'] .lvl:nth-child(n+5) {
+  display: none;
+}
+
+.vt[data-mini-size='small'] .mini-time {
+  font-size: 12px;
+}
+
+.vt[data-mini-size='medium'] .mini {
+  width: 124px;
+  height: 34px;
+}
+
+.vt[data-mini-size='medium'] .levels {
+  gap: 3px;
+  height: 22px;
+}
+
+.vt[data-mini-size='medium'] .lvl {
+  width: 4px;
+  height: 22px;
+}
+
+.vt[data-mini-size='medium'] .lvl:nth-child(n+7) {
+  display: none;
+}
+
+.vt[data-mini-size='medium'] .mini-time {
+  font-size: 13px;
+}
+
+.vt[data-mini-size='large'] .mini {
+  width: 150px;
+  height: 40px;
+}
+
+.vt[data-mini-size='large'] .levels {
+  gap: 3px;
+  height: 28px;
+}
+
+.vt[data-mini-size='large'] .lvl {
+  width: 4px;
+  height: 28px;
+}
+
+.vt[data-mini-size='large'] .lvl:nth-child(n+9) {
+  display: none;
+}
+
+.vt[data-mini-size='large'] .mini-time {
+  font-size: 14px;
+}
+
+.vt[data-mini-size='xlarge'] .mini {
+  width: 184px;
+  height: 46px;
+}
+
+.vt[data-mini-size='xlarge'] .levels {
+  gap: 3px;
+  height: 34px;
+}
+
+.vt[data-mini-size='xlarge'] .lvl {
+  width: 5px;
+  height: 34px;
+}
+
+.vt[data-mini-size='xlarge'] .mini-time {
+  font-size: 15px;
 }
 
 .mini-time {
   color: var(--vt-text);
-  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 

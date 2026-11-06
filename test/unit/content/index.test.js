@@ -815,6 +815,24 @@ describe('a frame out of sight', () => {
     expect(hosts()).toHaveLength(1);
   });
 
+  it('the mirror is Small at the bottom, in the recording colour', async () => {
+    const t = installChrome((message) => (message.action === MSG.GET_SETTINGS
+      ? { ...structuredClone(SETTINGS), pillStyle: 'minimal', miniSize: 'xlarge', recColor: 'emerald' }
+      : reply(message)));
+    await loadInstance();
+    deliver(t, mirrorMessage('recording'));
+    const vt = hosts()[1].shadowRoot.querySelector('.vt');
+    expect([vt.dataset.miniSize, vt.dataset.rec]).toEqual(['small', 'emerald']);
+    expect(miniOf(hosts()[1]).style.left).toBe(`${(window.innerWidth - 92) / 2}px`);
+  });
+
+  it('the mirror is red before any settings arrive', async () => {
+    const t = installChrome(() => null);
+    await loadInstance();
+    deliver(t, mirrorMessage('recording'));
+    expect(hosts()[1].shadowRoot.querySelector('.vt').dataset.rec).toBe('red');
+  });
+
   it('a level reaches the mirror', async () => {
     const t = installChrome();
     await loadInstance();

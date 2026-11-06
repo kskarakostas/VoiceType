@@ -1,11 +1,11 @@
 // The in-page UI: a closed Shadow DOM pill with its status line and menu.
 // User data (mode names and icons, statuses) is only ever set with textContent.
 import css from './pill.css';
-import { computePillPosition, computeMenuPlacement, computeIndicatorPosition, EDGE } from './position.js';
+import { computePillPosition, computeMenuPlacement, computeMiniPosition, EDGE } from './position.js';
 import { buildMenuSections } from './pill-menu.js';
 import { createRaiser } from './pill-raise.js';
 import { createSightWatcher } from './pill-sight.js';
-import { PILL_STYLES } from '../shared/defaults.js';
+import { PILL_STYLES, MINI_SIZES, REC_COLORS } from '../shared/defaults.js';
 import { finite } from '../shared/numbers.js';
 
 export { TARGET_LANGUAGES } from '../shared/defaults.js';
@@ -28,8 +28,13 @@ export { SIGHT_DELAY_MS } from './pill-sight.js';
 /** Size of the expanded pill; `.pill` in pill.css has the same width and height. */
 export const PILL_SIZE = Object.freeze({ width: 140, height: 30 });
 
-/** Size of the Minimal indicator; `.mini` in pill.css has the same width and height. */
-export const MINI_SIZE = Object.freeze({ width: 92, height: 28 });
+/** Size of the Minimal indicator by `miniSize`; `.mini` in pill.css has the same widths and heights. */
+export const MINI_BOXES = Object.freeze({
+  small: Object.freeze({ width: 92, height: 28 }),
+  medium: Object.freeze({ width: 124, height: 34 }),
+  large: Object.freeze({ width: 150, height: 40 }),
+  xlarge: Object.freeze({ width: 184, height: 46 }),
+});
 
 /** How long a non-sticky status stays, by tone. */
 export const STATUS_MS = Object.freeze({ error: 6000, warning: 6000, info: 2500, success: 2500 });
@@ -84,6 +89,10 @@ export class Pill {
   /** Another pill shows an indicator at this one's place: a Minimal status keeps clear of it. */
   #indicatorReserved = false;
   #style = 'dot';
+  /** A key of MINI_BOXES. */
+  #miniSize = 'small';
+  /** Minimal stands beside its field, not at the bottom centre; off for Hide pill and for the mirror. */
+  #beside = false;
   /** The page zoom cancelled on `.vt`. */
   #zoom = 1;
   /** The page zoom #anchor was read at: a place cancels a change before anyone reads the field again. */
@@ -223,6 +232,23 @@ export class Pill {
     if (style === 'minimal') this.closeMenu();
     this.#replace();
     this.#syncSight();
+  }
+
+  /**
+   * How Minimal looks and where it stands, and the recording colour of every style.
+   * @param {{ miniSize?: string, recColor?: string, beside?: boolean }} [look] a value that is not
+   *   known is ignored
+   */
+  setLook({ miniSize, recColor, beside } = {}) {
+    if (this.#destroyed) return;
+    const { wrap } = this.#els;
+    if (MINI_SIZES.includes(miniSize)) {
+      this.#miniSize = miniSize;
+      wrap.dataset.miniSize = miniSize;
+    }
+    if (REC_COLORS.includes(recColor)) wrap.dataset.rec = recColor;
+    if (typeof beside === 'boolean') this.#beside = beside;
+    this.#replace();
   }
 
   /**
@@ -508,7 +534,10 @@ export class Pill {
     this.#placeStatus();
   }
 
-  /** Minimal shows at the bottom centre whatever the field, and only with something to show. */
+  /**
+   * Minimal shows beside its field when the look says so and there is room, else at the bottom
+   * centre, and only with something to show.
+   */
   #placeIndicator() {
     const { wrap, mini } = this.#els;
     if (!this.#hasContent()) {
@@ -516,9 +545,10 @@ export class Pill {
       wrap.hidden = true;
       return;
     }
-    const pos = computeIndicatorPosition({ indicator: MINI_SIZE, viewport: this.#viewport() });
+    const size = MINI_BOXES[this.#miniSize];
+    const pos = computeMiniPosition({ anchor: this.#beside ? this.#anchor : null, indicator: size, viewport: this.#viewport(), gap: this.#gap });
     this.#offscreen = false;
-    this.#box = { top: pos.top, left: pos.left, ...MINI_SIZE, placement: pos.placement };
+    this.#box = { top: pos.top, left: pos.left, ...size, placement: pos.placement };
     mini.style.top = `${Math.round(pos.top)}px`;
     mini.style.left = `${Math.round(pos.left)}px`;
     wrap.hidden = false;
@@ -548,11 +578,12 @@ export class Pill {
   }
 
   /**
-   * The box a pill would have at the field, for a Minimal status that stands there.
+   * The box a pill would have at the field, for a Minimal status that stands there: only while the
+   * indicator is at the bottom centre, as a beside one is at the field already.
    * @returns {(Box & { placement: string })|null} null with no field, or none in view: the bottom centre applies
    */
   #statusFieldBox() {
-    if (!this.#statusAtField || this.#style !== 'minimal' || !this.#anchor) return null;
+    if (!this.#statusAtField || this.#style !== 'minimal' || !this.#anchor || this.#box?.placement !== 'minimal') return null;
     const pos = computePillPosition({ anchor: this.#anchor, pill: PILL_SIZE, viewport: this.#viewport(), gap: this.#gap });
     return pos.placement === 'hidden' ? null : { ...pos, ...PILL_SIZE };
   }
@@ -563,7 +594,8 @@ export class Pill {
    * the menu's far edge while the menu is open; failing that it is clamped into the viewport.
    * On Minimal it is centred, and with no indicator showing or reserved it takes the indicator's
    * place. A clamp there still keeps the bottom edge in a frame shorter than the status.
-   * A Minimal status with a field box follows the rule of the other styles against that box.
+   * A Minimal status follows the rule of the other styles against an indicator beside a field, and
+   * against the field box of #statusFieldBox.
    */
   #placeStatus() {
     const box = this.#statusFieldBox() ?? this.#box;
@@ -626,6 +658,8 @@ export class Pill {
     const wrap = el('div', 'vt');
     wrap.hidden = true;
     wrap.dataset.style = 'dot';
+    wrap.dataset.miniSize = 'small';
+    wrap.dataset.rec = 'red';
 
     const pill = el('div', 'pill');
     pill.dataset.state = 'idle';
@@ -660,7 +694,8 @@ export class Pill {
     const mini = el('div', 'mini', { role: 'img', 'aria-label': 'VoiceType is recording' });
     mini.dataset.state = 'idle';
     const levels = el('span', 'levels', { 'aria-hidden': 'true' });
-    levels.append(el('span', 'lvl'), el('span', 'lvl'), el('span', 'lvl'), el('span', 'lvl'));
+    // Ten, the most a size shows: pill.css hides the rest.
+    levels.append(...Array.from({ length: 10 }, () => el('span', 'lvl')));
     const miniTime = el('span', 'mini-time', { 'aria-hidden': 'true' });
     const miniSight = el('span', 'sight', { 'aria-hidden': 'true' });
     mini.append(levels, this.#icon('dots', 'mini-dots'), miniTime, miniSight);
