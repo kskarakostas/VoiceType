@@ -1,6 +1,6 @@
 // Hash routes of the settings page. A reload keeps the place, and the popup opens a page by its
-// hash (`options.html#settings/provider`). The seven `settings/…` routes are parts of one Settings
-// page: each is a hash to a part of it, not a page of its own.
+// hash (`options.html#settings/provider`). `settings` is one page in the sidebar; the seven
+// `settings/…` routes are hashes to its parts, for links and bookmarks, with no sidebar entry.
 
 /** Sidebar entries in display order; `id` is the hash without its `#`. */
 export const ROUTES = Object.freeze([
@@ -8,6 +8,11 @@ export const ROUTES = Object.freeze([
   { id: 'modes', title: 'Modes' },
   { id: 'dictionary', title: 'Dictionary' },
   { id: 'history', title: 'History' },
+  { id: 'settings', title: 'Settings' },
+].map((route) => Object.freeze(route)));
+
+/** The parts of the Settings page in page order; `id` is the hash without its `#`. */
+export const SETTINGS_PARTS = Object.freeze([
   { id: 'settings/provider', title: 'Provider' },
   { id: 'settings/recording', title: 'Recording' },
   { id: 'settings/speech', title: 'Speech' },
@@ -24,7 +29,7 @@ export const HIDDEN_ROUTES = Object.freeze([
 
 export const DEFAULT_ROUTE = 'home';
 
-const ROUTE_IDS = new Set([...ROUTES, ...HIDDEN_ROUTES].map((route) => route.id));
+const ROUTE_IDS = new Set([...ROUTES, ...SETTINGS_PARTS, ...HIDDEN_ROUTES].map((route) => route.id));
 
 /**
  * The route a location hash opens. Route ids are ASCII, so the hash is compared as is and never
@@ -34,7 +39,6 @@ const ROUTE_IDS = new Set([...ROUTES, ...HIDDEN_ROUTES].map((route) => route.id)
  */
 export function parseRoute(hash) {
   const id = String(hash ?? '').replace(/^#/, '');
-  if (id === 'settings') return 'settings/provider';
   return ROUTE_IDS.has(id) ? id : DEFAULT_ROUTE;
 }
 

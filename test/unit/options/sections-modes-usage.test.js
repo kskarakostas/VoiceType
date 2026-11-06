@@ -119,16 +119,20 @@ describe('settings page modes and usage layout', () => {
     }
   });
 
-  it('no card heading repeats its route heading', async () => {
+  it('a part titles its own card, and no card repeats a heading', async () => {
     await start(fakeChrome(), 'modes');
     const cardHeadings = (id) => [...route(id).querySelectorAll('h2, h3')].filter((h) => h.closest('.card')).map((h) => h.textContent.trim());
-    for (const id of ['settings/provider', 'settings/recording', 'settings/speech']) expect(cardHeadings(id), id).toEqual([]);
+    expect(cardHeadings('settings/provider')).toEqual(['Provider']);
+    expect(cardHeadings('settings/recording')).toEqual(['Recording']);
+    expect(cardHeadings('settings/speech')).toEqual(['Speech']);
     expect(cardHeadings('modes')).toEqual(['Edit mode']);
     expect($('editor-title').tagName).toBe('H2');
-    // Under the part's h2, the cards of Usage and data take h3.
-    expect(cardHeadings('settings/usage')).toEqual(['Usage', 'Reset']);
-    expect($('h-usage').tagName).toBe('H3');
+    // The part's h2 titles its first card; the Reset card under it takes an h3.
+    expect(cardHeadings('settings/usage')).toEqual(['Usage and data', 'Reset']);
     expect($('reset').closest('.card').querySelector('h3').textContent.trim()).toBe('Reset');
+    // A closed fold gives the button no description, so the fold comes first in the keyboard order.
+    const fold = $('reset-hint').closest('details');
+    expect(fold.compareDocumentPosition($('reset')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(route('modes').querySelector('.card-head #add-mode')).not.toBeNull();
   });
 

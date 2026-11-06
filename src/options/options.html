@@ -25,18 +25,9 @@
         <li><a href="#modes">Modes</a></li>
         <li><a href="#dictionary">Dictionary</a></li>
         <li><a href="#history">History</a></li>
-        <li class="nav-group" data-group="settings">
-          <span class="nav-group-label" id="nav-group-settings">Settings</span>
-          <ul class="nav-list" aria-labelledby="nav-group-settings">
-            <li><a href="#settings/provider">Provider</a></li>
-            <li><a href="#settings/recording">Recording</a></li>
-            <li><a href="#settings/speech">Speech</a></li>
-            <li><a href="#settings/sites">Sites</a></li>
-            <li><a href="#settings/appearance">Appearance</a></li>
-            <li><a href="#settings/sound">Sound and clipboard</a></li>
-            <li><a href="#settings/usage">Usage and data</a></li>
-          </ul>
-        </li>
+      </ul>
+      <ul class="nav-list nav-settings">
+        <li><a href="#settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.3 9.8L22.1 10.3L22.1 13.7L19.3 14.2L18.7 15.5L20.3 17.9L17.9 20.3L15.5 18.7L14.2 19.3L13.7 22.1L10.3 22.1L9.8 19.3L8.5 18.7L6.1 20.3L3.7 17.9L5.3 15.5L4.7 14.2L1.9 13.7L1.9 10.3L4.7 9.8L5.3 8.5L3.7 6.1L6.1 3.7L8.5 5.3L9.8 4.7L10.3 1.9L13.7 1.9L14.2 4.7L15.5 5.3L17.9 3.7L20.3 6.1L18.7 8.5Z"/><circle cx="12" cy="12" r="3"/></svg>Settings</a></li>
       </ul>
       <footer class="sidebar-footer">
         <p><span id="version">Version</span></p>
@@ -173,9 +164,10 @@
 
         <section data-route="settings" aria-labelledby="h-settings" hidden>
           <h1 id="h-settings" tabindex="-1">Settings</h1>
+          <div class="settings-columns">
           <section class="settings-part" data-part="settings/provider" aria-labelledby="h-provider">
-            <h2 id="h-provider" tabindex="-1">Provider</h2>
             <div class="card">
+              <h2 id="h-provider" tabindex="-1">Provider</h2>
               <div class="segmented" role="radiogroup" aria-labelledby="h-provider">
                 <label class="segment"><input type="radio" name="provider" value="openai"><span>OpenAI</span></label>
                 <label class="segment"><input type="radio" name="provider" value="gemini"><span>Gemini</span></label>
@@ -201,9 +193,9 @@
           </section>
 
           <section class="settings-part" data-part="settings/recording" aria-labelledby="h-settings-recording">
-            <h2 id="h-settings-recording" tabindex="-1">Recording</h2>
             <div class="card">
-              <div class="grid-2">
+              <h2 id="h-settings-recording" tabindex="-1">Recording</h2>
+              <div class="recording-fields">
                 <div class="field">
                   <label class="field-label" for="min-time">Minimum length</label>
                   <select id="min-time">
@@ -242,8 +234,8 @@
           </section>
 
           <section class="settings-part" data-part="settings/speech" aria-labelledby="h-settings-speech">
-            <h2 id="h-settings-speech" tabindex="-1">Speech</h2>
             <div class="card">
+              <h2 id="h-settings-speech" tabindex="-1">Speech</h2>
               <fieldset class="languages">
                 <legend class="field-label">Spoken languages</legend>
                 <div class="check-grid" id="languages"></div>
@@ -254,8 +246,8 @@
           </section>
 
           <section class="settings-part" data-part="settings/sites" aria-labelledby="h-settings-sites">
-            <h2 id="h-settings-sites" tabindex="-1">Sites</h2>
             <div class="card site-card">
+              <h2 id="h-settings-sites" tabindex="-1">Sites</h2>
               <p class="hint site-hint">Hide pill removes the idle pill on that site; the hotkey still records there, with a small indicator at the bottom of the page.</p>
               <form class="site-add" id="site-add">
                 <div class="field">
@@ -270,8 +262,6 @@
                 <button type="submit" class="btn btn-primary">Add</button>
                 <p class="hint site-add-error" id="site-add-error" data-tone="error" role="alert" hidden></p>
               </form>
-            </div>
-            <div class="card site-card">
               <table class="site-table" id="site-table">
                 <caption class="visually-hidden">Site rules</caption>
                 <thead>
@@ -284,8 +274,8 @@
           </section>
 
           <section class="settings-part" data-part="settings/appearance" aria-labelledby="h-settings-appearance">
-            <h2 id="h-settings-appearance" tabindex="-1">Appearance</h2>
             <div class="card">
+              <h2 id="h-settings-appearance" tabindex="-1">Appearance</h2>
               <div class="style-grid" role="radiogroup" aria-labelledby="h-settings-appearance">
                 <label class="style-card">
                   <input type="radio" name="pill-style" value="pill">
@@ -357,8 +347,8 @@
           </section>
 
           <section class="settings-part" data-part="settings/sound" aria-labelledby="h-settings-sound">
-            <h2 id="h-settings-sound" tabindex="-1">Sound and clipboard</h2>
             <div class="card">
+              <h2 id="h-settings-sound" tabindex="-1">Sound and clipboard</h2>
               <label class="check"><input type="checkbox" id="sounds" aria-describedby="sounds-hint">Play sounds</label>
               <p class="hint" id="sounds-hint">Short tones when recording starts, when it stops, when the text is ready, and when something goes wrong.</p>
               <div class="option-group" role="radiogroup" aria-labelledby="sound-set-label" aria-describedby="sound-set-hint">
@@ -393,10 +383,9 @@
           </section>
 
           <section class="settings-part" data-part="settings/usage" aria-labelledby="h-settings-usage">
-            <h2 id="h-settings-usage" tabindex="-1">Usage and data</h2>
-            <section class="card" aria-labelledby="h-usage">
+            <div class="card">
               <div class="card-head">
-                <h3 id="h-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11"/><path d="M10 20V5"/><path d="M16 20v-6"/><path d="M21 20H3"/></svg>Usage</h3>
+                <h2 id="h-settings-usage" tabindex="-1">Usage and data</h2>
                 <button type="button" class="btn btn-quiet" id="refresh-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>Refresh</button>
               </div>
               <table class="usage">
@@ -417,13 +406,17 @@
               <div class="card-actions">
                 <button type="button" class="btn btn-danger" id="clear-usage">Clear usage history</button>
               </div>
-            </section>
+            </div>
             <div class="card">
               <h3>Reset</h3>
+              <details class="reset-details">
+                <summary>What Reset changes and keeps</summary>
+                <p class="hint" id="reset-hint">Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the dictation and edit hotkeys, the pill style, Minimal's size, the recording colour, sounds, the sound set and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.</p>
+              </details>
               <button type="button" class="btn btn-danger btn-block" id="reset" aria-describedby="reset-hint">Reset to defaults</button>
-              <p class="hint" id="reset-hint">Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the dictation and edit hotkeys, the pill style, Minimal's size, the recording colour, sounds, the sound set and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.</p>
             </div>
           </section>
+          </div>
         </section>
 
         <section data-route="welcome" aria-labelledby="h-welcome" hidden>

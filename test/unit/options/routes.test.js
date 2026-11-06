@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ROUTES, HIDDEN_ROUTES, DEFAULT_ROUTE, parseRoute, pageOf } from '../../../src/options/routes.js';
+import { ROUTES, SETTINGS_PARTS, HIDDEN_ROUTES, DEFAULT_ROUTE, parseRoute, pageOf } from '../../../src/options/routes.js';
 
 describe('settings page routes', () => {
   it('known routes resolve to themselves', () => {
@@ -13,7 +13,7 @@ describe('settings page routes', () => {
     expect(ROUTES.map((r) => r.id)).not.toContain('welcome');
   });
 
-  it.each(ROUTES.filter((r) => r.id.startsWith('settings/')).map((r) => r.id))('%s lives on the Settings page', (id) => {
+  it.each(SETTINGS_PARTS.map((r) => r.id))('%s lives on the Settings page', (id) => {
     expect(parseRoute(`#${id}`)).toBe(id);
     expect(pageOf(id)).toBe('settings');
   });
@@ -22,8 +22,9 @@ describe('settings page routes', () => {
     for (const id of ['home', 'modes', 'dictionary', 'history', 'welcome']) expect(pageOf(id)).toBe(id);
   });
 
-  it('a bare #settings opens Provider', () => {
-    expect(parseRoute('#settings')).toBe('settings/provider');
+  it('a bare #settings is the Settings page itself', () => {
+    expect(parseRoute('#settings')).toBe('settings');
+    expect(pageOf('settings')).toBe('settings');
   });
 
   it('unknown and malformed hashes resolve to home', () => {
@@ -35,8 +36,18 @@ describe('settings page routes', () => {
 
   it('sidebar order matches the spec', () => {
     expect(ROUTES.map((r) => r.title)).toEqual([
-      'Home', 'Modes', 'Dictionary', 'History', 'Provider', 'Recording', 'Speech', 'Sites', 'Appearance', 'Sound and clipboard', 'Usage and data',
+      'Home', 'Modes', 'Dictionary', 'History', 'Settings',
     ]);
     expect(Object.isFrozen(ROUTES)).toBe(true);
+  });
+
+  it('the parts of the Settings page keep their order and their old hashes', () => {
+    expect(SETTINGS_PARTS.map((r) => r.id)).toEqual([
+      'settings/provider', 'settings/recording', 'settings/speech', 'settings/sites', 'settings/appearance', 'settings/sound', 'settings/usage',
+    ]);
+    expect(SETTINGS_PARTS.map((r) => r.title)).toEqual([
+      'Provider', 'Recording', 'Speech', 'Sites', 'Appearance', 'Sound and clipboard', 'Usage and data',
+    ]);
+    expect(Object.isFrozen(SETTINGS_PARTS)).toBe(true);
   });
 });

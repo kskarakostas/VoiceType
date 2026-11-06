@@ -45,23 +45,13 @@
 .nav-list a:hover { background: var(--surface-2); color: var(--text); }
 .nav-list a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
 
-.nav-group { margin-top: 10px; }
-
-.nav-group-label {
-  display: block;
-  margin-bottom: 2px;
-  padding: 0 8px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
+/* Settings: one entry with its cog, pushed down to the footer, apart from the pages you use daily. */
+.nav-settings { margin-top: auto; }
+.nav-settings a { display: flex; align-items: center; gap: 8px; }
 
 .sidebar-footer {
   display: grid;
   gap: 2px;
-  margin-top: auto;
   padding: 0 8px;
   color: var(--muted);
   font-size: 12px;
@@ -84,17 +74,30 @@ main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 
 .toast { left: auto; max-width: 360px; }
 
-/* Settings: one page of seven parts, a rule between them. The rule is a border, which forced
-   colors keep. A card heading in a part is an h3 under the part's h2 and keeps the card heading look. */
+/* Settings: one page of seven parts, each a titled card. The page takes the whole window and the
+   parts flow into as many columns as fit, three at most, top to bottom, so the keyboard order is
+   the page's order. A part never breaks across two columns. */
 
-section[data-route="settings"] { gap: 20px; }
-.settings-part + .settings-part { padding-top: 20px; border-top: 1px solid var(--border); }
-.settings-part > h2 { scroll-margin-top: 16px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.content:has(> main > section[data-route="settings"]:not([hidden])) { max-width: none; }
+section[data-route="settings"] > h1 { width: fit-content; scroll-margin-top: 24px; }
+.settings-columns { column-count: 3; column-width: 430px; column-gap: 14px; }
+.settings-part { break-inside: avoid; margin-bottom: 14px; }
+
+/* The heading sits inside its card, so the top of the card shows when a hash scrolls to it. Its
+   width fits its text, so the focus ring does not span the card. */
+.settings-part .card h2 {
+  width: fit-content;
+  margin-bottom: 10px;
+  scroll-margin-top: 28px;
+  color: var(--text);
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+.settings-part .card-head h2 { margin-bottom: 0; }
 
 .settings-part .card h3 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   margin-bottom: 10px;
   color: var(--text-2);
   font-size: 12px;
@@ -103,8 +106,13 @@ section[data-route="settings"] { gap: 20px; }
   text-transform: uppercase;
 }
 
-.settings-part .card h3 svg { width: 14px; height: 14px; color: var(--accent); }
-.settings-part .card-head h3 { margin-bottom: 0; }
+/* The percentage caps the columns, so wide cards keep even rows: three here, four below. */
+.recording-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(max(120px, 30%), 1fr)); gap: 10px; }
+.languages .check-grid { grid-template-columns: repeat(auto-fill, minmax(max(96px, 22%), 1fr)); }
+/* Ahead of its button: a closed fold gives the button no description, so a keyboard or screen reader
+   user meets the fold first, as a reader does. */
+.reset-details { margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+.reset-details summary { cursor: pointer; }
 
 /* Home */
 
@@ -193,7 +201,7 @@ section[data-route="settings"] { gap: 20px; }
 
 .site-card { container-type: inline-size; }
 .site-hint { margin: 0 0 10px; }
-.site-empty { margin-top: 0; }
+.site-empty { margin-top: 10px; }
 
 .site-add {
   display: grid;
@@ -205,7 +213,7 @@ section[data-route="settings"] { gap: 20px; }
 .site-add .check { min-height: 32px; }
 .site-add-error { grid-column: 1 / -1; margin-top: 0; }
 
-.site-table { width: 100%; border-collapse: collapse; }
+.site-table { width: 100%; margin-top: 12px; border-collapse: collapse; }
 .site-table th, .site-table td { padding: 6px 4px; text-align: left; }
 .site-table thead th { color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .site-table tbody th { font-weight: 600; overflow-wrap: anywhere; }
@@ -215,10 +223,11 @@ section[data-route="settings"] { gap: 20px; }
 
 /* Appearance */
 
-.style-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.style-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
 .style-grid + .hint { margin-top: 10px; }
 /* The size, colour and sound set choices: the same cards, narrower, with no preview. */
-.style-grid-compact { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+.style-grid-compact { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); }
+.style-grid-compact .style-card { padding: 8px; }
 .option-group { display: grid; gap: 6px; margin-top: 16px; }
 
 .style-card {
@@ -265,6 +274,8 @@ section[data-route="settings"] { gap: 20px; }
 .style-card:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
 .style-card .hint { margin-top: 0; }
 .style-name { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; font-weight: 600; }
+/* A colour's name wraps to two lines in a narrow card, so its swatch sits above it. */
+.style-name:has(.swatch) { flex-direction: column; align-items: flex-start; gap: 4px; }
 
 /* A card's own button sits above the radio that covers the card, so a press on it plays and does not choose. */
 .style-card .btn { position: relative; z-index: 1; justify-self: start; margin-top: 2px; }
@@ -284,7 +295,7 @@ section[data-route="settings"] { gap: 20px; }
 .style-preview {
   position: relative;
   display: block;
-  height: 72px;
+  height: 56px;
   margin-bottom: 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -294,8 +305,8 @@ section[data-route="settings"] { gap: 20px; }
 .preview-field {
   position: absolute;
   top: 10px;
-  left: 10px;
-  width: 96px;
+  left: 8px;
+  width: 52px;
   height: 28px;
   border: 1px solid var(--border-strong);
   border-radius: 4px;
@@ -303,9 +314,9 @@ section[data-route="settings"] { gap: 20px; }
 }
 
 .preview-bar, .preview-dot, .preview-mini { position: absolute; background: var(--accent); }
-.preview-bar { top: 18px; left: 112px; width: 36px; height: 12px; border-radius: 999px; }
-.preview-dot { top: 19px; left: 112px; width: 10px; height: 10px; border-radius: 50%; }
-.preview-mini { top: 20px; left: 112px; width: 28px; height: 8px; border-radius: 999px; }
+.preview-bar { top: 18px; left: 66px; width: 32px; height: 12px; border-radius: 999px; }
+.preview-dot { top: 19px; left: 66px; width: 10px; height: 10px; border-radius: 50%; }
+.preview-mini { top: 20px; left: 66px; width: 28px; height: 8px; border-radius: 999px; }
 
 /* Recording colour swatches: the values of --vt-rec in pill.css, which a unit test compares. They
    are the one place this sheet names a colour; the name and the card's mark say which is chosen. */
@@ -347,9 +358,9 @@ section[data-route="settings"] { gap: 20px; }
 }
 
 /* Too narrow for four columns: each rule stacks, and its checkbox shows its own label. The card's
-   width decides, not the window's: above the breakpoint before this one the sidebar takes 220 px. */
+   width decides, not the window's: a card's width follows the columns of the page. */
 
-@container (max-width: 519.98px) {
+@container (max-width: 439.98px) {
   .site-add { grid-template-columns: minmax(0, 1fr); }
 
   .site-table, .site-table tbody, .site-table tr, .site-table th, .site-table td { display: block; }

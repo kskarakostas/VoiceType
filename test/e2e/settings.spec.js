@@ -579,9 +579,13 @@ const SETTINGS_PARTS = [
   ['settings/sound', 'h-settings-sound'],
   ['settings/usage', 'h-settings-usage'],
 ];
+/** Window width and height, the columns of the Settings page and where its cards may end. */
+const LAYOUTS = [[1000, 640, 1, 2100], [1440, 900, 2, 1340], [1920, 1080, 3, 900], [2560, 1440, 3, 850]];
+/** Changes the hash in the open page, as a link from Welcome or the popup does. */
+const goToHash = (page, route) => page.evaluate((hash) => { window.location.hash = hash; }, route);
 /** Shorter than the page, so a part further down needs a scroll to show. */
 const SHORT_WINDOW = { width: 1000, height: 500 };
-/** A heading scrolled to the start of the window sits this close to its top edge (16 px of margin). */
+/** A heading scrolled to the start of the window sits this close to its top edge (28 px of margin). */
 const NEAR_TOP_PX = 60;
 
 test('each settings hash lands with its heading in view, and moves no focus', async () => {
@@ -592,7 +596,7 @@ test('each settings hash lands with its heading in view, and moves no focus', as
     await expect(heading).toBeInViewport({ ratio: 1 });
     await expect(page.locator('section[data-route="settings"]')).toBeVisible();
     await expect(page.locator('section[data-route]:not([hidden])')).toHaveCount(1);
-    await expect(page.locator(`nav a[href="#${route}"]`)).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('nav a[href="#settings"]')).toHaveAttribute('aria-current', 'page');
     // The last part ends the page, so it cannot reach the top; every other one is scrolled to it.
     if (route !== 'settings/usage') await expect.poll(async () => (await heading.boundingBox()).y).toBeLessThan(NEAR_TOP_PX);
     // A load moves no focus.
@@ -623,18 +627,37 @@ test('a failed load on a deep hash leaves the banner in view, and the page at it
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
 });
 
-test('the sidebar jumps between parts: heading focused, hash and mark moved, nothing reloaded', async () => {
+test('the sidebar has one Settings entry, and it opens the page at its top', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const page = await openSettingsPage('home', SHORT_WINDOW);
+  await expect(page.locator('nav .nav-list a')).toHaveText(['Home', 'Modes', 'Dictionary', 'History', 'Settings']);
+
+  await page.locator('nav a[href="#settings"]').click();
+  await expect(page).toHaveURL(extensionUrl('options.html#settings'));
+  await expect(page.locator('#h-settings')).toBeFocused();
+  await expect(page.locator('nav a[href="#settings"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('nav [aria-current]')).toHaveCount(1);
+
+  // A press while already there, scrolled down, comes back up.
+  await page.mouse.move(600, 300);
+  await page.mouse.wheel(0, 5000);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await page.locator('nav a[href="#settings"]').click();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+});
+
+test('an old hash jumps to its part: heading focused, the Settings entry marked, nothing reloaded', async () => {
   await seedSettings(serviceWorker, DUMMY_KEY);
   const page = await openSettingsPage('settings/provider', SHORT_WINDOW);
   await page.evaluate(() => { window.__marker = 1; });
 
   for (const [route, headingId] of SETTINGS_PARTS.slice(1)) {
-    await page.locator(`nav a[href="#${route}"]`).click();
+    await goToHash(page, route);
     await expect(page.locator(`#${headingId}`)).toBeFocused();
     await expect(page.locator(`#${headingId}`)).toBeInViewport({ ratio: 1 });
     if (route !== 'settings/usage') await expect.poll(async () => (await page.locator(`#${headingId}`).boundingBox()).y).toBeLessThan(NEAR_TOP_PX);
     await expect(page.locator('nav [aria-current]')).toHaveCount(1);
-    await expect(page.locator(`nav a[href="#${route}"]`)).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('nav a[href="#settings"]')).toHaveAttribute('aria-current', 'page');
     await expect(page).toHaveURL(extensionUrl(`options.html#${route}`));
   }
   expect(await page.evaluate(() => window.__marker)).toBe(1);
@@ -643,7 +666,6 @@ test('the sidebar jumps between parts: heading focused, hash and mark moved, not
   await page.mouse.wheel(0, -5000);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   await expect(page).toHaveURL(extensionUrl('options.html#settings/usage'));
-  await expect(page.locator('nav a[href="#settings/usage"]')).toHaveAttribute('aria-current', 'page');
 });
 
 test('Add API key in the popup lands on Provider with its heading focused and in view', async () => {
@@ -662,7 +684,7 @@ test('Add API key in the popup lands on Provider with its heading focused and in
   expect(settingsPages()).toEqual([page]);
 });
 
-test('a key typed, then a sidebar jump, is saved, and Provider shows it masked on the way back', async () => {
+test('a key typed, then a press on another page, is saved, and Provider shows it masked on the way back', async () => {
   await seedSettings(serviceWorker, '');
   const page = await openSettingsPage('settings/provider', SHORT_WINDOW);
   const key = page.locator('#key-openai');
@@ -670,12 +692,12 @@ test('a key typed, then a sidebar jump, is saved, and Provider shows it masked o
   await expect(key).toHaveValue(PASTED_KEY);
 
   // The press moves focus off the field before the typing pause ends, and the hash change follows.
-  await page.locator('nav a[href="#settings/usage"]').click();
-  await expect(page.locator('#h-settings-usage')).toBeFocused();
+  await page.locator('nav a[href="#home"]').click();
+  await expect(page.locator('#h-home')).toBeFocused();
   await expect.poll(async () => (await storedSettings()).keys.openai).toBe(PASTED_KEY);
 
-  await page.locator('nav a[href="#settings/provider"]').click();
-  await expect(page.locator('#h-provider')).toBeFocused();
+  await page.locator('nav a[href="#settings"]').click();
+  await expect(page.locator('#h-settings')).toBeFocused();
   await expect(key).toHaveAttribute('placeholder', 'sk-e…-key (saved)');
   await expect(key).toHaveValue('');
   await expect(page.locator('#banner')).toBeHidden();
@@ -687,16 +709,44 @@ test('a window 400 px high on Usage and data focuses the heading of the last par
   const heading = page.locator('#h-settings-usage');
   await expect(heading).toBeInViewport({ ratio: 1 });
 
-  // A press on the link of the current hash fires no hashchange, and lands the same.
-  await page.locator('nav a[href="#settings/usage"]').click();
-  await expect(heading).toBeFocused();
-  await expect(heading).toBeInViewport({ ratio: 1 });
-
-  await page.locator('nav a[href="#settings/provider"]').click();
+  await goToHash(page, 'settings/provider');
   await expect(page.locator('#h-provider')).toBeFocused();
-  await page.locator('nav a[href="#settings/usage"]').click();
+  await goToHash(page, 'settings/usage');
   await expect(heading).toBeFocused();
   await expect(heading).toBeInViewport({ ratio: 1 });
+});
+
+test('the Settings page fills the window: columns follow its width and the page stays short', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY, { siteRules: { 'mail.example.com': { hidePill: false, mode: 'email' } } });
+  // Where the cards end, not the document's height, which a tall window sets. Limits from a measured
+  // run; a single 760 px column ended about 2500 px down at every width.
+  for (const [width, height, columns, tallest] of LAYOUTS) {
+    const page = await openSettingsPage('settings', { width, height });
+    await expect(page.locator('.settings-part').first()).toBeVisible();
+    const { lefts, bottom, scrollWidth, clientWidth, overlaps } = await page.evaluate(() => {
+      const boxes = [...document.querySelectorAll('.settings-part')].map((part) => part.getBoundingClientRect());
+      return {
+        lefts: new Set(boxes.map((box) => Math.round(box.left))).size,
+        bottom: Math.max(...boxes.map((box) => box.bottom)),
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+        overlaps: boxes.some((a, i) => boxes.slice(i + 1).some((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)),
+      };
+    });
+    expect(lefts, `${width} columns`).toBe(columns);
+    expect(bottom, `${width} height`).toBeLessThanOrEqual(tallest);
+    expect(scrollWidth, `${width} sideways`).toBeLessThanOrEqual(clientWidth);
+    expect(overlaps, `${width} overlap`).toBe(false);
+    await page.close();
+  }
+});
+
+test('the other pages keep their reading width', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const page = await openSettingsPage('settings', { width: 1920, height: 1080 });
+  await page.locator('nav a[href="#modes"]').click();
+  await expect(page.locator('#h-modes')).toBeFocused();
+  expect((await page.locator('.content').boundingBox()).width).toBe(760);
 });
 
 test('the Settings page has no sideways scroll at 380 px', async () => {
@@ -706,7 +756,7 @@ test('the Settings page has no sideways scroll at 380 px', async () => {
   await expect(page.locator('#site-table tbody th')).toHaveText(host);
 
   for (const [route, headingId] of SETTINGS_PARTS) {
-    await page.locator(`nav a[href="#${route}"]`).click();
+    await goToHash(page, route);
     await expect(page.locator(`#${headingId}`)).toBeFocused();
     const { scroll, client } = await page.evaluate(() => ({
       scroll: document.documentElement.scrollWidth,
@@ -717,11 +767,11 @@ test('the Settings page has no sideways scroll at 380 px', async () => {
   }
 });
 
-test('forced colours keep the divider between two parts', async () => {
+test('forced colours keep the edge of a part\'s card', async () => {
   await seedSettings(serviceWorker, DUMMY_KEY);
   const page = await openSettingsPage('settings/provider', SHORT_WINDOW);
   await page.emulateMedia({ forcedColors: 'active' });
-  const second = page.locator('section[data-part="settings/recording"]');
+  const second = page.locator('section[data-part="settings/recording"] .card');
   await second.scrollIntoViewIfNeeded();
 
   const { top, left, style, thickness, canvas } = await second.evaluate((part) => {
@@ -736,9 +786,9 @@ test('forced colours keep the divider between two parts', async () => {
   expect(style).toBe('solid');
   expect(thickness).toBeGreaterThan(0);
 
-  // A band through the rule: 20 px of padding below it and the gap above it are the canvas, so
-  // any pixel that is not the canvas is the rule.
-  const band = await page.screenshot({ clip: { x: left + 8, y: Math.floor(top) - 1, width: 32, height: 3 } });
+  // A band through the edge: the padding below it and the gap above it are the canvas, so any
+  // pixel that is not the canvas is the edge.
+  const band = await page.screenshot({ clip: { x: left + 16, y: Math.floor(top) - 1, width: 32, height: 3 } });
   const { data, channels } = decodePng(band);
   let ruled = 0;
   for (let i = 0; i < data.length; i += channels) {

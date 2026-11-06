@@ -166,12 +166,13 @@ export async function initOptions({ chrome, document, window, sections = SECTION
   const mounted = sections.map((factory) => factory(ctx));
 
   // Routing. The hash names the page, or a part of the Settings page; anything else opens Home and
-  // the URL is rewritten to it. The heading a route lands on is the page's h1, or a part's h2.
+  // the URL is rewritten to it. The heading a route lands on is the page's h1, or a part's h2. The
+  // sidebar marks the page, so every part marks Settings.
 
   /** @returns {HTMLElement|null|undefined} */
   function headingOf(page) {
     const part = el.parts.get(route);
-    return part ? part.querySelector(':scope > h2') : page?.querySelector(':scope > h1');
+    return part ? part.querySelector('h2') : page?.querySelector(':scope > h1');
   }
 
   function showRoute({ focus, scroll = true }) {
@@ -180,12 +181,13 @@ export async function initOptions({ chrome, document, window, sections = SECTION
     const page = el.routes.find((section) => section.dataset.route === pageOf(route));
     for (const section of el.routes) section.hidden = section !== page;
     for (const link of el.links) {
-      if (link.getAttribute('href') === `#${route}`) link.setAttribute('aria-current', 'page');
+      if (link.getAttribute('href') === `#${pageOf(route)}`) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     }
     const heading = headingOf(page);
-    // Only a part is scrolled to: another page opens at its top as it did, and the focus brings its h1 into view.
-    if (scroll && el.parts.has(route)) heading?.scrollIntoView?.({ block: 'start' });
+    // Only the Settings page is scrolled: it is the one page long enough to need it, and its h1 may
+    // hold the focus already, so a focus would not bring it back. Another page opens at its top.
+    if (scroll && pageOf(route) === 'settings') heading?.scrollIntoView?.({ block: 'start' });
     if (focus) heading?.focus();
   }
 
