@@ -112,7 +112,8 @@ for (const colorScheme of ['light', 'dark']) {
       await page.reload();
 
       const popup = await context.newPage();
-      await popup.setViewportSize({ width: 320, height: 560 });
+      // Shorter than the panel, so the full-page shot ends where the panel does.
+      await popup.setViewportSize({ width: 320, height: 300 });
       await popup.goto(`chrome-extension://${extensionId}/popup.html`);
       // From behind the demo page, as the quick panel reads the active tab.
       await page.bringToFront();
@@ -130,7 +131,9 @@ for (const colorScheme of ['light', 'dark']) {
         // A route change focuses the heading, and its ring would be in the shot.
         await settings.evaluate(() => document.activeElement?.blur());
         await settings.waitForTimeout(500);
-        await settings.screenshot({ path: `${dir}/${name}.png` });
+        // A part is one card of a longer page, so its shot is that card and nothing of its neighbours.
+        const shot = route.startsWith('settings/') ? settings.locator(`section[data-part="${route}"]`) : settings;
+        await shot.screenshot({ path: `${dir}/${name}.png` });
       }
     } finally {
       await close();

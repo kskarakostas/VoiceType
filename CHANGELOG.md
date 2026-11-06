@@ -1,5 +1,30 @@
 # Changelog
 
+## 3.4.0 (2026-11-06)
+
+### Added
+- The last 5 dictations in the popup. An arrow beside Copy last opens the list, and a press on a row copies that whole dictation. The list is closed each time the popup opens, and no dictated text is in the popup until you press the arrow. A row shows at most 120 characters of the first line.
+- Today in the popup shows four numbers: Sessions, Words, Spoken and Cost.
+
+### Changed
+- Settings is one sidebar entry, with a cog, and one page. Its seven parts are cards in one to three columns that follow the window, in place of seven entries and a single narrow column. Links and bookmarks such as `options.html#settings/sites` still land on their part, and `#settings` alone opens the top of the page.
+- A new icon, a white microphone and text cursor on an indigo square, in the toolbar, on `chrome://extensions` and on the pages. A 32 px size joins 16, 48 and 128.
+- A shorter popup: Provider and Mode side by side, one line for this site, and no tagline.
+
+### Measured
+- The Settings page was 2602 px tall at every window width. Its cards now end 1311 px down at 1440 wide and 868 px down at 1920 wide.
+- The real toolbar popup is 337 px high, and 501 px with the list open.
+
+### Internal
+- No new permission, no new package, no stored field. `scripts/render-icons.mjs` renders the icons from `icons/icon.svg` and `icons/icon16.svg` through Playwright's Chromium.
+
+### Not tested
+- By K. S. Karakostas: the manual list was run by a harness instead, with the provider stubbed. The feel of the Settings page and the popup, and whether the 16 px mark reads as a microphone, are unjudged.
+- The icon in a real toolbar and in a tab: headless Chromium draws neither.
+- A real dictation with a real key and microphone on this build.
+- A screen reader on the new Settings page and popup.
+- Windows and macOS.
+
 ## 3.3.0 (2026-11-06)
 
 ### Added

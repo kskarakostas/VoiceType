@@ -1,6 +1,6 @@
 {
   "name": "voicetype",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "private": true,
   "type": "module",
   "description": "BYOK dictation for Chrome with cost transparency",

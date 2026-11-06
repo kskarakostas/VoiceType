@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-3.3.0-purple" alt="Version">
+  <img src="https://img.shields.io/badge/version-3.4.0-purple" alt="Version">
   <img src="https://img.shields.io/badge/Chrome-140%2B-blue" alt="Chrome 140 or newer">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
@@ -100,7 +100,7 @@ Keys stay in your browser's local extension storage, readable only by VoiceType'
   <img src="screenshots/light/quick-panel.png" alt="Quick panel" width="280">
 </picture><br>
 <strong>Quick Panel</strong><br>
-<em>Provider, active mode, this site's rule and today's cost</em>
+<em>Provider, active mode, this site's rule and today's numbers</em>
 </td>
 <td align="center" width="50%">
 <picture>
