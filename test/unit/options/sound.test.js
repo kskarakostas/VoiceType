@@ -249,6 +249,16 @@ describe('settings page Sound and clipboard, sound sets', () => {
     expect(play.mock.calls).toEqual(CUE_NAMES.map((name) => [name, 'tap']));
   });
 
+  it('a Play press sends no message to the worker: the page plays the cues itself (V61)', async () => {
+    const chrome = fakeChrome(storedSettings({ sounds: false }));
+    await start(chrome);
+    await flush();
+    const before = chrome.runtime.sendMessage.mock.calls.length;
+    await press('[data-play="warm"]');
+    expect(play).toHaveBeenCalledTimes(CUE_NAMES.length);
+    expect(chrome.runtime.sendMessage.mock.calls).toHaveLength(before);
+  });
+
   it('Play previews a set and does not choose it', async () => {
     const chrome = fakeChrome(storedSettings({ soundSet: 'soft' }));
     await start(chrome);
