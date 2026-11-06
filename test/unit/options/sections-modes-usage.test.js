@@ -253,7 +253,7 @@ describe('settings page reset (V21)', () => {
       hotkey: { code: 'KeyD', ctrl: false, shift: false, alt: true, meta: false }, autoStopSilenceSec: 3,
       editHotkey: { code: 'KeyJ', ctrl: false, shift: false, alt: true, meta: false },
       siteRules: { 'a.com': { hidePill: true, mode: 'custom_1' } }, pillStyle: 'minimal', sounds: true, alwaysCopy: true,
-      keepHistory: false,
+      keepHistory: false, miniSize: 'xlarge', recColor: 'mocha', soundSet: 'tap',
     });
     const fresh = freshSettings();
     for (const field of Object.keys(fresh)) {
@@ -281,7 +281,9 @@ describe('settings page reset (V21)', () => {
       expect(Object.hasOwn(patch, kept), kept).toBe(false);
     }
     expect(patch.modes).toEqual(freshSettings().modes);
-    expect(patch).toMatchObject({ activeMode: 'default', pillStyle: 'dot', sounds: false, alwaysCopy: false });
+    expect(patch).toMatchObject({
+      activeMode: 'default', pillStyle: 'dot', sounds: false, alwaysCopy: false, miniSize: 'medium', recColor: 'red', soundSet: 'soft',
+    });
     const { settingsVersion, keys, provider, languages, dictionary, siteRules, keepHistory, ...reset } = freshSettings();
     expect(patch).toEqual(reset);
 

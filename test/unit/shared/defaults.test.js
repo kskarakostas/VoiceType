@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   SETTINGS_VERSION, BUILTIN_MODES, DEFAULT_SETTINGS, AUTO_STOP_CHOICES, CONTENT_PATCH_FIELDS, PILL_STYLES,
-  MAX_EDIT_CHARS, EDIT_MODE, EDIT_MODE_LABEL,
+  MINI_SIZES, REC_COLORS, SOUND_SETS, MAX_EDIT_CHARS, EDIT_MODE, EDIT_MODE_LABEL,
   freshSettings, recoverKey, migrateSettings, toPublicSettings, applySettingsPatch, orderedModeKeys,
 } from '../../../src/shared/defaults.js';
 import { isValidChord } from '../../../src/shared/chord.js';
@@ -71,7 +71,10 @@ function fullV3Settings() {
     dictionary: { any: ['Palowise', 'Karakostas'], el: ['Νόησις'] },
     siteRules: { 'mail.google.com': { hidePill: false, mode: 'email' }, 'example.com': { hidePill: true, mode: null } },
     pillStyle: 'pill',
+    miniSize: 'large',
+    recColor: 'emerald',
     sounds: true,
+    soundSet: 'warm',
     alwaysCopy: true,
     keepHistory: false,
   };
@@ -79,7 +82,8 @@ function fullV3Settings() {
 
 /** The v3 fields a v2 record gains when it migrates. */
 const V3_DEFAULTS = {
-  siteRules: {}, pillStyle: 'dot', sounds: false, alwaysCopy: false, keepHistory: true, editHotkey: DEFAULT_EDIT_HOTKEY,
+  siteRules: {}, pillStyle: 'dot', miniSize: 'medium', recColor: 'red', sounds: false, soundSet: 'soft', alwaysCopy: false,
+  keepHistory: true, editHotkey: DEFAULT_EDIT_HOTKEY,
 };
 
 describe('defaults', () => {
@@ -666,7 +670,7 @@ describe('toPublicSettings', () => {
   });
 
   it('keeps every other field', () => {
-    const { keys: _keys, siteRules: _siteRules, dictionary: _dictionary, keepHistory: _keepHistory, ...rest } = withKeys();
+    const { keys: _keys, siteRules: _siteRules, dictionary: _dictionary, keepHistory: _keepHistory, soundSet: _soundSet, ...rest } = withKeys();
     expect(toPublicSettings(withKeys())).toEqual({ ...rest, hasKey: { openai: true, gemini: false } });
   });
 
@@ -685,9 +689,9 @@ describe('toPublicSettings', () => {
     const pub = toPublicSettings({ ...withKeys(), apiKey: 'sk-live-LEAK', draftKey: 'AQ.leak' });
     expect(pub).not.toHaveProperty('apiKey');
     expect(pub).not.toHaveProperty('draftKey');
-    const { keys: _keys, siteRules: _siteRules, dictionary: _dictionary, keepHistory: _keepHistory, ...known } = withKeys();
+    const { keys: _keys, siteRules: _siteRules, dictionary: _dictionary, keepHistory: _keepHistory, soundSet: _soundSet, ...known } = withKeys();
     expect(pub).toEqual({ ...known, hasKey: { openai: true, gemini: false } });
-    const hidden = ['keys', 'siteRules', 'dictionary', 'keepHistory'];
+    const hidden = ['keys', 'siteRules', 'dictionary', 'keepHistory', 'soundSet'];
     expect(Object.keys(pub).sort()).toEqual([...Object.keys(DEFAULT_SETTINGS).filter((f) => !hidden.includes(f)), 'hasKey'].sort());
   });
 
@@ -704,6 +708,67 @@ describe('toPublicSettings', () => {
   it('reports no key when keys are missing', () => {
     const { keys: _keys, ...noKeys } = fullV3Settings();
     expect(toPublicSettings(noKeys).hasKey).toEqual({ openai: false, gemini: false });
+  });
+});
+
+describe('the look settings: miniSize, recColor, soundSet (V59, V60, V61, V65)', () => {
+  it('the lists are frozen and in the order the settings page shows them', () => {
+    expect(MINI_SIZES).toEqual(['small', 'medium', 'large', 'xlarge']);
+    expect(REC_COLORS).toEqual(['red', 'vampire', 'obsidian', 'emerald', 'mocha']);
+    expect(SOUND_SETS).toEqual(['soft', 'warm', 'tap', 'classic']);
+    for (const list of [MINI_SIZES, REC_COLORS, SOUND_SETS]) expect(Object.isFrozen(list)).toBe(true);
+  });
+
+  it('the defaults are Medium, Classic red and Soft, and the settings version stays 3', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({ miniSize: 'medium', recColor: 'red', soundSet: 'soft', settingsVersion: 3 });
+    expect(SETTINGS_VERSION).toBe(3);
+  });
+
+  it('a record without the look fields gets the defaults', () => {
+    const { miniSize, recColor, soundSet, ...v3 } = freshSettings();
+    const out = migrateSettings(v3);
+    expect([out.miniSize, out.recColor, out.soundSet]).toEqual(['medium', 'red', 'soft']);
+    expect(out.settingsVersion).toBe(3);
+  });
+
+  it('a v2 record gets the defaults too', () => {
+    const out = migrateSettings(fullSettings());
+    expect([out.miniSize, out.recColor, out.soundSet]).toEqual(['medium', 'red', 'soft']);
+  });
+
+  it.each([['miniSize', 'huge', 'medium'], ['recColor', '#fff', 'red'], ['soundSet', 'beep', 'soft']])(
+    'repairs an unknown %s', (field, bad, good) => {
+      expect(migrateSettings({ ...freshSettings(), [field]: bad })[field]).toBe(good);
+    });
+
+  it.each([['miniSize', 'medium'], ['recColor', 'red'], ['soundSet', 'soft']])(
+    'repairs a missing or non-string %s and leaves the other two alone', (field, good) => {
+      for (const bad of [undefined, null, 3, ['large'], {}, 'toString']) {
+        const stored = { ...fullV3Settings(), [field]: bad };
+        const out = migrateSettings(stored);
+        expect(out, JSON.stringify(bad)).toEqual({ ...stored, [field]: good });
+        expect(migrateSettings(out)).toBe(out);
+      }
+    });
+
+  it('keeps every listed value, with the same reference', () => {
+    for (const miniSize of MINI_SIZES) for (const recColor of REC_COLORS) for (const soundSet of SOUND_SETS) {
+      const stored = { ...fullV3Settings(), miniSize, recColor, soundSet };
+      expect(migrateSettings(stored)).toBe(stored);
+    }
+  });
+
+  it('a web page never gets soundSet, and content scripts get the other two', () => {
+    const out = toPublicSettings(freshSettings());
+    expect(out).not.toHaveProperty('soundSet');
+    expect(out.miniSize).toBe('medium');
+    expect(out.recColor).toBe('red');
+  });
+
+  it('a chosen size and colour reach the page, a chosen sound set does not', () => {
+    const out = toPublicSettings({ ...freshSettings(), miniSize: 'xlarge', recColor: 'mocha', soundSet: 'tap' });
+    expect(out).toMatchObject({ miniSize: 'xlarge', recColor: 'mocha' });
+    expect(out).not.toHaveProperty('soundSet');
   });
 });
 

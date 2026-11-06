@@ -9,6 +9,15 @@ export const SETTINGS_VERSION = 3;
 /** How the on-page pill is drawn. */
 export const PILL_STYLES = Object.freeze(['pill', 'dot', 'minimal']);
 
+/** Minimal indicator sizes, smallest first. */
+export const MINI_SIZES = Object.freeze(['small', 'medium', 'large', 'xlarge']);
+
+/** Recording colours: the REC dot, the bars and the glow. */
+export const REC_COLORS = Object.freeze(['red', 'vampire', 'obsidian', 'emerald', 'mocha']);
+
+/** Cue sound sets. */
+export const SOUND_SETS = Object.freeze(['soft', 'warm', 'tap', 'classic']);
+
 /** Silence auto-stop choices in seconds; 0 turns it off. */
 export const AUTO_STOP_CHOICES = Object.freeze([0, 2, 3, 5]);
 
@@ -47,11 +56,14 @@ export const EDIT_MODE_LABEL = 'Edit selection';
  *   modes: Record<string, Mode>,
  *   siteRules: Record<string, { hidePill: boolean, mode: string|null }>,
  *   pillStyle: 'pill'|'dot'|'minimal',
+ *   miniSize: 'small'|'medium'|'large'|'xlarge',
+ *   recColor: 'red'|'vampire'|'obsidian'|'emerald'|'mocha',
  *   sounds: boolean,
+ *   soundSet: 'soft'|'warm'|'tap'|'classic',
  *   alwaysCopy: boolean,
  *   keepHistory: boolean,
  * }} Settings
- * @typedef {Omit<Settings, 'keys'|'siteRules'|'dictionary'|'keepHistory'> & { hasKey: { openai: boolean, gemini: boolean } }} PublicSettings
+ * @typedef {Omit<Settings, 'keys'|'siteRules'|'dictionary'|'keepHistory'|'soundSet'> & { hasKey: { openai: boolean, gemini: boolean } }} PublicSettings
  */
 
 /** @type {Record<string, Mode>} */
@@ -109,7 +121,10 @@ export const DEFAULT_SETTINGS = deepFreeze({
   modes: BUILTIN_MODES,
   siteRules: {},
   pillStyle: 'dot',
+  miniSize: 'medium',
+  recColor: 'red',
   sounds: false,
+  soundSet: 'soft',
   alwaysCopy: false,
   keepHistory: true,
 });
@@ -302,6 +317,9 @@ function validateV3(v) {
   const siteRules = repairSiteRules(v.siteRules, modes);
   if (siteRules !== v.siteRules) fix.siteRules = siteRules;
   if (!PILL_STYLES.includes(v.pillStyle)) fix.pillStyle = DEFAULT_SETTINGS.pillStyle;
+  if (!MINI_SIZES.includes(v.miniSize)) fix.miniSize = DEFAULT_SETTINGS.miniSize;
+  if (!REC_COLORS.includes(v.recColor)) fix.recColor = DEFAULT_SETTINGS.recColor;
+  if (!SOUND_SETS.includes(v.soundSet)) fix.soundSet = DEFAULT_SETTINGS.soundSet;
   if (typeof v.sounds !== 'boolean') fix.sounds = DEFAULT_SETTINGS.sounds;
   if (typeof v.alwaysCopy !== 'boolean') fix.alwaysCopy = DEFAULT_SETTINGS.alwaysCopy;
   if (typeof v.keepHistory !== 'boolean') fix.keepHistory = DEFAULT_SETTINGS.keepHistory;
@@ -353,8 +371,8 @@ export function migrateSettings(stored) {
   return validateV3(migrateV1(v));
 }
 
-/** Fields a web page never sees: the keys, and the site rules, terms and history choice no content code reads. */
-const PRIVATE_FIELDS = Object.freeze(['keys', 'siteRules', 'dictionary', 'keepHistory']);
+/** Fields a web page never sees: the keys, and the site rules, terms, history choice and sound set no content code reads. */
+const PRIVATE_FIELDS = Object.freeze(['keys', 'siteRules', 'dictionary', 'keepHistory', 'soundSet']);
 
 /** Settings fields a web page may see: every known field except PRIVATE_FIELDS. */
 const PUBLIC_FIELDS = Object.freeze(Object.keys(DEFAULT_SETTINGS).filter((field) => !PRIVATE_FIELDS.includes(field)));
