@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runDictation } from '../../../src/background/pipeline.js';
-import { EDIT_INSTRUCTIONS, editInput } from '../../../src/background/edit-prompt.js';
+import { EDIT_INSTRUCTIONS, NO_EDIT, editInput } from '../../../src/background/edit-prompt.js';
 import { freshSettings, EDIT_MODE } from '../../../src/shared/defaults.js';
 import { ProviderError } from '../../../src/background/providers/errors.js';
 
@@ -260,6 +260,30 @@ describe('runDictation for an edit', () => {
     const adapters = fakeAdapters();
     adapters.openai.refine.mockResolvedValueOnce(answer);
     expect((await runDictation({ ...edit, settings: settingsWith() }, adapters)).failed).toBe(true);
+  });
+
+  it('a no-edit answer returns failed: the marker never reaches the field, and the text model is billed', async () => {
+    for (const text of [NO_EDIT, `  ${NO_EDIT}\n`]) {
+      const adapters = fakeAdapters();
+      adapters.openai.refine.mockResolvedValueOnce({ text, usage: { inputTokens: 1000, outputTokens: 200 } });
+      const result = await runDictation({ ...edit, settings: settingsWith() }, adapters);
+      expect(result).toMatchObject({ raw: 'raw words', text: 'raw words', textModel: null, warning: null, failed: true });
+      expect(result.cost).toBeCloseTo(STT_COST + 0.0001 + 0.0001, 6);
+    }
+  });
+
+  it('a no-edit answer inside a longer one is a replacement', async () => {
+    const adapters = fakeAdapters();
+    adapters.openai.refine.mockResolvedValueOnce({ text: `use ${NO_EDIT} here`, usage: null });
+    const result = await runDictation({ ...edit, settings: settingsWith() }, adapters);
+    expect(result).toMatchObject({ text: `use ${NO_EDIT} here`, failed: false });
+  });
+
+  it("a mode's refine keeps a no-edit answer as text", async () => {
+    const adapters = fakeAdapters();
+    adapters.openai.refine.mockResolvedValueOnce({ text: NO_EDIT, usage: null });
+    const result = await runDictation({ ...base, modeKey: 'email', settings: settingsWith() }, adapters);
+    expect(result).toMatchObject({ text: NO_EDIT, failed: false, warning: null });
   });
 
   it('an answer the provider marks incomplete returns failed, with the text model billed', async () => {

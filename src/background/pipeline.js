@@ -5,7 +5,7 @@ import { fillTemplate } from '../shared/text.js';
 import { flattenDictionary } from '../shared/dictionary.js';
 import { estimateSttCost, estimateTextCost } from '../shared/pricing.js';
 import { ProviderError } from './providers/errors.js';
-import { EDIT_INSTRUCTIONS, editInput } from './edit-prompt.js';
+import { EDIT_INSTRUCTIONS, NO_EDIT, editInput } from './edit-prompt.js';
 
 export const ADAPTERS = { openai, gemini };
 export const REQUEST_TIMEOUT_MS = 60_000;
@@ -13,7 +13,7 @@ export const REQUEST_TIMEOUT_MS = 60_000;
 /**
  * `warning` is set when the mode step failed or returned nothing and the raw transcript
  * was kept; null otherwise. `failed` is true when an edit's text step failed, returned nothing or
- * was cut short: `text` is then the instruction, which is never inserted, and `warning` is null.
+ * NO_EDIT, or was cut short: `text` is then the instruction, which is never inserted, and `warning` is null.
  * @typedef {{ raw: string, text: string, provider: 'openai'|'gemini', sttModel: string,
  *             textModel: string|null, audioSeconds: number, cost: number,
  *             warning: string|null, failed: boolean }} DictationResult
@@ -103,7 +103,8 @@ export async function runDictation({ audioBase64, mimeType = 'audio/webm', modeK
       const refinedText = (out.text || '').trim();
       // Part of an edit would overwrite the whole selection (V45); a mode keeps what it got.
       const cutEdit = editText !== null && out.complete === false;
-      if (refinedText && !cutEdit) {
+      const noEdit = editText !== null && refinedText === NO_EDIT;
+      if (refinedText && !cutEdit && !noEdit) {
         text = editText === null ? refinedText : withOuterSpace(editText, refinedText);
         refined = true;
       } else {

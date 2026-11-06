@@ -6,7 +6,7 @@ import {
   launchExtension, seedSettings, openFields, focusField, pillQuery, pillStatus, waitForPill, clickPill, indicatorShown,
   startWithHotkey, dictateWithHotkey, PORT, TRANSCRIPT, DUMMY_KEY, STOP, STATUS, MINI, RECORD_MS, REFINE_URL,
 } from './helpers.js';
-import { EDIT_INSTRUCTIONS } from '../../src/background/edit-prompt.js';
+import { EDIT_INSTRUCTIONS, NO_EDIT } from '../../src/background/edit-prompt.js';
 
 const EDITED = 'edited text';
 const TWO_LINES = 'edited one\nedited two';
@@ -493,6 +493,37 @@ test('a failed refine leaves the field, its click copies the instruction, and th
     expect(await pillStatus(page)).toBe(SAY);
   } finally {
     await context.unroute(REFINE_URL, refuse);
+  }
+});
+
+test('an instruction the model cannot apply leaves the field, and the marker lands nowhere', async () => {
+  const noEdit = (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      output: [{ type: 'message', content: [{ type: 'output_text', text: NO_EDIT }] }],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    }),
+  });
+  await context.route(REFINE_URL, noEdit);
+  try {
+    const page = await openPage();
+    await page.evaluate((text) => navigator.clipboard.writeText(text), SENTINEL);
+    const field = page.locator('#ta');
+    await prepare(page, field, 'keep this word', 5, 9);
+
+    await editByVoice(page);
+
+    await expect.poll(() => pillStatus(page)).toBe(EDIT_FAILED);
+    expect(await fieldText(field)).toBe('keep this word');
+    expect(await selectionOf(field)).toEqual([5, 9]);
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(SENTINEL);
+
+    const status = await pillQuery(page, STATUS);
+    await page.mouse.click(status.x, status.y);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(TRANSCRIPT);
+  } finally {
+    await context.unroute(REFINE_URL, noEdit);
   }
 });
 
