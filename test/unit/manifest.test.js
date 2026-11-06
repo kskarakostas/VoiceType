@@ -25,6 +25,35 @@ describe('manifest', () => {
   });
 });
 
+describe('icons', () => {
+  const SIZES = ['16', '32', '48', '128'];
+  const PNG_SIGNATURE = '89504e470d0a1a0a';
+
+  /** Width and height of a PNG, read from its IHDR chunk, or null when the file is not a PNG. */
+  function pngSize(file) {
+    const bytes = readFileSync(new URL(`../../${file}`, import.meta.url));
+    if (bytes.subarray(0, 8).toString('hex') !== PNG_SIGNATURE) return null;
+    if (bytes.subarray(12, 16).toString('latin1') !== 'IHDR') return null;
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  }
+
+  it.each([
+    ['icons', () => manifest.icons],
+    ['action.default_icon', () => manifest.action.default_icon],
+  ])('%s lists 16, 32, 48 and 128', (_name, list) => {
+    expect(Object.keys(list()).sort((a, b) => a - b)).toEqual(SIZES);
+  });
+
+  it.each(SIZES)('the %s px icon in both lists is one PNG of that size', (size) => {
+    expect(manifest.action.default_icon[size]).toBe(manifest.icons[size]);
+    expect(pngSize(manifest.icons[size])).toEqual({ width: Number(size), height: Number(size) });
+  });
+
+  it('logo.png is a PNG of 360 by 360', () => {
+    expect(pngSize('logo.png')).toEqual({ width: 360, height: 360 });
+  });
+});
+
 describe('content script', () => {
   it('runs content.js in every frame, about:blank frames included, with no stylesheet', () => {
     expect(manifest.content_scripts).toEqual([
