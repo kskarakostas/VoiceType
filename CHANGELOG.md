@@ -1,5 +1,38 @@
 # Changelog
 
+## 3.2.0 (2026-11-06)
+
+### Added
+- Edit by voice: select text in a field, press `Ctrl+Shift+E` and say how to change it, such as "make this shorter". The selection is replaced, as plain text. What you said is the instruction and is never inserted. In text boxes one `Ctrl+Z` brings the text back. Up to 10,000 characters. Change the hotkey under Settings, Recording.
+- An edit sends the selected text and your instruction to the text model of your provider, at a small text cost, only after a press of this hotkey and only from the focused field. PRIVACY lists selected text as a new category.
+- With Keep recent dictations on, History keeps an edit's result and your instruction, not the selection, though a result can repeat most of it.
+- An edit that fails, or that the text model marks as impossible, leaves the field unchanged and offers to copy what you said. Speech recognition was still paid for. A refusal the model writes out in words replaces the selection like any result, and `Ctrl+Z` brings the text back.
+
+### Changed
+- With text selected in a field, `Ctrl+Shift+E` is now VoiceType's. With nothing selected and VoiceType idle, the press goes to the page as before, and in a field the pill also says "Select the text to edit first."
+- If you had moved dictation to `Ctrl+Shift+E`, the edit hotkey does nothing: dictation wins, and Settings, Recording says so until you change one of them.
+- If VoiceType's service worker stops while a dictation is processing, the page asks for it and VoiceType runs the same recording again, once, within two minutes of the recording's end. That can be a second provider charge, and the dictation adds no History entry. If that cannot happen, the pill says "VoiceType restarted. Check the clipboard, or try again."
+- To allow that retry, a dictation's audio and an edit's selected text are held in Chrome's session storage, in memory, while it processes, in incognito tabs too.
+- A result a page does not take within 5 seconds goes to the clipboard.
+
+### Fixed
+- A page whose extension crashed during processing says "VoiceType was turned off or updated. Reload this page." within about 10 s, where it used to wait for the 75 s limit.
+- A transcript reaches only the document that recorded it. If the page has navigated or sits in the back-forward cache, the text goes to the clipboard.
+- A change typed just before closing the settings tab or its window is kept. It could be lost on Chrome 140.
+- Forced colours: the three style previews show the pill. The pill bar, Minimal and its mirror have an outline. Minimal's level bars show, and a selected segment is marked.
+
+### Measured
+- A live "Make this shorter." on OpenAI and Gemini: 2.7 to 3.5 s from the stop. 10,000 characters: 12 to 13 s in the text model, inside the 60 s limit. One sample each.
+- A garbled instruction such as "Make this order." changed the text in 26 of 47 runs before the text model could refuse one, and in 4 of 48, then 2 of 48, after. All of those were one sentence on one long text, 4 of 6 and 2 of 6 runs: a mishearing that close to a real request can still change the text, with `Ctrl+Z` as the backstop. It refused none of 90 real commands, and 1 of 24 requests with nothing to change ("Fix the typos." on clean text).
+
+### Internal
+- `controller.js` split to stay under 800 lines; `sameList` and `finite` in one copy each. `release.yml` has two jobs, so no repository or dependency code runs in the job that holds the write token. The test suite also ran on Chrome 140, locally. No new permission, no new package.
+
+### Not tested
+- On real installs and hardware: Chrome's own update of a 3.1 or 2.2 install (a stored 3.1 record was read by the 3.2 build in a harness instead), Windows and macOS, screen readers, Bluetooth headsets, tones and the recording start on real speakers, an IME, exports opened in real Excel.
+- On real sites: edits ran by hand on Gmail, ChatGPT, Slack and Notion; dictation, Undo AI edit, a real Google Doc and Facebook were not run again for this release.
+- The 5 second limit in a real browser, where Chrome refused at once. A provider answer cut short by the provider.
+
 ## 3.1.0 (2026-11-05)
 
 ### Added
