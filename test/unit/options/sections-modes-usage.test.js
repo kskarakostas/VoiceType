@@ -105,7 +105,8 @@ afterEach(() => {
 });
 
 describe('settings page modes and usage layout', () => {
-  const route = (id) => document.querySelector(`section[data-route="${id}"]`);
+  // A page by its route, or a part of the Settings page by its hash.
+  const route = (id) => document.querySelector(`section[data-route="${id}"], section[data-part="${id}"]`);
   const inRoute = (id, elementId) => route(id).contains($(elementId));
 
   it('Modes and Usage and data hold the popup ids', async () => {
@@ -120,12 +121,14 @@ describe('settings page modes and usage layout', () => {
 
   it('no card heading repeats its route heading', async () => {
     await start(fakeChrome(), 'modes');
-    const cardHeadings = (id) => [...route(id).querySelectorAll('h2')].map((h) => h.textContent.trim());
+    const cardHeadings = (id) => [...route(id).querySelectorAll('h2, h3')].filter((h) => h.closest('.card')).map((h) => h.textContent.trim());
     for (const id of ['settings/provider', 'settings/recording', 'settings/speech']) expect(cardHeadings(id), id).toEqual([]);
     expect(cardHeadings('modes')).toEqual(['Edit mode']);
     expect($('editor-title').tagName).toBe('H2');
+    // Under the part's h2, the cards of Usage and data take h3.
     expect(cardHeadings('settings/usage')).toEqual(['Usage', 'Reset']);
-    expect($('reset').closest('.card').querySelector('h2').textContent.trim()).toBe('Reset');
+    expect($('h-usage').tagName).toBe('H3');
+    expect($('reset').closest('.card').querySelector('h3').textContent.trim()).toBe('Reset');
     expect(route('modes').querySelector('.card-head #add-mode')).not.toBeNull();
   });
 
@@ -136,7 +139,7 @@ describe('settings page modes and usage layout', () => {
     }
     expect($('mode-list').getAttribute('aria-labelledby')).toBe(route('modes').querySelector('h1').id);
     const providerGroup = document.querySelector('[role="radiogroup"]');
-    expect(providerGroup.getAttribute('aria-labelledby')).toBe(route('settings/provider').querySelector('h1').id);
+    expect(providerGroup.getAttribute('aria-labelledby')).toBe(route('settings/provider').querySelector('h2').id);
   });
 });
 

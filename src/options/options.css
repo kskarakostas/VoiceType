@@ -84,13 +84,35 @@
 .content { width: 100%; max-width: 760px; padding: 24px 32px; }
 .content .banner { margin: 0 0 16px; }
 main { display: grid; gap: 12px; }
-main > section { display: grid; gap: 12px; }
+main > section, .settings-part { display: grid; gap: 12px; }
 main h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .hint a { color: var(--accent); font-weight: 600; }
 .hint + .check { margin-top: 10px; }
 .footnote { margin-top: 24px; color: var(--muted); font-size: 12px; }
 
 .toast { left: auto; max-width: 360px; }
+
+/* Settings: one page of seven parts, a rule between them. The rule is a border, which forced
+   colors keep. A card heading in a part is an h3 under the part's h2 and keeps the card heading look. */
+
+section[data-route="settings"] { gap: 20px; }
+.settings-part + .settings-part { padding-top: 20px; border-top: 1px solid var(--border); }
+.settings-part > h2 { scroll-margin-top: 16px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+
+.settings-part .card h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.settings-part .card h3 svg { width: 14px; height: 14px; color: var(--accent); }
+.settings-part .card-head h3 { margin-bottom: 0; }
 
 /* Home */
 

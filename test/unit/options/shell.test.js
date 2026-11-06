@@ -71,13 +71,54 @@ const start = (chrome, sections) => initOptions({ chrome, document, window, sect
 const visible = () => [...document.querySelectorAll('section[data-route]')].filter((s) => !s.hidden).map((s) => s.dataset.route);
 const navLink = (id) => document.querySelector(`nav a[href="#${id}"]`);
 const SETTINGS_CHANGE = { settings: { newValue: {} } };
+// A press on a sidebar link with its default action stopped: jsdom compares the link with the URL
+// the page was opened at and fires a hashchange a task later, into whichever test runs then.
+const press = (id) => {
+  const link = navLink(id);
+  link.addEventListener('click', (event) => event.preventDefault(), { once: true });
+  link.click();
+};
+const sections = () => [...document.querySelectorAll('section[data-route]')];
+// jsdom has no scrollIntoView; a test that watches the scroll puts one on the prototype.
+const stubScroll = (impl = () => {}) => {
+  const fn = vi.fn(impl);
+  Element.prototype.scrollIntoView = fn;
+  return fn;
+};
+const PARTS = ROUTES.filter((r) => r.id.startsWith('settings/'));
+
+/** The page opened at `hash`; `go` plays a change of the hash to it. */
+async function open(hash, chrome = fakeChrome(), sectionFactories) {
+  window.history.replaceState(null, '', hash);
+  const page = await start(chrome, sectionFactories);
+  const go = async (next) => {
+    window.history.replaceState(null, '', next);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await flush();
+  };
+  return { page, go, document, sections };
+}
+
+// The page adds its listeners to the window and the document, which outlive a test: a hashchange
+// would reach every page this file opened before.
+const listening = [];
 
 beforeEach(() => {
+  for (const target of [window, document]) {
+    const add = target.addEventListener;
+    vi.spyOn(target, 'addEventListener').mockImplementation(function listen(type, listener, options) {
+      listening.push([target, type, listener, options]);
+      return add.call(this, type, listener, options);
+    });
+  }
   document.body.innerHTML = new DOMParser().parseFromString(HTML, 'text/html').body.innerHTML;
   window.history.replaceState(null, '', '/');
 });
 afterEach(() => {
+  for (const [target, type, listener, options] of listening.splice(0)) target.removeEventListener(type, listener, options);
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  delete Element.prototype.scrollIntoView;
 });
 
 describe('settings page shell', () => {
@@ -94,18 +135,18 @@ describe('settings page shell', () => {
     window.history.replaceState(null, '', '#settings');
     const page = await start(fakeChrome());
     expect(window.location.hash).toBe('#settings/provider');
-    expect(visible()).toEqual(['settings/provider']);
+    expect(visible()).toEqual(['settings']);
     expect(page.route).toBe('settings/provider');
+    expect(navLink('settings/provider').getAttribute('aria-current')).toBe('page');
   });
 
   it('follows hashchange and focuses the heading', async () => {
     const page = await start(fakeChrome());
     window.history.replaceState(null, '', '#settings/usage');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
-    const section = document.querySelector('section[data-route="settings/usage"]');
-    expect(visible()).toEqual(['settings/usage']);
+    expect(visible()).toEqual(['settings']);
     expect(page.route).toBe('settings/usage');
-    expect(document.activeElement).toBe(section.querySelector('h1'));
+    expect(document.activeElement).toBe($('h-settings-usage'));
     expect(navLink('settings/usage').getAttribute('aria-current')).toBe('page');
     expect(navLink('home').hasAttribute('aria-current')).toBe(false);
 
@@ -121,13 +162,16 @@ describe('settings page shell', () => {
     expect(document.activeElement).toBe(document.body);
   });
 
-  it('every route has a section and a sidebar link', async () => {
+  it('every route has a section or a part, and a sidebar link', async () => {
     await start(fakeChrome());
     for (const { id, title } of ROUTES) {
-      const sections = document.querySelectorAll(`section[data-route="${id}"]`);
+      const isPart = id.startsWith('settings/');
+      const sections = document.querySelectorAll(isPart ? `section[data-part="${id}"]` : `section[data-route="${id}"]`);
       expect(sections, id).toHaveLength(1);
-      expect(sections[0].querySelector('h1').textContent.trim()).toBe(title);
-      expect(sections[0].querySelector('h1').getAttribute('tabindex')).toBe('-1');
+      const heading = sections[0].querySelector(isPart ? 'h2' : 'h1');
+      expect(heading.textContent.trim()).toBe(title);
+      expect(heading.getAttribute('tabindex')).toBe('-1');
+      expect(sections[0].getAttribute('aria-labelledby'), id).toBe(heading.id);
       expect(document.querySelectorAll(`nav a[href="#${id}"]`), id).toHaveLength(1);
       expect(navLink(id).textContent.trim()).toBe(title);
     }
@@ -135,9 +179,39 @@ describe('settings page shell', () => {
     expect(order).toEqual(ROUTES.map((r) => r.id));
     const group = document.querySelector('nav [data-group="settings"]');
     expect(group.querySelector('.nav-group-label').textContent.trim()).toBe('Settings');
-    expect([...group.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(
-      ROUTES.filter((r) => r.id.startsWith('settings/')).map((r) => `#${r.id}`),
-    );
+    expect([...group.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(PARTS.map((r) => `#${r.id}`));
+  });
+
+  it('Settings is one page with its parts in sidebar order, each heading keeping its id', async () => {
+    await start(fakeChrome());
+    const page = document.querySelectorAll('section[data-route="settings"]');
+    expect(page).toHaveLength(1);
+    expect(page[0].getAttribute('aria-labelledby')).toBe('h-settings');
+    const h1 = page[0].querySelector(':scope > h1');
+    expect([h1.id, h1.textContent.trim(), h1.getAttribute('tabindex')]).toEqual(['h-settings', 'Settings', '-1']);
+    expect(page[0].querySelectorAll('h1')).toHaveLength(1);
+    const parts = [...page[0].querySelectorAll(':scope > .settings-part')];
+    expect(parts.map((p) => p.dataset.part)).toEqual(PARTS.map((r) => r.id));
+    expect(parts.map((p) => p.querySelector(':scope > h2').id)).toEqual([
+      'h-provider', 'h-settings-recording', 'h-settings-speech', 'h-settings-sites',
+      'h-settings-appearance', 'h-settings-sound', 'h-settings-usage',
+    ]);
+    // Nothing else in the page is a route of its own.
+    expect(page[0].querySelectorAll('[data-route]')).toHaveLength(0);
+  });
+
+  it('a radiogroup and a hint still name the heading they were labelled by', async () => {
+    await start(fakeChrome());
+    for (const id of ['h-provider', 'h-settings-appearance']) {
+      const group = document.querySelector(`[role="radiogroup"][aria-labelledby="${id}"]`);
+      expect(group, id).not.toBeNull();
+      expect(group.closest('.settings-part').querySelector(':scope > h2').id).toBe(id);
+    }
+    for (const el of document.querySelectorAll('[aria-labelledby], [aria-describedby]')) {
+      for (const id of `${el.getAttribute('aria-labelledby') ?? ''} ${el.getAttribute('aria-describedby') ?? ''}`.split(/\s+/).filter(Boolean)) {
+        expect(document.querySelectorAll(`#${id}`), `${el.tagName}#${el.id} -> ${id}`).toHaveLength(1);
+      }
+    }
   });
 
   it('History sits after Dictionary, in the routes and the markup', async () => {
@@ -162,6 +236,116 @@ describe('settings page shell', () => {
     expect(link.hasAttribute('target')).toBe(false);
     expect(link.getAttribute('aria-current')).toBe('page');
     expect(document.querySelectorAll('nav [aria-current]')).toHaveLength(1);
+  });
+
+  it('every settings hash shows the one Settings page', async () => {
+    for (const { id } of PARTS) {
+      document.body.innerHTML = new DOMParser().parseFromString(HTML, 'text/html').body.innerHTML;
+      const { page } = await open(`#${id}`);
+      expect(sections().filter((s) => !s.hidden).map((s) => s.dataset.route), id).toEqual(['settings']);
+      expect(page.route).toBe(id);
+    }
+  });
+
+  it('a hash change focuses that part, and marks its link', async () => {
+    const { go } = await open('#home');
+    await go('#settings/appearance');
+    expect(document.activeElement.id).toBe('h-settings-appearance');
+    expect(document.activeElement.tagName).toBe('H2');
+    expect(document.querySelector('a[href="#settings/appearance"]').getAttribute('aria-current')).toBe('page');
+    expect(document.querySelectorAll('nav [aria-current]')).toHaveLength(1);
+  });
+
+  it('a hash change between parts keeps the page and moves the mark and the focus', async () => {
+    const { go } = await open('#settings/provider');
+    await go('#settings/sound');
+    expect(visible()).toEqual(['settings']);
+    expect(document.activeElement.id).toBe('h-settings-sound');
+    expect(navLink('settings/provider').hasAttribute('aria-current')).toBe(false);
+    expect(navLink('settings/sound').getAttribute('aria-current')).toBe('page');
+  });
+
+  it('leaving Settings for another page focuses that page heading', async () => {
+    const { go } = await open('#settings/sound');
+    await go('#modes');
+    expect(visible()).toEqual(['modes']);
+    expect(document.activeElement.id).toBe('h-modes');
+  });
+
+  it('a load on a deep hash moves no focus', async () => {
+    await open('#settings/usage');
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('a press on the link of the current hash focuses that part again', async () => {
+    await open('#settings/sound');
+    press('settings/sound');
+    expect(document.activeElement.id).toBe('h-settings-sound');
+  });
+
+  it('a press on the link of the current hash scrolls its heading into view', async () => {
+    const scroll = stubScroll();
+    await open('#settings/sites');
+    scroll.mockClear();
+    press('settings/sites');
+    expect(scroll).toHaveBeenCalledOnce();
+    expect(scroll.mock.contexts[0]).toBe($('h-settings-sites'));
+    expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+  });
+
+  it('a press on a link of another hash is left to the hash change', async () => {
+    await open('#settings/sound');
+    press('settings/speech');
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('a hash change scrolls the heading of the part into view, and then focuses it', async () => {
+    const calls = [];
+    stubScroll(function scroll(arg) { calls.push(['scroll', this.id, arg]); });
+    const { go } = await open('#home');
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function focused() { calls.push(['focus', this.id]); });
+    await go('#settings/recording');
+    expect(calls).toEqual([['scroll', 'h-settings-recording', { block: 'start' }], ['focus', 'h-settings-recording']]);
+    focus.mockRestore();
+  });
+
+  it('a bare #settings scrolls to Provider', async () => {
+    const scroll = stubScroll();
+    const { go } = await open('#home');
+    await go('#settings');
+    expect(window.location.hash).toBe('#settings/provider');
+    expect(scroll.mock.contexts.map((el) => el.id)).toEqual(['h-provider']);
+  });
+
+  it('a load on a deep hash scrolls after the settings first render, with no focus', async () => {
+    const section = probe();
+    const seen = [];
+    stubScroll(function scroll() { seen.push([this.id, section.renders]); });
+    await open('#settings/usage', fakeChrome(), [section.factory]);
+    expect(seen).toEqual([['h-settings-usage', section.renders]]);
+    expect(section.renders).toBeGreaterThan(0);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('a load on a page that is not a part scrolls nothing', async () => {
+    const scroll = stubScroll();
+    await open('#modes');
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it('a failed load still scrolls to the part', async () => {
+    const scroll = stubScroll();
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_SETTINGS, { error: 'nope' });
+    await open('#settings/speech', chrome);
+    expect(scroll.mock.contexts.map((el) => el.id)).toEqual(['h-settings-speech']);
+  });
+
+  it('a page without scrollIntoView still shows the part and focuses it', async () => {
+    const { go } = await open('#home');
+    expect(Element.prototype.scrollIntoView).toBeUndefined();
+    await go('#settings/speech');
+    expect(document.activeElement.id).toBe('h-settings-speech');
   });
 
   it('no page shows a placeholder', async () => {

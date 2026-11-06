@@ -59,7 +59,7 @@ function fakeChrome(initial = storedSettings()) {
 
 const $ = (id) => document.getElementById(id);
 const flush = () => new Promise((r) => setTimeout(r, 0));
-const section = () => document.querySelector(`section[data-route="${ROUTE}"]`);
+const section = () => document.querySelector(`section[data-part="${ROUTE}"]`);
 const setRadio = (value) => section().querySelector(`input[name="sound-set"][value="${value}"]`);
 const checkedSets = () => [...section().querySelectorAll('input[name="sound-set"]')].filter((r) => r.checked).map((r) => r.value);
 const playButtons = () => [...section().querySelectorAll('[data-play]')];
@@ -154,7 +154,7 @@ describe('settings page Sound and clipboard', () => {
 
   it('the placeholder is gone', async () => {
     await start(fakeChrome());
-    const section = document.querySelector(`section[data-route="${ROUTE}"]`);
+    const section = document.querySelector(`section[data-part="${ROUTE}"]`);
     expect(section.querySelector('.placeholder')).toBeNull();
     expect(section.querySelectorAll('.card')).toHaveLength(1);
   });

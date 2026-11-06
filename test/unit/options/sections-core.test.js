@@ -97,14 +97,14 @@ afterEach(() => {
 });
 
 describe('settings page core sections layout', () => {
-  it('each route holds one card, without a heading that repeats the route, and the popup ids', async () => {
+  it('each part holds one card, without a heading that repeats the part heading, and the popup ids', async () => {
     await start(fakeChrome(), 'settings/provider');
     for (const route of ['settings/provider', 'settings/recording', 'settings/speech']) {
-      const section = document.querySelector(`section[data-route="${route}"]`);
+      const section = document.querySelector(`section[data-part="${route}"]`);
       expect(section.querySelectorAll('.card'), route).toHaveLength(1);
-      expect(section.querySelectorAll('h2'), route).toHaveLength(0);
+      expect([...section.querySelectorAll('h1, h2, h3')].map((h) => h.tagName), route).toEqual(['H2']);
     }
-    const inRoute = (route, id) => document.querySelector(`section[data-route="${route}"]`).contains($(id));
+    const inRoute = (route, id) => document.querySelector(`section[data-part="${route}"]`).contains($(id));
     for (const id of ['key-row-openai', 'key-openai', 'test-openai', 'clear-openai', 'key-row-gemini', 'key-gemini', 'spend-hint']) {
       expect(inRoute('settings/provider', id), id).toBe(true);
     }
@@ -575,7 +575,7 @@ describe('settings page speech', () => {
 
   it('the Speech page links to the Dictionary', async () => {
     await start(fakeChrome(), 'settings/speech');
-    expect(document.querySelector('section[data-route="settings/speech"] a[href="#dictionary"]')).not.toBeNull();
+    expect(document.querySelector('section[data-part="settings/speech"] a[href="#dictionary"]')).not.toBeNull();
     expect($('keywords')).toBeNull();
   });
 });

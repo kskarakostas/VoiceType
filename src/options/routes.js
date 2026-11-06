@@ -1,5 +1,6 @@
 // Hash routes of the settings page. A reload keeps the place, and the popup opens a page by its
-// hash (`options.html#settings/provider`).
+// hash (`options.html#settings/provider`). The seven `settings/…` routes are parts of one Settings
+// page: each is a hash to a part of it, not a page of its own.
 
 /** Sidebar entries in display order; `id` is the hash without its `#`. */
 export const ROUTES = Object.freeze([
@@ -35,4 +36,13 @@ export function parseRoute(hash) {
   const id = String(hash ?? '').replace(/^#/, '');
   if (id === 'settings') return 'settings/provider';
   return ROUTE_IDS.has(id) ? id : DEFAULT_ROUTE;
+}
+
+/**
+ * The page a route is shown on: the one Settings page for a `settings/…` route, else the route.
+ * @param {string} route a route id
+ * @returns {string} the `data-route` of the page's section
+ */
+export function pageOf(route) {
+  return route.startsWith('settings/') ? 'settings' : route;
 }

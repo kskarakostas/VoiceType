@@ -171,256 +171,259 @@
           </div>
         </section>
 
-        <section data-route="settings/provider" aria-labelledby="h-provider" hidden>
-          <h1 id="h-provider" tabindex="-1">Provider</h1>
-          <div class="card">
-            <div class="segmented" role="radiogroup" aria-labelledby="h-provider">
-              <label class="segment"><input type="radio" name="provider" value="openai"><span>OpenAI</span></label>
-              <label class="segment"><input type="radio" name="provider" value="gemini"><span>Gemini</span></label>
-            </div>
-            <div class="key-row" id="key-row-openai">
-              <label class="field-label" for="key-openai">OpenAI API key</label>
-              <div class="key-controls">
-                <input type="password" id="key-openai" class="key-input" autocomplete="new-password" spellcheck="false">
-                <button type="button" class="btn" id="test-openai">Test</button>
-                <button type="button" class="btn btn-quiet" id="clear-openai">Clear</button>
+        <section data-route="settings" aria-labelledby="h-settings" hidden>
+          <h1 id="h-settings" tabindex="-1">Settings</h1>
+          <section class="settings-part" data-part="settings/provider" aria-labelledby="h-provider">
+            <h2 id="h-provider" tabindex="-1">Provider</h2>
+            <div class="card">
+              <div class="segmented" role="radiogroup" aria-labelledby="h-provider">
+                <label class="segment"><input type="radio" name="provider" value="openai"><span>OpenAI</span></label>
+                <label class="segment"><input type="radio" name="provider" value="gemini"><span>Gemini</span></label>
               </div>
-            </div>
-            <div class="key-row" id="key-row-gemini" hidden>
-              <label class="field-label" for="key-gemini">Gemini API key</label>
-              <div class="key-controls">
-                <input type="password" id="key-gemini" class="key-input" autocomplete="new-password" spellcheck="false">
-                <button type="button" class="btn" id="test-gemini">Test</button>
-                <button type="button" class="btn btn-quiet" id="clear-gemini">Clear</button>
-              </div>
-            </div>
-            <p class="hint hint-warning" id="spend-hint" hidden>Set a spending limit on your provider account.</p>
-          </div>
-        </section>
-
-        <section data-route="settings/recording" aria-labelledby="h-settings-recording" hidden>
-          <h1 id="h-settings-recording" tabindex="-1">Recording</h1>
-          <div class="card">
-            <div class="grid-2">
-              <div class="field">
-                <label class="field-label" for="min-time">Minimum length</label>
-                <select id="min-time">
-                  <option value="0.5">0.5 s</option>
-                  <option value="1">1 s</option>
-                  <option value="2">2 s</option>
-                  <option value="3">3 s</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="field-label" for="max-time">Maximum length</label>
-                <select id="max-time">
-                  <option value="30">30 s</option>
-                  <option value="60">1 min</option>
-                  <option value="120">2 min</option>
-                  <option value="180">3 min</option>
-                  <option value="300">5 min</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="field-label" for="auto-stop">Silence auto-stop</label>
-                <select id="auto-stop"></select>
-              </div>
-              <div class="field">
-                <label class="field-label" for="hotkey">Hotkey</label>
-                <button type="button" class="hotkey" id="hotkey" aria-pressed="false" aria-describedby="hotkey-hint"></button>
-              </div>
-              <div class="field">
-                <label class="field-label" for="edit-hotkey">Edit hotkey</label>
-                <button type="button" class="hotkey" id="edit-hotkey" aria-pressed="false" aria-describedby="edit-hotkey-hint"></button>
-              </div>
-            </div>
-            <p class="hint" id="hotkey-hint" aria-live="polite">Tap to toggle, hold to talk.</p>
-            <p class="hint" id="edit-hotkey-hint" aria-live="polite">Select text in a field, press this and say how to change it. The selected text goes to your provider.</p>
-          </div>
-        </section>
-
-        <section data-route="settings/speech" aria-labelledby="h-settings-speech" hidden>
-          <h1 id="h-settings-speech" tabindex="-1">Speech</h1>
-          <div class="card">
-            <fieldset class="languages">
-              <legend class="field-label">Spoken languages</legend>
-              <div class="check-grid" id="languages"></div>
-            </fieldset>
-            <p class="hint">Auto detects the language. Pick languages to steer recognition.</p>
-            <p class="hint">Names and jargon now live in the <a href="#dictionary">Dictionary</a>.</p>
-          </div>
-        </section>
-
-        <section data-route="settings/sites" aria-labelledby="h-settings-sites" hidden>
-          <h1 id="h-settings-sites" tabindex="-1">Sites</h1>
-          <div class="card site-card">
-            <p class="hint site-hint">Hide pill removes the idle pill on that site; the hotkey still records there, with a small indicator at the bottom of the page.</p>
-            <form class="site-add" id="site-add">
-              <div class="field">
-                <label class="field-label" for="site-add-host">Add site</label>
-                <input type="text" id="site-add-host" autocomplete="off" spellcheck="false" aria-describedby="site-add-error">
-              </div>
-              <label class="check"><input type="checkbox" id="site-add-hide" checked>Hide pill</label>
-              <div class="field">
-                <label class="field-label" for="site-add-mode">Mode</label>
-                <select id="site-add-mode"></select>
-              </div>
-              <button type="submit" class="btn btn-primary">Add</button>
-              <p class="hint site-add-error" id="site-add-error" data-tone="error" role="alert" hidden></p>
-            </form>
-          </div>
-          <div class="card site-card">
-            <table class="site-table" id="site-table">
-              <caption class="visually-hidden">Site rules</caption>
-              <thead>
-                <tr><th scope="col">Site</th><th scope="col">Hide pill</th><th scope="col">Mode</th><th scope="col">Remove</th></tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-            <p class="hint site-empty" id="site-empty" hidden>No site rules yet.</p>
-          </div>
-        </section>
-
-        <section data-route="settings/appearance" aria-labelledby="h-settings-appearance" hidden>
-          <h1 id="h-settings-appearance" tabindex="-1">Appearance</h1>
-          <div class="card">
-            <div class="style-grid" role="radiogroup" aria-labelledby="h-settings-appearance">
-              <label class="style-card">
-                <input type="radio" name="pill-style" value="pill">
-                <span class="style-preview" aria-hidden="true"><span class="preview-field"></span><span class="preview-bar"></span></span>
-                <span class="style-name">Pill</span>
-                <span class="hint">The full bar beside the field, always in view.</span>
-              </label>
-              <label class="style-card">
-                <input type="radio" name="pill-style" value="dot">
-                <span class="style-preview" aria-hidden="true"><span class="preview-field"></span><span class="preview-dot"></span></span>
-                <span class="style-name">Dot <span class="tag">Default</span></span>
-                <span class="hint">A small dot beside the field. It opens into the bar when you point at it.</span>
-              </label>
-              <label class="style-card">
-                <input type="radio" name="pill-style" value="minimal">
-                <span class="style-preview" aria-hidden="true"><span class="preview-field"></span><span class="preview-mini"></span></span>
-                <span class="style-name">Minimal</span>
-                <span class="hint">Nothing until you record, then an indicator beside the field. Start and stop with the hotkey. There is no menu on the page; change settings here or in the toolbar popup.</span>
-              </label>
-            </div>
-            <p class="hint">Sites with Hide pill use Minimal.</p>
-            <div class="option-group" id="mini-size-group" role="radiogroup" aria-labelledby="mini-size-label" hidden>
-              <div class="field-label" id="mini-size-label">Minimal size</div>
-              <div class="style-grid style-grid-compact">
-                <label class="style-card">
-                  <input type="radio" name="mini-size" value="small">
-                  <span class="style-name">Small</span>
-                </label>
-                <label class="style-card">
-                  <input type="radio" name="mini-size" value="medium">
-                  <span class="style-name">Medium</span>
-                </label>
-                <label class="style-card">
-                  <input type="radio" name="mini-size" value="large">
-                  <span class="style-name">Large</span>
-                </label>
-                <label class="style-card">
-                  <input type="radio" name="mini-size" value="xlarge">
-                  <span class="style-name">Extra large</span>
-                </label>
-              </div>
-            </div>
-            <div class="option-group" role="radiogroup" aria-labelledby="rec-color-label">
-              <div class="field-label" id="rec-color-label">Recording colour</div>
-              <div class="style-grid style-grid-compact">
-                <label class="style-card">
-                  <input type="radio" name="rec-color" value="red">
-                  <span class="style-name"><span class="swatch swatch-red" aria-hidden="true"></span>Classic red</span>
-                </label>
-                <label class="style-card">
-                  <input type="radio" name="rec-color" value="vampire">
-                  <span class="style-name"><span class="swatch swatch-vampire" aria-hidden="true"></span>Vampire red</span>
-                </label>
-                <label class="style-card">
-                  <input type="radio" name="rec-color" value="obsidian">
-                  <span class="style-name"><span class="swatch swatch-obsidian" aria-hidden="true"></span>Obsidian purple</span>
-                </label>
-                <label class="style-card">
-                  <input type="radio" name="rec-color" value="emerald">
-                  <span class="style-name"><span class="swatch swatch-emerald" aria-hidden="true"></span>Emerald green</span>
-                </label>
-                <label class="style-card">
-                  <input type="radio" name="rec-color" value="mocha">
-                  <span class="style-name"><span class="swatch swatch-mocha" aria-hidden="true"></span>Mocha brown</span>
-                </label>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section data-route="settings/sound" aria-labelledby="h-settings-sound" hidden>
-          <h1 id="h-settings-sound" tabindex="-1">Sound and clipboard</h1>
-          <div class="card">
-            <label class="check"><input type="checkbox" id="sounds" aria-describedby="sounds-hint">Play sounds</label>
-            <p class="hint" id="sounds-hint">Short tones when recording starts, when it stops, when the text is ready, and when something goes wrong.</p>
-            <div class="option-group" role="radiogroup" aria-labelledby="sound-set-label" aria-describedby="sound-set-hint">
-              <div class="field-label" id="sound-set-label">Sound set</div>
-              <div class="style-grid style-grid-compact">
-                <div class="style-card">
-                  <input type="radio" name="sound-set" id="sound-set-soft" value="soft">
-                  <label class="style-name" for="sound-set-soft">Soft</label>
-                  <button type="button" class="btn" data-play="soft" aria-label="Play Soft">Play</button>
-                </div>
-                <div class="style-card">
-                  <input type="radio" name="sound-set" id="sound-set-warm" value="warm">
-                  <label class="style-name" for="sound-set-warm">Warm</label>
-                  <button type="button" class="btn" data-play="warm" aria-label="Play Warm">Play</button>
-                </div>
-                <div class="style-card">
-                  <input type="radio" name="sound-set" id="sound-set-tap" value="tap">
-                  <label class="style-name" for="sound-set-tap">Single tap</label>
-                  <button type="button" class="btn" data-play="tap" aria-label="Play Single tap">Play</button>
-                </div>
-                <div class="style-card">
-                  <input type="radio" name="sound-set" id="sound-set-classic" value="classic">
-                  <label class="style-name" for="sound-set-classic">Classic</label>
-                  <button type="button" class="btn" data-play="classic" aria-label="Play Classic">Play</button>
+              <div class="key-row" id="key-row-openai">
+                <label class="field-label" for="key-openai">OpenAI API key</label>
+                <div class="key-controls">
+                  <input type="password" id="key-openai" class="key-input" autocomplete="new-password" spellcheck="false">
+                  <button type="button" class="btn" id="test-openai">Test</button>
+                  <button type="button" class="btn btn-quiet" id="clear-openai">Clear</button>
                 </div>
               </div>
-            </div>
-            <p class="hint" id="sound-set-hint">Play runs the four tones of a set in turn: start, stop, ready and error. It plays even with Play sounds off.</p>
-            <label class="check"><input type="checkbox" id="always-copy" aria-describedby="always-copy-hint">Always copy the result</label>
-            <p class="hint" id="always-copy-hint">Also copies every dictation to the clipboard. This replaces whatever is on the clipboard.</p>
-          </div>
-        </section>
-
-        <section data-route="settings/usage" aria-labelledby="h-settings-usage" hidden>
-          <h1 id="h-settings-usage" tabindex="-1">Usage and data</h1>
-          <section class="card" aria-labelledby="h-usage">
-            <div class="card-head">
-              <h2 id="h-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11"/><path d="M10 20V5"/><path d="M16 20v-6"/><path d="M21 20H3"/></svg>Usage</h2>
-              <button type="button" class="btn btn-quiet" id="refresh-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>Refresh</button>
-            </div>
-            <table class="usage">
-              <thead>
-                <tr><td></td><th scope="col">Sessions</th><th scope="col">Audio</th><th scope="col">Cost</th></tr>
-              </thead>
-              <tbody>
-                <tr><th scope="row">Today</th><td id="usage-today-sessions">0</td><td id="usage-today-audio">0:00</td><td id="usage-today-cost">$0.00</td></tr>
-                <tr><th scope="row">7 days</th><td id="usage-week-sessions">0</td><td id="usage-week-audio">0:00</td><td id="usage-week-cost">$0.00</td></tr>
-                <tr class="total"><th scope="row">All time</th><td id="usage-total-sessions">0</td><td id="usage-total-audio">0:00</td><td id="usage-total-cost">$0.00</td></tr>
-              </tbody>
-              <tbody class="by-provider">
-                <tr><th scope="row">OpenAI</th><td id="usage-openai-sessions">0</td><td id="usage-openai-audio">0:00</td><td id="usage-openai-cost">$0.00</td></tr>
-                <tr><th scope="row">Gemini</th><td id="usage-gemini-sessions">0</td><td id="usage-gemini-audio">0:00</td><td id="usage-gemini-cost">$0.00</td></tr>
-              </tbody>
-            </table>
-            <p class="hint">Estimates from list prices. Provider rows cover all time. Check your provider dashboard for billing.</p>
-            <div class="card-actions">
-              <button type="button" class="btn btn-danger" id="clear-usage">Clear usage history</button>
+              <div class="key-row" id="key-row-gemini" hidden>
+                <label class="field-label" for="key-gemini">Gemini API key</label>
+                <div class="key-controls">
+                  <input type="password" id="key-gemini" class="key-input" autocomplete="new-password" spellcheck="false">
+                  <button type="button" class="btn" id="test-gemini">Test</button>
+                  <button type="button" class="btn btn-quiet" id="clear-gemini">Clear</button>
+                </div>
+              </div>
+              <p class="hint hint-warning" id="spend-hint" hidden>Set a spending limit on your provider account.</p>
             </div>
           </section>
-          <div class="card">
-            <h2>Reset</h2>
-            <button type="button" class="btn btn-danger btn-block" id="reset" aria-describedby="reset-hint">Reset to defaults</button>
-            <p class="hint" id="reset-hint">Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the dictation and edit hotkeys, the pill style, Minimal's size, the recording colour, sounds, the sound set and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.</p>
-          </div>
+
+          <section class="settings-part" data-part="settings/recording" aria-labelledby="h-settings-recording">
+            <h2 id="h-settings-recording" tabindex="-1">Recording</h2>
+            <div class="card">
+              <div class="grid-2">
+                <div class="field">
+                  <label class="field-label" for="min-time">Minimum length</label>
+                  <select id="min-time">
+                    <option value="0.5">0.5 s</option>
+                    <option value="1">1 s</option>
+                    <option value="2">2 s</option>
+                    <option value="3">3 s</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="max-time">Maximum length</label>
+                  <select id="max-time">
+                    <option value="30">30 s</option>
+                    <option value="60">1 min</option>
+                    <option value="120">2 min</option>
+                    <option value="180">3 min</option>
+                    <option value="300">5 min</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="auto-stop">Silence auto-stop</label>
+                  <select id="auto-stop"></select>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="hotkey">Hotkey</label>
+                  <button type="button" class="hotkey" id="hotkey" aria-pressed="false" aria-describedby="hotkey-hint"></button>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="edit-hotkey">Edit hotkey</label>
+                  <button type="button" class="hotkey" id="edit-hotkey" aria-pressed="false" aria-describedby="edit-hotkey-hint"></button>
+                </div>
+              </div>
+              <p class="hint" id="hotkey-hint" aria-live="polite">Tap to toggle, hold to talk.</p>
+              <p class="hint" id="edit-hotkey-hint" aria-live="polite">Select text in a field, press this and say how to change it. The selected text goes to your provider.</p>
+            </div>
+          </section>
+
+          <section class="settings-part" data-part="settings/speech" aria-labelledby="h-settings-speech">
+            <h2 id="h-settings-speech" tabindex="-1">Speech</h2>
+            <div class="card">
+              <fieldset class="languages">
+                <legend class="field-label">Spoken languages</legend>
+                <div class="check-grid" id="languages"></div>
+              </fieldset>
+              <p class="hint">Auto detects the language. Pick languages to steer recognition.</p>
+              <p class="hint">Names and jargon now live in the <a href="#dictionary">Dictionary</a>.</p>
+            </div>
+          </section>
+
+          <section class="settings-part" data-part="settings/sites" aria-labelledby="h-settings-sites">
+            <h2 id="h-settings-sites" tabindex="-1">Sites</h2>
+            <div class="card site-card">
+              <p class="hint site-hint">Hide pill removes the idle pill on that site; the hotkey still records there, with a small indicator at the bottom of the page.</p>
+              <form class="site-add" id="site-add">
+                <div class="field">
+                  <label class="field-label" for="site-add-host">Add site</label>
+                  <input type="text" id="site-add-host" autocomplete="off" spellcheck="false" aria-describedby="site-add-error">
+                </div>
+                <label class="check"><input type="checkbox" id="site-add-hide" checked>Hide pill</label>
+                <div class="field">
+                  <label class="field-label" for="site-add-mode">Mode</label>
+                  <select id="site-add-mode"></select>
+                </div>
+                <button type="submit" class="btn btn-primary">Add</button>
+                <p class="hint site-add-error" id="site-add-error" data-tone="error" role="alert" hidden></p>
+              </form>
+            </div>
+            <div class="card site-card">
+              <table class="site-table" id="site-table">
+                <caption class="visually-hidden">Site rules</caption>
+                <thead>
+                  <tr><th scope="col">Site</th><th scope="col">Hide pill</th><th scope="col">Mode</th><th scope="col">Remove</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <p class="hint site-empty" id="site-empty" hidden>No site rules yet.</p>
+            </div>
+          </section>
+
+          <section class="settings-part" data-part="settings/appearance" aria-labelledby="h-settings-appearance">
+            <h2 id="h-settings-appearance" tabindex="-1">Appearance</h2>
+            <div class="card">
+              <div class="style-grid" role="radiogroup" aria-labelledby="h-settings-appearance">
+                <label class="style-card">
+                  <input type="radio" name="pill-style" value="pill">
+                  <span class="style-preview" aria-hidden="true"><span class="preview-field"></span><span class="preview-bar"></span></span>
+                  <span class="style-name">Pill</span>
+                  <span class="hint">The full bar beside the field, always in view.</span>
+                </label>
+                <label class="style-card">
+                  <input type="radio" name="pill-style" value="dot">
+                  <span class="style-preview" aria-hidden="true"><span class="preview-field"></span><span class="preview-dot"></span></span>
+                  <span class="style-name">Dot <span class="tag">Default</span></span>
+                  <span class="hint">A small dot beside the field. It opens into the bar when you point at it.</span>
+                </label>
+                <label class="style-card">
+                  <input type="radio" name="pill-style" value="minimal">
+                  <span class="style-preview" aria-hidden="true"><span class="preview-field"></span><span class="preview-mini"></span></span>
+                  <span class="style-name">Minimal</span>
+                  <span class="hint">Nothing until you record, then an indicator beside the field. Start and stop with the hotkey. There is no menu on the page; change settings here or in the toolbar popup.</span>
+                </label>
+              </div>
+              <p class="hint">Sites with Hide pill use Minimal.</p>
+              <div class="option-group" id="mini-size-group" role="radiogroup" aria-labelledby="mini-size-label" hidden>
+                <div class="field-label" id="mini-size-label">Minimal size</div>
+                <div class="style-grid style-grid-compact">
+                  <label class="style-card">
+                    <input type="radio" name="mini-size" value="small">
+                    <span class="style-name">Small</span>
+                  </label>
+                  <label class="style-card">
+                    <input type="radio" name="mini-size" value="medium">
+                    <span class="style-name">Medium</span>
+                  </label>
+                  <label class="style-card">
+                    <input type="radio" name="mini-size" value="large">
+                    <span class="style-name">Large</span>
+                  </label>
+                  <label class="style-card">
+                    <input type="radio" name="mini-size" value="xlarge">
+                    <span class="style-name">Extra large</span>
+                  </label>
+                </div>
+              </div>
+              <div class="option-group" role="radiogroup" aria-labelledby="rec-color-label">
+                <div class="field-label" id="rec-color-label">Recording colour</div>
+                <div class="style-grid style-grid-compact">
+                  <label class="style-card">
+                    <input type="radio" name="rec-color" value="red">
+                    <span class="style-name"><span class="swatch swatch-red" aria-hidden="true"></span>Classic red</span>
+                  </label>
+                  <label class="style-card">
+                    <input type="radio" name="rec-color" value="vampire">
+                    <span class="style-name"><span class="swatch swatch-vampire" aria-hidden="true"></span>Vampire red</span>
+                  </label>
+                  <label class="style-card">
+                    <input type="radio" name="rec-color" value="obsidian">
+                    <span class="style-name"><span class="swatch swatch-obsidian" aria-hidden="true"></span>Obsidian purple</span>
+                  </label>
+                  <label class="style-card">
+                    <input type="radio" name="rec-color" value="emerald">
+                    <span class="style-name"><span class="swatch swatch-emerald" aria-hidden="true"></span>Emerald green</span>
+                  </label>
+                  <label class="style-card">
+                    <input type="radio" name="rec-color" value="mocha">
+                    <span class="style-name"><span class="swatch swatch-mocha" aria-hidden="true"></span>Mocha brown</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-part" data-part="settings/sound" aria-labelledby="h-settings-sound">
+            <h2 id="h-settings-sound" tabindex="-1">Sound and clipboard</h2>
+            <div class="card">
+              <label class="check"><input type="checkbox" id="sounds" aria-describedby="sounds-hint">Play sounds</label>
+              <p class="hint" id="sounds-hint">Short tones when recording starts, when it stops, when the text is ready, and when something goes wrong.</p>
+              <div class="option-group" role="radiogroup" aria-labelledby="sound-set-label" aria-describedby="sound-set-hint">
+                <div class="field-label" id="sound-set-label">Sound set</div>
+                <div class="style-grid style-grid-compact">
+                  <div class="style-card">
+                    <input type="radio" name="sound-set" id="sound-set-soft" value="soft">
+                    <label class="style-name" for="sound-set-soft">Soft</label>
+                    <button type="button" class="btn" data-play="soft" aria-label="Play Soft">Play</button>
+                  </div>
+                  <div class="style-card">
+                    <input type="radio" name="sound-set" id="sound-set-warm" value="warm">
+                    <label class="style-name" for="sound-set-warm">Warm</label>
+                    <button type="button" class="btn" data-play="warm" aria-label="Play Warm">Play</button>
+                  </div>
+                  <div class="style-card">
+                    <input type="radio" name="sound-set" id="sound-set-tap" value="tap">
+                    <label class="style-name" for="sound-set-tap">Single tap</label>
+                    <button type="button" class="btn" data-play="tap" aria-label="Play Single tap">Play</button>
+                  </div>
+                  <div class="style-card">
+                    <input type="radio" name="sound-set" id="sound-set-classic" value="classic">
+                    <label class="style-name" for="sound-set-classic">Classic</label>
+                    <button type="button" class="btn" data-play="classic" aria-label="Play Classic">Play</button>
+                  </div>
+                </div>
+              </div>
+              <p class="hint" id="sound-set-hint">Play runs the four tones of a set in turn: start, stop, ready and error. It plays even with Play sounds off.</p>
+              <label class="check"><input type="checkbox" id="always-copy" aria-describedby="always-copy-hint">Always copy the result</label>
+              <p class="hint" id="always-copy-hint">Also copies every dictation to the clipboard. This replaces whatever is on the clipboard.</p>
+            </div>
+          </section>
+
+          <section class="settings-part" data-part="settings/usage" aria-labelledby="h-settings-usage">
+            <h2 id="h-settings-usage" tabindex="-1">Usage and data</h2>
+            <section class="card" aria-labelledby="h-usage">
+              <div class="card-head">
+                <h3 id="h-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11"/><path d="M10 20V5"/><path d="M16 20v-6"/><path d="M21 20H3"/></svg>Usage</h3>
+                <button type="button" class="btn btn-quiet" id="refresh-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>Refresh</button>
+              </div>
+              <table class="usage">
+                <thead>
+                  <tr><td></td><th scope="col">Sessions</th><th scope="col">Audio</th><th scope="col">Cost</th></tr>
+                </thead>
+                <tbody>
+                  <tr><th scope="row">Today</th><td id="usage-today-sessions">0</td><td id="usage-today-audio">0:00</td><td id="usage-today-cost">$0.00</td></tr>
+                  <tr><th scope="row">7 days</th><td id="usage-week-sessions">0</td><td id="usage-week-audio">0:00</td><td id="usage-week-cost">$0.00</td></tr>
+                  <tr class="total"><th scope="row">All time</th><td id="usage-total-sessions">0</td><td id="usage-total-audio">0:00</td><td id="usage-total-cost">$0.00</td></tr>
+                </tbody>
+                <tbody class="by-provider">
+                  <tr><th scope="row">OpenAI</th><td id="usage-openai-sessions">0</td><td id="usage-openai-audio">0:00</td><td id="usage-openai-cost">$0.00</td></tr>
+                  <tr><th scope="row">Gemini</th><td id="usage-gemini-sessions">0</td><td id="usage-gemini-audio">0:00</td><td id="usage-gemini-cost">$0.00</td></tr>
+                </tbody>
+              </table>
+              <p class="hint">Estimates from list prices. Provider rows cover all time. Check your provider dashboard for billing.</p>
+              <div class="card-actions">
+                <button type="button" class="btn btn-danger" id="clear-usage">Clear usage history</button>
+              </div>
+            </section>
+            <div class="card">
+              <h3>Reset</h3>
+              <button type="button" class="btn btn-danger btn-block" id="reset" aria-describedby="reset-hint">Reset to defaults</button>
+              <p class="hint" id="reset-hint">Resets modes and prompts, the Translate target language, recording limits, silence auto-stop, the dictation and edit hotkeys, the pill style, Minimal's size, the recording colour, sounds, the sound set and always-copy. Custom modes are deleted, and site rules that use one lose their mode (a rule with no other setting is removed). Keeps your API keys, provider, spoken languages, dictionary, site rules and the history choice.</p>
+            </div>
+          </section>
         </section>
 
         <section data-route="welcome" aria-labelledby="h-welcome" hidden>

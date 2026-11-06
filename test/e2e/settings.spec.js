@@ -8,6 +8,7 @@ import { migrateSettings } from '../../src/shared/defaults.js';
 import { CUE_NAMES, CUE_SETS } from '../../src/offscreen/cues.js';
 import { CONFIRM_GUARD_MS } from '../../src/ui/form.js';
 import { launchExtension, seedSettings, openFields, pillQuery, focusField, dictate, DUMMY_KEY, PORT, TRANSCRIPT } from './helpers.js';
+import { decodePng } from './png.js';
 
 /** The acceptance budget: closing the tab this long after typing keeps the value (spec 6.1). */
 const CLOSE_AFTER_MS = 1000;
@@ -59,9 +60,11 @@ const storedSettings = () => serviceWorker.evaluate(async () => (await chrome.st
  * Opens the settings page at a route and waits until it has loaded the stored settings: the
  * first render builds the mode rows, and a failed load shows the banner.
  * @param {string} route
+ * @param {{ width: number, height: number }} [viewport] the window size, set before the page loads
  */
-async function openSettingsPage(route) {
+async function openSettingsPage(route, viewport) {
   const page = await context.newPage();
+  if (viewport) await page.setViewportSize(viewport);
   await page.goto(extensionUrl(`options.html#${route}`));
   await expect(page.locator('#mode-list .mode-select').first()).toBeAttached();
   await expect(page.locator('#banner')).toBeHidden();
@@ -117,7 +120,7 @@ test('the popup opens a route and reuses the settings tab', async () => {
   expect(settingsPages()).toHaveLength(1);
   expect(settingsPages()[0]).toBe(settingsPage);
   expect(await settingsPage.evaluate(() => window.__marker)).toBe(1);
-  await expect(settingsPage.locator('section[data-route="settings/provider"]')).toBeVisible();
+  await expect(settingsPage.locator('section[data-part="settings/provider"]')).toBeVisible();
   await expect.poll(settingsTabsActive).toEqual([true]);
 });
 
@@ -521,4 +524,162 @@ test('Clear on the History page goes through the worker: the entries go, the sto
   await expect(clear).toBeDisabled();
   await expect(page.locator('#h-history')).toBeFocused();
   expect(await stored()).toEqual([]);
+});
+
+// One Settings page: seven parts under one h1, each reached by its old hash.
+
+/** The seven settings hashes with the id of the heading each lands on, in page order. */
+const SETTINGS_PARTS = [
+  ['settings/provider', 'h-provider'],
+  ['settings/recording', 'h-settings-recording'],
+  ['settings/speech', 'h-settings-speech'],
+  ['settings/sites', 'h-settings-sites'],
+  ['settings/appearance', 'h-settings-appearance'],
+  ['settings/sound', 'h-settings-sound'],
+  ['settings/usage', 'h-settings-usage'],
+];
+/** Shorter than the page, so a part further down needs a scroll to show. */
+const SHORT_WINDOW = { width: 1000, height: 500 };
+/** A heading scrolled to the start of the window sits this close to its top edge (16 px of margin). */
+const NEAR_TOP_PX = 60;
+
+test('each settings hash lands with its heading in view, and moves no focus', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  for (const [route, headingId] of SETTINGS_PARTS) {
+    const page = await openSettingsPage(route, SHORT_WINDOW);
+    const heading = page.locator(`#${headingId}`);
+    await expect(heading).toBeInViewport({ ratio: 1 });
+    await expect(page.locator('section[data-route="settings"]')).toBeVisible();
+    await expect(page.locator('section[data-route]:not([hidden])')).toHaveCount(1);
+    await expect(page.locator(`nav a[href="#${route}"]`)).toHaveAttribute('aria-current', 'page');
+    // The last part ends the page, so it cannot reach the top; every other one is scrolled to it.
+    if (route !== 'settings/usage') await expect.poll(async () => (await heading.boundingBox()).y).toBeLessThan(NEAR_TOP_PX);
+    // A load moves no focus.
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('BODY');
+    await page.close();
+  }
+});
+
+test('the sidebar jumps between parts: heading focused, hash and mark moved, nothing reloaded', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const page = await openSettingsPage('settings/provider', SHORT_WINDOW);
+  await page.evaluate(() => { window.__marker = 1; });
+
+  for (const [route, headingId] of SETTINGS_PARTS.slice(1)) {
+    await page.locator(`nav a[href="#${route}"]`).click();
+    await expect(page.locator(`#${headingId}`)).toBeFocused();
+    await expect(page.locator(`#${headingId}`)).toBeInViewport({ ratio: 1 });
+    if (route !== 'settings/usage') await expect.poll(async () => (await page.locator(`#${headingId}`).boundingBox()).y).toBeLessThan(NEAR_TOP_PX);
+    await expect(page.locator('nav [aria-current]')).toHaveCount(1);
+    await expect(page.locator(`nav a[href="#${route}"]`)).toHaveAttribute('aria-current', 'page');
+    await expect(page).toHaveURL(extensionUrl(`options.html#${route}`));
+  }
+  expect(await page.evaluate(() => window.__marker)).toBe(1);
+
+  // Scrolling by hand moves neither the hash nor the mark.
+  await page.mouse.wheel(0, -5000);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(page).toHaveURL(extensionUrl('options.html#settings/usage'));
+  await expect(page.locator('nav a[href="#settings/usage"]')).toHaveAttribute('aria-current', 'page');
+});
+
+test('Add API key in the popup lands on Provider with its heading focused and in view', async () => {
+  await seedSettings(serviceWorker, '');
+  const page = await openSettingsPage('settings/usage', SHORT_WINDOW);
+  await expect(page.locator('#h-settings-usage')).toBeInViewport({ ratio: 1 });
+
+  const popup = await openPopup();
+  await expect.poll(settingsTabsActive).toEqual([false]);
+  await popup.getByRole('button', { name: 'Add API key' }).click();
+
+  await expect(page).toHaveURL(extensionUrl('options.html#settings/provider'));
+  await expect(page.locator('#h-provider')).toBeFocused();
+  await expect(page.locator('#h-provider')).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('#key-openai')).toBeInViewport();
+  expect(settingsPages()).toEqual([page]);
+});
+
+test('a key typed, then a sidebar jump, is saved, and Provider shows it masked on the way back', async () => {
+  await seedSettings(serviceWorker, '');
+  const page = await openSettingsPage('settings/provider', SHORT_WINDOW);
+  const key = page.locator('#key-openai');
+  await key.fill(PASTED_KEY);
+  await expect(key).toHaveValue(PASTED_KEY);
+
+  // The press moves focus off the field before the typing pause ends, and the hash change follows.
+  await page.locator('nav a[href="#settings/usage"]').click();
+  await expect(page.locator('#h-settings-usage')).toBeFocused();
+  await expect.poll(async () => (await storedSettings()).keys.openai).toBe(PASTED_KEY);
+
+  await page.locator('nav a[href="#settings/provider"]').click();
+  await expect(page.locator('#h-provider')).toBeFocused();
+  await expect(key).toHaveAttribute('placeholder', 'sk-e…-key (saved)');
+  await expect(key).toHaveValue('');
+  await expect(page.locator('#banner')).toBeHidden();
+});
+
+test('a window 400 px high on Usage and data focuses the heading of the last part', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const page = await openSettingsPage('settings/usage', { width: 1000, height: 400 });
+  const heading = page.locator('#h-settings-usage');
+  await expect(heading).toBeInViewport({ ratio: 1 });
+
+  // A press on the link of the current hash fires no hashchange, and lands the same.
+  await page.locator('nav a[href="#settings/usage"]').click();
+  await expect(heading).toBeFocused();
+  await expect(heading).toBeInViewport({ ratio: 1 });
+
+  await page.locator('nav a[href="#settings/provider"]').click();
+  await expect(page.locator('#h-provider')).toBeFocused();
+  await page.locator('nav a[href="#settings/usage"]').click();
+  await expect(heading).toBeFocused();
+  await expect(heading).toBeInViewport({ ratio: 1 });
+});
+
+test('the Settings page has no sideways scroll at 380 px', async () => {
+  const host = 'a-very-long-subdomain.of-an-unusually-long-hostname-for-a-site-rule.example.com';
+  await seedSettings(serviceWorker, DUMMY_KEY, { siteRules: { [host]: { hidePill: true, mode: 'email' } } });
+  const page = await openSettingsPage('settings/sites', { width: 380, height: 800 });
+  await expect(page.locator('#site-table tbody th')).toHaveText(host);
+
+  for (const [route, headingId] of SETTINGS_PARTS) {
+    await page.locator(`nav a[href="#${route}"]`).click();
+    await expect(page.locator(`#${headingId}`)).toBeFocused();
+    const { scroll, client } = await page.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth,
+      client: document.documentElement.clientWidth,
+    }));
+    expect(client, route).toBeLessThanOrEqual(380);
+    expect(scroll, route).toBeLessThanOrEqual(client);
+  }
+});
+
+test('forced colours keep the divider between two parts', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const page = await openSettingsPage('settings/provider', SHORT_WINDOW);
+  await page.emulateMedia({ forcedColors: 'active' });
+  const second = page.locator('section[data-part="settings/recording"]');
+  await second.scrollIntoViewIfNeeded();
+
+  const { top, left, style, thickness, canvas } = await second.evaluate((part) => {
+    const probe = document.body.appendChild(document.createElement('i'));
+    probe.style.color = 'Canvas';
+    const canvasColor = getComputedStyle(probe).color.match(/\d+/g).slice(0, 3).map(Number);
+    probe.remove();
+    const rect = part.getBoundingClientRect();
+    const css = getComputedStyle(part);
+    return { top: rect.top, left: rect.left, style: css.borderTopStyle, thickness: parseFloat(css.borderTopWidth), canvas: canvasColor };
+  });
+  expect(style).toBe('solid');
+  expect(thickness).toBeGreaterThan(0);
+
+  // A band through the rule: 20 px of padding below it and the gap above it are the canvas, so
+  // any pixel that is not the canvas is the rule.
+  const band = await page.screenshot({ clip: { x: left + 8, y: Math.floor(top) - 1, width: 32, height: 3 } });
+  const { data, channels } = decodePng(band);
+  let ruled = 0;
+  for (let i = 0; i < data.length; i += channels) {
+    if (data[i] !== canvas[0] || data[i + 1] !== canvas[1] || data[i + 2] !== canvas[2]) ruled += 1;
+  }
+  expect(ruled).toBeGreaterThan(0);
 });

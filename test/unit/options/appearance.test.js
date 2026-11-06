@@ -50,7 +50,7 @@ function fakeChrome(initial = storedSettings()) {
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
-const section = () => document.querySelector(`section[data-route="${ROUTE}"]`);
+const section = () => document.querySelector(`section[data-part="${ROUTE}"]`);
 const radio = (value) => section().querySelector(`input[name="pill-style"][value="${value}"]`);
 const checked = () => [...section().querySelectorAll('input[name="pill-style"]')].filter((r) => r.checked).map((r) => r.value);
 const choice = (name, value) => section().querySelector(`input[name="${name}"][value="${value}"]`);

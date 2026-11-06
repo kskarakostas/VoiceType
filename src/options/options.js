@@ -3,7 +3,7 @@
 // settings change, so a tab left open never writes its stale copy over newer data.
 import { createSettingsClient } from '../ui/settings-client.js';
 import { createSettingsState } from '../ui/settings-state.js';
-import { DEFAULT_ROUTE, parseRoute } from './routes.js';
+import { DEFAULT_ROUTE, pageOf, parseRoute } from './routes.js';
 import { createProviderSection } from './sections/provider.js';
 import { createRecordingSection } from './sections/recording.js';
 import { createSpeechSection } from './sections/speech.js';
@@ -71,6 +71,7 @@ export async function initOptions({ chrome, document, window, sections = SECTION
   const el = {
     banner: $('banner'), bannerText: $('banner-text'), toast: $('toast'), version: $('version'),
     routes: [...document.querySelectorAll('section[data-route]')],
+    parts: new Map([...document.querySelectorAll('section[data-part]')].map((part) => [part.dataset.part, part])),
     links: [...document.querySelectorAll('nav a[href^="#"]')],
   };
 
@@ -164,21 +165,38 @@ export async function initOptions({ chrome, document, window, sections = SECTION
   };
   const mounted = sections.map((factory) => factory(ctx));
 
-  // Routing. The hash names the page; anything else opens Home and the URL is rewritten to it.
+  // Routing. The hash names the page, or a part of the Settings page; anything else opens Home and
+  // the URL is rewritten to it. The heading a route lands on is the page's h1, or a part's h2.
 
-  function showRoute({ focus }) {
+  /** @returns {HTMLElement|null|undefined} */
+  function headingOf(page) {
+    const part = el.parts.get(route);
+    return part ? part.querySelector(':scope > h2') : page?.querySelector(':scope > h1');
+  }
+
+  function showRoute({ focus, scroll = true }) {
     route = parseRoute(window.location.hash);
     if (window.location.hash !== `#${route}`) window.history.replaceState(null, '', `#${route}`);
-    for (const section of el.routes) section.hidden = section.dataset.route !== route;
+    const page = el.routes.find((section) => section.dataset.route === pageOf(route));
+    for (const section of el.routes) section.hidden = section !== page;
     for (const link of el.links) {
       if (link.getAttribute('href') === `#${route}`) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     }
-    if (focus) el.routes.find((section) => !section.hidden)?.querySelector('h1')?.focus();
+    const heading = headingOf(page);
+    // Only a part is scrolled to: another page opens at its top as it did, and the focus brings its h1 into view.
+    if (scroll && el.parts.has(route)) heading?.scrollIntoView?.({ block: 'start' });
+    if (focus) heading?.focus();
   }
 
-  showRoute({ focus: false });
+  showRoute({ focus: false, scroll: false });
   window.addEventListener('hashchange', () => showRoute({ focus: true }));
+  // A press on the link of the current hash fires no hashchange, so it lands again here.
+  for (const link of el.links) {
+    link.addEventListener('click', () => {
+      if (link.getAttribute('href') === `#${route}`) showRoute({ focus: true });
+    });
+  }
 
   el.version.textContent = `Version ${chrome.runtime.getManifest().version}`;
 
@@ -202,6 +220,8 @@ export async function initOptions({ chrome, document, window, sections = SECTION
     el.bannerText.textContent = LOAD_ERROR;
     el.banner.hidden = false;
   }
+  // The page is as tall as it will be only after the first render, so a deep hash scrolls now.
+  showRoute({ focus: false });
 
   return {
     get settings() { return state.settings(); },

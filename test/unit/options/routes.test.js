@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ROUTES, HIDDEN_ROUTES, DEFAULT_ROUTE, parseRoute } from '../../../src/options/routes.js';
+import { ROUTES, HIDDEN_ROUTES, DEFAULT_ROUTE, parseRoute, pageOf } from '../../../src/options/routes.js';
 
 describe('settings page routes', () => {
   it('known routes resolve to themselves', () => {
@@ -11,6 +11,15 @@ describe('settings page routes', () => {
     expect(Object.isFrozen(HIDDEN_ROUTES)).toBe(true);
     expect(parseRoute('#welcome')).toBe('welcome');
     expect(ROUTES.map((r) => r.id)).not.toContain('welcome');
+  });
+
+  it.each(ROUTES.filter((r) => r.id.startsWith('settings/')).map((r) => r.id))('%s lives on the Settings page', (id) => {
+    expect(parseRoute(`#${id}`)).toBe(id);
+    expect(pageOf(id)).toBe('settings');
+  });
+
+  it('the other pages are their own', () => {
+    for (const id of ['home', 'modes', 'dictionary', 'history', 'welcome']) expect(pageOf(id)).toBe(id);
   });
 
   it('a bare #settings opens Provider', () => {

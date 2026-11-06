@@ -8,6 +8,7 @@ import { launchExtension, seedSettings, focusField, clickPill, waitForPill, pill
 import { applyUsage, emptyLog } from '../../src/background/usage.js';
 import { estimateSttCost } from '../../src/shared/pricing.js';
 import { PROVIDERS } from '../../src/shared/models.js';
+import { pageOf } from '../../src/options/routes.js';
 
 const OUT = fileURLToPath(new URL('../../screenshots', import.meta.url));
 const DEMO_URL = `http://localhost:${PORT}/demo.html`;
@@ -125,7 +126,7 @@ for (const colorScheme of ['light', 'dark']) {
       await settings.setViewportSize(SETTINGS_VIEWPORT);
       for (const [name, route] of SETTINGS_SHOTS) {
         await settings.goto(`chrome-extension://${extensionId}/options.html#${route}`);
-        await settings.locator(`section[data-route="${route}"]:not([hidden])`).waitFor();
+        await settings.locator(`section[data-route="${pageOf(route)}"]:not([hidden])`).waitFor();
         // A route change focuses the heading, and its ring would be in the shot.
         await settings.evaluate(() => document.activeElement?.blur());
         await settings.waitForTimeout(500);
