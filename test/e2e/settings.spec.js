@@ -498,6 +498,47 @@ test('History shows a real dictation on an open page, Copy and Copy last copy it
   await expect(popup.locator('#copy-last')).toBeHidden();
 });
 
+test('the popup shows no dictated text until the arrow, and a row press puts that text on the clipboard', async () => {
+  await seedSettings(serviceWorker, DUMMY_KEY);
+  const texts = ['alpha entry', 'bravo entry\nwith a second line', 'charlie entry'];
+  await serviceWorker.evaluate(
+    (list) => chrome.storage.session.set({ history: list.map((text, i) => ({ id: `e${i}`, raw: text, text, mode: 'default', host: null, ts: Date.now() - i })) }),
+    texts,
+  );
+  const fields = await openFields(context);
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `http://localhost:${PORT}` });
+  const clipboard = async () => {
+    await fields.bringToFront();
+    return fields.evaluate(() => navigator.clipboard.readText());
+  };
+
+  const popup = await openPopup();
+  const toggle = popup.getByRole('button', { name: 'Show recent dictations' });
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(popup.locator('#recent-list')).toBeHidden();
+  const dictated = /alpha|bravo|charlie/;
+  expect(await popup.content()).not.toMatch(dictated);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(popup.locator('#recent-list button')).toHaveText(['alpha entry', 'bravo entry', 'charlie entry']);
+  expect(await popup.content()).not.toContain('second line');
+
+  await fields.evaluate(() => navigator.clipboard.writeText('before the row'));
+  await popup.bringToFront();
+  await popup.getByRole('button', { name: 'bravo entry' }).click();
+  await expect(popup.locator('#toast')).toHaveText('Copied to clipboard.');
+  expect(await clipboard()).toBe(texts[1]);
+  await popup.bringToFront();
+  await expect(popup.locator('#recent-list')).toBeVisible();
+
+  await toggle.click();
+  await expect(popup.locator('#recent-list')).toBeHidden();
+  expect(await popup.content()).not.toMatch(dictated);
+  await serviceWorker.evaluate(() => chrome.storage.session.remove('history'));
+});
+
 test('Clear on the History page goes through the worker: the entries go, the store empties, the focus stays on the page', async () => {
   await seedSettings(serviceWorker, DUMMY_KEY);
   await serviceWorker.evaluate(() => chrome.storage.session.remove('history'));

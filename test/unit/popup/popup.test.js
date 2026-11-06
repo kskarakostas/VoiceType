@@ -110,9 +110,9 @@ afterEach(() => {
 describe('popup quick panel', () => {
   it('renders the quick panel in spec order', async () => {
     await start(fakeChrome());
-    const order = [...document.querySelectorAll('#status, #provider, #active-mode, #site-block, #h-today, #copy-last, #open-settings')]
+    const order = [...document.querySelectorAll('#status, #provider, #active-mode, #site-block, #h-today, #copy-last, #recent-toggle, #recent-list, #open-settings')]
       .map((node) => node.id);
-    expect(order).toEqual(['status', 'provider', 'active-mode', 'site-block', 'h-today', 'copy-last', 'open-settings']);
+    expect(order).toEqual(['status', 'provider', 'active-mode', 'site-block', 'h-today', 'copy-last', 'recent-toggle', 'recent-list', 'open-settings']);
     expect($('h-today').textContent.trim()).toBe('Today');
     expect($('provider').labels[0].textContent).toBe('Provider');
     expect($('active-mode').labels[0].textContent).toBe('Mode');
@@ -669,5 +669,157 @@ describe('popup Copy last (V29)', () => {
     expect(unhandled).not.toHaveBeenCalled();
     expect($('toast').textContent).toBe('Could not copy.');
     expect($('toast').dataset.tone).toBe('error');
+  });
+});
+
+describe('popup recent dictations (V76)', () => {
+  const textOf = (n) => `dictation ${n}`;
+  const dictations = (n) => Array.from({ length: n }, (_, i) => ({ id: `e${i}`, raw: textOf(i), text: textOf(i), mode: 'default', host: null, ts: n - i }));
+  const rowTexts = () => [...$('recent-list').querySelectorAll('button')].map((b) => b.textContent);
+
+  function stubClipboard() {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText } });
+    return writeText;
+  }
+  afterEach(() => {
+    delete window.navigator.clipboard;
+  });
+
+  it('the arrow is joined to Copy last, labelled, and closed with no text in the page', async () => {
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: dictations(3) });
+    await start(chrome);
+    expect($('copy-row').contains($('recent-toggle'))).toBe(true);
+    expect($('recent-toggle').getAttribute('aria-label')).toBe('Show recent dictations');
+    expect($('recent-toggle').getAttribute('aria-controls')).toBe('recent-list');
+    expect($('recent-toggle').getAttribute('aria-expanded')).toBe('false');
+    expect($('recent-toggle').hidden).toBe(false);
+    expect($('recent-list').hidden).toBe(true);
+    expect(document.body.textContent).not.toContain('dictation');
+  });
+
+  it('the arrow does not show below 2 entries, nor when history cannot be read', async () => {
+    const one = fakeChrome();
+    one.script(MSG.GET_HISTORY, { entries: dictations(1) });
+    await start(one);
+    expect($('copy-last').disabled).toBe(false);
+    expect($('recent-toggle').hidden).toBe(true);
+
+    document.body.innerHTML = new DOMParser().parseFromString(HTML, 'text/html').body.innerHTML;
+    const unreadable = fakeChrome();
+    unreadable.script(MSG.GET_HISTORY, null);
+    await start(unreadable);
+    expect($('recent-toggle').hidden).toBe(true);
+  });
+
+  it('the arrow opens the newest 5, and a row copies its whole text with the same toast as Copy last', async () => {
+    const writeText = stubClipboard();
+    const chrome = fakeChrome();
+    const all = dictations(8);
+    all[1].text = 'second\nline two of it';
+    chrome.script(MSG.GET_HISTORY, { entries: all });
+    await start(chrome);
+    $('recent-toggle').click();
+    expect(rowTexts()).toEqual([textOf(0), 'second', textOf(2), textOf(3), textOf(4)]);
+    expect($('recent-toggle').getAttribute('aria-expanded')).toBe('true');
+
+    $('recent-list').querySelectorAll('button')[1].click();
+    await flush();
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('second\nline two of it');
+    expect($('toast').textContent).toBe('Copied to clipboard.');
+    expect($('toast').dataset.tone).toBe('success');
+    expect($('recent-list').hidden).toBe(false);
+  });
+
+  it('a refused clipboard write from a row says so and keeps the list open', async () => {
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(async () => { throw new Error('NotAllowedError'); }) } });
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: dictations(2) });
+    await start(chrome);
+    $('recent-toggle').click();
+    $('recent-list').querySelector('button').click();
+    await flush();
+    expect($('toast').textContent).toBe('Could not copy.');
+    expect($('toast').dataset.tone).toBe('error');
+    expect($('recent-list').hidden).toBe(false);
+  });
+
+  it('a clear empties an open list and hides the arrow', async () => {
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: dictations(3) }, { entries: [] });
+    await start(chrome);
+    $('recent-toggle').click();
+    expect(rowTexts()).toHaveLength(3);
+    chrome.fire({ history: { newValue: [] } }, 'session');
+    await flush();
+    expect($('recent-list').hidden).toBe(true);
+    expect($('recent-list').textContent).toBe('');
+    expect($('recent-toggle').hidden).toBe(true);
+    expect($('recent-toggle').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('a new dictation updates the open list', async () => {
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: dictations(2) }, { entries: [{ text: 'fresh' }, ...dictations(2)] });
+    await start(chrome);
+    $('recent-toggle').click();
+    chrome.fire({ history: {} }, 'session');
+    await flush();
+    expect(rowTexts()).toEqual(['fresh', textOf(0), textOf(1)]);
+  });
+
+  it('history off hides the row, closes the list and lets go of the text; on again does not bring it back', async () => {
+    const stored = storedSettings();
+    const chrome = fakeChrome(stored);
+    chrome.script(MSG.GET_HISTORY, { entries: dictations(3) });
+    await start(chrome);
+    $('recent-toggle').click();
+    expect(rowTexts()).toHaveLength(3);
+
+    stored.keepHistory = false;
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect($('copy-row').hidden).toBe(true);
+    expect($('recent-toggle').hidden).toBe(true);
+    expect($('recent-list').hidden).toBe(true);
+    expect($('recent-list').textContent).toBe('');
+    expect($('recent-toggle').getAttribute('aria-expanded')).toBe('false');
+
+    stored.keepHistory = true;
+    chrome.fire(SETTINGS_CHANGE, 'local');
+    await flush();
+    expect($('copy-row').hidden).toBe(false);
+    expect($('recent-toggle').hidden).toBe(true);
+    expect($('recent-list').textContent).toBe('');
+  });
+
+  it('keepHistory off at open: neither button, no list', async () => {
+    const stored = storedSettings();
+    stored.keepHistory = false;
+    const chrome = fakeChrome(stored);
+    chrome.script(MSG.GET_HISTORY, { entries: dictations(3) });
+    await start(chrome);
+    expect($('copy-row').hidden).toBe(true);
+    expect($('recent-toggle').hidden).toBe(true);
+    expect($('recent-list').hidden).toBe(true);
+    expect(document.body.textContent).not.toContain('dictation');
+  });
+
+  it('a slow reply does not bring back a list a newer read emptied', async () => {
+    let answerSlow;
+    const chrome = fakeChrome();
+    chrome.script(MSG.GET_HISTORY, { entries: dictations(3) }, new Promise((resolve) => { answerSlow = resolve; }), { entries: [] });
+    await start(chrome);
+    $('recent-toggle').click();
+    chrome.fire({ history: {} }, 'session');
+    chrome.fire({ history: {} }, 'session');
+    await flush();
+    answerSlow({ entries: dictations(3) });
+    await flush();
+    expect($('recent-toggle').hidden).toBe(true);
+    expect($('recent-list').hidden).toBe(true);
+    expect($('recent-list').textContent).toBe('');
+    expect($('copy-last').disabled).toBe(true);
   });
 });

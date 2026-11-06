@@ -9,6 +9,7 @@ import {
   launchExtension, seedSettings, openFields, pillQuery, pillStatus, waitForPill, clickPill, focusField,
   indicatorShown, startWithHotkey, dictateWithHotkey, PORT, TRANSCRIPT, DUMMY_KEY, STOP, MINI, HOTKEY, RECORD_MS,
 } from './helpers.js';
+import { decodePng } from './png.js';
 
 const REFINED = 'refined transcript';
 const HIDE_ONLY = Object.freeze({ hidePill: true, mode: null });
@@ -28,6 +29,8 @@ const VIEWPORT = { width: 1280, height: 2000 };
 /** The popup's width, and the height it stays under with a site and a key (V77). */
 const POPUP_WIDTH = 320;
 const POPUP_MAX_HEIGHT = 460;
+/** Chrome stops a popup growing at this height, and shows a scrollbar past it. */
+const POPUP_CAP_HEIGHT = 600;
 /** Chromium maps every *.localhost name to the loopback the fixture server listens on. */
 const LONG_HOST = 'a-very-long-site-name-for-the-popup-to-trim.example.localhost';
 const CROSS_ORIGIN_FRAME = `http://127.0.0.1:${PORT}/frame.html`;
@@ -298,12 +301,113 @@ test('the popup is under 460 px tall at 320 px, with a long site name on one lin
   expect(Math.abs(layout.modeMiddle - layout.hostMiddle)).toBeLessThan(layout.lineHeight);
 });
 
+/**
+ * Stores dictations as the worker would, newest first.
+ * @param {string[]} texts
+ */
+const seedHistory = (texts) => serviceWorker.evaluate(
+  (list) => chrome.storage.session.set({ history: list.map((text, i) => ({ id: `e${i}`, raw: text, text, mode: 'default', host: null, ts: Date.now() - i })) }),
+  texts,
+);
+
+const clearHistory = () => serviceWorker.evaluate(() => chrome.storage.session.remove('history'));
+
+test('the open list of 5 dictations fits the popup at 320 px with no scrollbar, one line a row, and the arrow shares Copy last\'s border', async () => {
+  await seedRules({});
+  await seedHistory([
+    `a long first line ${'that runs on '.repeat(40)}`, 'two\nlines', 'three', 'four', 'five', 'six, past the newest 5',
+  ]);
+  try {
+    const fixture = await openFields(context);
+    await fixture.goto(`http://${LONG_HOST}:${PORT}/fields.html`);
+    const popup = await openPopupOver(fixture);
+    await popup.setViewportSize({ width: POPUP_WIDTH, height: POPUP_CAP_HEIGHT });
+    await expect(popup.locator('#site-host')).toHaveText(LONG_HOST);
+    const toggle = popup.locator('#recent-toggle');
+    await expect(toggle).toBeVisible();
+
+    const joint = () => popup.evaluate(() => {
+      const box = (id) => document.getElementById(id).getBoundingClientRect();
+      const copy = getComputedStyle(document.getElementById('copy-last'));
+      const arrow = getComputedStyle(document.getElementById('recent-toggle'));
+      return {
+        gap: box('recent-toggle').left - box('copy-last').right,
+        copyRight: [copy.borderTopRightRadius, copy.borderBottomRightRadius],
+        arrowLeft: [arrow.borderTopLeftRadius, arrow.borderBottomLeftRadius],
+        copyHeight: box('copy-last').height,
+        arrowHeight: box('recent-toggle').height,
+      };
+    });
+    const closed = await joint();
+    // One border between the two: the arrow's left edge sits 1 px over Copy last's right edge.
+    expect(closed.gap).toBe(-1);
+    expect(closed.copyRight).toEqual(['0px', '0px']);
+    expect(closed.arrowLeft).toEqual(['0px', '0px']);
+    expect(closed.arrowHeight).toBe(closed.copyHeight);
+
+    // The ring of a focused Copy last runs over the arrow, and the arrow must not paint over it:
+    // 3 px past Copy last's edge, the ring's colour shows, not the arrow's.
+    await toggle.focus();
+    await popup.keyboard.press('Shift+Tab');
+    await expect(popup.locator('#copy-last')).toBeFocused();
+    const copyBox = await popup.locator('#copy-last').boundingBox();
+    const shot = decodePng(await popup.screenshot());
+    const pixel = (x) => {
+      const at = (Math.round(copyBox.y + copyBox.height / 2) * shot.width + Math.round(x)) * shot.channels;
+      return [...shot.data.subarray(at, at + 3)];
+    };
+    const edge = copyBox.x + copyBox.width;
+    expect(pixel(edge + 3)).not.toEqual(pixel(edge + 8));
+
+    await toggle.click();
+    await expect(popup.locator('#recent-list button')).toHaveCount(5);
+    const open = await popup.evaluate(() => {
+      const rows = [...document.querySelectorAll('#recent-list button')];
+      return {
+        scrollHeight: document.documentElement.scrollHeight,
+        clientHeight: document.documentElement.clientHeight,
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+        bodyHeight: document.body.getBoundingClientRect().height,
+        heights: rows.map((row) => row.getBoundingClientRect().height),
+        cut: rows.map((row) => row.scrollWidth > row.clientWidth),
+      };
+    });
+    expect(open.bodyHeight).toBeLessThan(POPUP_CAP_HEIGHT);
+    expect(open.scrollHeight).toBeLessThanOrEqual(open.clientHeight);
+    expect(open.scrollWidth).toBeLessThanOrEqual(open.clientWidth);
+    expect(new Set(open.heights).size).toBe(1);
+    expect(open.cut).toEqual([true, false, false, false, false]);
+    // A half turn once the glide ends: the icon points up.
+    const turn = () => popup.evaluate(() => getComputedStyle(document.querySelector('#recent-toggle svg')).transform);
+    await expect.poll(turn).toBe('matrix(-1, 0, 0, -1, 0, 0)');
+
+    // Copy last is whole again, with its own rounded corners, when the arrow goes.
+    await seedHistory(['only one']);
+    await expect(toggle).toBeHidden();
+    await expect(popup.locator('#recent-list')).toBeHidden();
+    expect((await joint()).copyRight).toEqual(['7px', '7px']);
+
+    // Reduced motion keeps the turn and drops the glide.
+    await seedHistory(['one', 'two']);
+    await expect(toggle).toBeVisible();
+    const glide = () => popup.evaluate(() => getComputedStyle(document.querySelector('#recent-toggle svg')).transitionDuration);
+    expect(await glide()).not.toBe('0s');
+    await popup.emulateMedia({ reducedMotion: 'reduce' });
+    expect(await glide()).toBe('0s');
+  } finally {
+    await clearHistory();
+  }
+});
+
 test('in forced colours the popup keeps the edge of every control', async () => {
   await seedRules({});
+  await seedHistory(['first', 'second']);
   const fixture = await openFields(context);
   const popup = await openPopupOver(fixture);
   await popup.emulateMedia({ forcedColors: 'active' });
   await expect(popup.locator('#site-mode')).toBeVisible();
+  await expect(popup.locator('#recent-toggle')).toBeVisible();
 
   const edges = () => popup.evaluate(() => {
     const canvas = getComputedStyle(document.body).backgroundColor;
@@ -316,8 +420,21 @@ test('in forced colours the popup keeps the edge of every control', async () => 
     });
   });
   const withKey = await edges();
-  expect(withKey.map((e) => e.id)).toEqual(['provider', 'active-mode', 'site-mode', 'copy-last', 'open-settings']);
+  expect(withKey.map((e) => e.id)).toEqual(['provider', 'active-mode', 'site-mode', 'copy-last', 'recent-toggle', 'open-settings']);
   expect(withKey.filter((e) => !e.drawn)).toEqual([]);
+
+  // The open list keeps the border round it and the hairline between its rows.
+  await popup.locator('#recent-toggle').click();
+  const list = await popup.evaluate(() => {
+    const canvas = getComputedStyle(document.body).backgroundColor;
+    const drawn = (el, side) => {
+      const style = getComputedStyle(el);
+      return style[`border${side}Style`] !== 'none' && parseFloat(style[`border${side}Width`]) > 0 && style[`border${side}Color`] !== canvas;
+    };
+    const items = [...document.querySelectorAll('#recent-list li')];
+    return { frame: drawn(document.getElementById('recent-list'), 'Top'), hairline: drawn(items[1], 'Top') };
+  });
+  expect(list).toEqual({ frame: true, hairline: true });
 
   // With no key, Add API key takes the place of Ready. The key comes back for the next case.
   await seedSettings(serviceWorker, '');
@@ -329,6 +446,7 @@ test('in forced colours the popup keeps the edge of every control', async () => 
     expect(withoutKey.filter((e) => !e.drawn)).toEqual([]);
   } finally {
     await seedRules({});
+    await clearHistory();
   }
 });
 

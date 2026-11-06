@@ -77,5 +77,47 @@ select { min-height: 30px; padding: 4px 8px; }
 .actions { display: grid; gap: 8px; }
 .split { display: flex; }
 .split > .btn:first-child { flex: 1; }
-.split > .btn:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .split > .btn + .btn { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+/* Copy last squares its right corners only while the arrow shows; the arrow stays in the markup, hidden. */
+.split > .btn:has(+ .btn:not([hidden])) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+/* The later button paints over the earlier one's ring unless the focused one is lifted. */
+.split > .btn:focus-visible { position: relative; z-index: 1; }
+
+.btn-arrow { flex: none; width: 32px; padding: 0; }
+.btn-arrow svg { transition: transform 120ms ease-out; }
+.btn-arrow[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-arrow svg { transition: none; }
+}
+
+/* Recent dictations: one trimmed line each, hairlines between, the border and corners of a control. */
+
+.recent {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  list-style: none;
+}
+
+.recent li + li { border-top: 1px solid var(--border); }
+
+.recent-row {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.recent-row:hover { background: var(--surface-2); }
+.recent-row:focus-visible { outline-offset: -2px; }

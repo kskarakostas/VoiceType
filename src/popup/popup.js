@@ -1,7 +1,8 @@
 // VoiceType popup: a quick panel over the settings page. A trusted extension page: it reads the
 // full settings, saves only the field an edit changed (provider or activeMode) or the current
 // site's rule, and re-reads when stored settings change. Everything else lives on the settings
-// page, which it opens (V6). Copy last copies the newest dictation (V29).
+// page, which it opens (V6). Copy last copies the newest dictation (V29), and the arrow beside it
+// lists the newest few (V76).
 import { formatCount } from '../options/home-stats.js';
 import { MSG } from '../shared/messages.js';
 import { formatCost } from '../shared/pricing.js';
@@ -10,6 +11,7 @@ import { createSettingsClient } from '../ui/settings-client.js';
 import { createSettingsState } from '../ui/settings-state.js';
 import { formatSpoken } from './format.js';
 import { openSettings } from './open-settings.js';
+import { createRecent } from './recent.js';
 import { createSiteBlock } from './site-block.js';
 
 /** @typedef {import('../shared/defaults.js').Settings} Settings */
@@ -36,7 +38,8 @@ export async function initPopup({ chrome, document, window }) {
   };
 
   let toastTimer;
-  let lastText = null;
+  /** @type {Array<{ text: string }>} */
+  let entries = [];
   let lastLoads = 0;
 
   function toast(text, tone = 'info') {
@@ -47,6 +50,8 @@ export async function initPopup({ chrome, document, window }) {
     toastTimer = window.setTimeout(() => { el.toast.hidden = true; }, tone === 'error' ? 6000 : 2500);
   }
 
+  const copy = (text) => window.navigator.clipboard.writeText(text);
+  const recent = createRecent({ document, toast, copy });
   const state = createSettingsState({ client, render, toast });
   const { commit } = state;
   const block = createSiteBlock({ chrome, document, state, client, toast });
@@ -67,9 +72,10 @@ export async function initPopup({ chrome, document, window }) {
   // Off drops the text as well: the worker has cleared it, so it must not come back when on returns.
   function renderCopyLast() {
     const { keepHistory } = state.settings();
-    if (!keepHistory) lastText = null;
+    if (!keepHistory) entries = [];
     el.copyRow.hidden = !keepHistory;
-    el.copyLast.disabled = lastText === null;
+    el.copyLast.disabled = entries.length === 0;
+    recent.render(entries, keepHistory);
   }
 
   el.provider.addEventListener('change', () => {
@@ -98,7 +104,7 @@ export async function initPopup({ chrome, document, window }) {
 
   el.copyLast.addEventListener('click', async () => {
     try {
-      await window.navigator.clipboard.writeText(lastText);
+      await copy(entries[0].text);
       toast('Copied to clipboard.', 'success');
     } catch {
       toast(COPY_ERROR, 'error');
@@ -120,7 +126,7 @@ export async function initPopup({ chrome, document, window }) {
     const id = ++lastLoads;
     const reply = await client.send({ action: MSG.GET_HISTORY });
     if (id !== lastLoads) return;
-    lastText = reply?.entries?.[0]?.text ?? null;
+    entries = Array.isArray(reply?.entries) ? reply.entries : [];
     renderCopyLast();
   }
 
